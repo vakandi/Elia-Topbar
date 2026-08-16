@@ -18,6 +18,11 @@
   <a href="https://img.shields.io/badge/PRs-Welcome-EC4899"><img src="https://img.shields.io/badge/PRs-Welcome-EC4899.svg" alt="PRs Welcome"></a>
 </p>
 
+<!-- UI Screenshot -->
+<p align="center">
+  <img src="docs/screenshot-ui.png" alt="EliaTopBar menu — Subworker Server, Active Agents, Manual Run, Colima instances" width="300">
+</p>
+
 ---
 
 ## What Is This?
