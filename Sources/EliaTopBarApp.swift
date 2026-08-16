@@ -628,7 +628,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Server URL Preference
 
     private func addServerURLMenuItems(to menu: NSMenu) {
-        let currentURL = UserDefaults.standard.string(forKey: "subworkerServerURL") ?? "http://localhost:8080"
+        let currentURL = UserDefaults.standard.string(forKey: "subworkerServerURL") ?? "http://localhost:5656"
         let urlDisplayItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         urlDisplayItem.attributedTitle = emojiAwareTitle("🔗 Server: \(currentURL)", color: .secondaryLabelColor)
         urlDisplayItem.isEnabled = false
@@ -649,8 +649,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
 
-        let field = NSTextField(string: UserDefaults.standard.string(forKey: "subworkerServerURL") ?? "http://localhost:8080")
-        field.placeholderString = "http://localhost:8080"
+        let field = NSTextField(string: UserDefaults.standard.string(forKey: "subworkerServerURL") ?? "http://localhost:5656")
+        field.placeholderString = "http://localhost:5656"
         field.frame = NSRect(x: 0, y: 0, width: 300, height: 24)
         alert.accessoryView = field
 

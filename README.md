@@ -29,7 +29,7 @@
 
 **EliaTopBar** sits in your macOS menu bar and gives you real-time command over the
 [Elia agent ecosystem](https://github.com/vakandi/EliaAgent) — without opening a browser
-or terminal. It connects over **WebSocket** to the Elia FastAPI server (`localhost:8080`)
+or terminal. It connects over **WebSocket** to the Elia FastAPI server (`localhost:5656`)
 and turns every subworker into a live, actionable dashboard row.
 
 - 🟢 **Live agent states** pushed over WebSocket — running, idle, disabled, error, done
@@ -54,7 +54,7 @@ open a shell, inspect resources, delete, auto-refresh and launch-at-login.
 
 | Feature | Description |
 |---------|-------------|
-| **WebSocket live updates** | Real-time status pushed from the Elia FastAPI server (`ws://localhost:8080/ws`) |
+| **WebSocket live updates** | Real-time status pushed from the Elia FastAPI server (`ws://localhost:5656/ws`) |
 | **Active Agents list** | Every subworker with live state: `⚡ Running`, `⏸️ Idle`, `⛔ Disabled`, `💥 Error`, `✅ Done` |
 | **Per-agent top bar icons** | Running agents each get a colored status dot with their monogram in the menu bar |
 | **Live log overlay** | Hover an agent icon → real-time logs (`/logs/{name}?lines=50`), refreshed every 2s |
@@ -89,7 +89,7 @@ open a shell, inspect resources, delete, auto-refresh and launch-at-login.
 │   per-agent dots ◄─── monogram + state color per subworker     │
 │   log popover    ◄─── hover any agent dot                      │
 └──────────────────────────────┬─────────────────────────────────┘
-                               │ WebSocket (ws://localhost:8080/ws)
+                               │ WebSocket (ws://localhost:5656/ws)
                                │ HTTP  (/status, /trigger, /enable,
                                │        /disable, /logs, /server/health)
                                ▼
@@ -128,7 +128,7 @@ To create a distributable DMG:
 ### Run against your Elia server
 
 1. Make sure the [EliaAgent](https://github.com/vakandi/EliaAgent) FastAPI server is
-   running on `localhost:8080` (Docker).
+   running on `localhost:5656` (Docker).
 2. Launch EliaTopBar.
 3. In the menu, use **Change Server URL…** if your server runs elsewhere.
 
@@ -176,7 +176,7 @@ Running subworkers appear as individual dots in the menu bar:
 
 | Setting | How | Default |
 |---------|-----|---------|
-| Server URL | Menu → **Change Server URL…** | `http://localhost:8080` |
+| Server URL | Menu → **Change Server URL…** | `http://localhost:5656` |
 | Refresh interval | Menu → **Refresh Interval** (Colima section) | 5 s |
 | Launch at Login | Menu → **Launch at Login** | off |
 
@@ -188,7 +188,7 @@ Running subworkers appear as individual dots in the menu bar:
 |-------------|--------|
 | macOS | 13.0+ (Ventura or newer) |
 | Swift toolchain | 5.9+ (for building from source) |
-| [EliaAgent](https://github.com/vakandi/EliaAgent) | FastAPI server, default `localhost:8080` (optional for subworker features) |
+| [EliaAgent](https://github.com/vakandi/EliaAgent) | FastAPI server, default `localhost:5656` (optional for subworker features) |
 | [Colima](https://github.com/abiosoft/colima) | `brew install colima` (optional — only for container management) |
 
 ### First launch note

@@ -64,8 +64,8 @@ final class SubworkerManager: ObservableObject {
 
     // Session
     private let session = URLSession(configuration: .default)
-    private var baseURL = "http://localhost:8080"
-    private var wsURL = "ws://localhost:8080/ws"
+    private var baseURL = "http://localhost:5656"
+    private var wsURL = "ws://localhost:5656/ws"
 
     // MARK: - Start / Stop
 
