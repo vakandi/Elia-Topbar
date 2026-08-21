@@ -18,9 +18,10 @@
   <a href="https://img.shields.io/badge/PRs-Welcome-EC4899"><img src="https://img.shields.io/badge/PRs-Welcome-EC4899.svg" alt="PRs Welcome"></a>
 </p>
 
-<!-- UI Screenshot -->
+<!-- UI Screenshots -->
 <p align="center">
-  <img src="docs/screenshot-ui.png" alt="EliaTopBar menu — Subworker Server, Active Agents, Manual Run, Colima instances" width="300">
+  <img src="docs/screenshot-menu.png" alt="EliaTopBar menu — Subworker Server, Active Agents, Manual Run, Colima instances" width="420">
+  <img src="docs/screenshot-agents.png" alt="EliaTopBar active agents — live subworker states and controls" width="300">
 </p>
 
 ---
