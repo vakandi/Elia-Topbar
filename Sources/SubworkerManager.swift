@@ -24,6 +24,8 @@ struct SubworkerInfo: Identifiable, Equatable {
     var scheduleType: String?
     var lastError: String?
     var lastCompleted: Date?
+    var model: String?
+    var variant: String?
 }
 
 struct ServerHealth: Equatable {
@@ -40,30 +42,16 @@ enum SubworkerModels {
     static let selectionsPath = "/Users/vakandi/EliaAI/ui_electron/model-selections.json"
     static let defaultModel = "opencode/big-pickle"
 
-    struct ModelOption {
-        let id: String
-        let label: String
-        let provider: String
-    }
-
-    static let all: [ModelOption] = [
-        ModelOption(id: "opencode/x-preview-f-free", label: "Ox Alpha Free (Unlimited)", provider: "unlimited"),
-        ModelOption(id: "opencode/big-pickle", label: "Big Pickle", provider: "opencode-zen"),
-        ModelOption(id: "opencode/nemotron-3.5-lightning-free", label: "Nemotron 3.5 Lightning", provider: "opencode-zen"),
-        ModelOption(id: "opencode/nemotron-3-ultra-free", label: "Nemotron 3 Ultra", provider: "opencode-zen"),
-        ModelOption(id: "opencode/hy3-free", label: "HY3", provider: "opencode-zen"),
-        ModelOption(id: "opencode/laguna-s-2.1-free", label: "Laguna S 2.1", provider: "opencode-zen"),
-        ModelOption(id: "opencode/mimo-v2.5-free", label: "MIMO V2.5", provider: "opencode-zen"),
-        ModelOption(id: "opencode/deepseek-v4-flash-free", label: "DeepSeek V4 Flash", provider: "opencode-zen"),
-        ModelOption(id: "google/gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite", provider: "openrouter"),
-        ModelOption(id: "google/gemma-4-26b-a4b-it", label: "Gemma 4 26B", provider: "openrouter"),
-        ModelOption(id: "google/gemma-4-31b-it", label: "Gemma 4 31B", provider: "openrouter"),
-    ]
-
     static func displayName(for id: String) -> String {
-        if let option = all.first(where: { $0.id == id }) { return option.label }
-        return id.split(separator: "/").last.map(String.init) ?? id
+        id.split(separator: "/").last.map(String.init) ?? id
     }
+}
+
+struct ModelOption: Identifiable {
+    let id: String        // "provider/model-id"
+    let name: String
+    let provider: String
+    let variants: [String] // reasoning effort levels (low/medium/high/max…)
 }
 
 // MARK: - SubworkerManager
@@ -81,6 +69,9 @@ final class SubworkerManager: ObservableObject {
     @Published var isLoading = true
     @Published var statusError: String?
     @Published var modelSelections: [String: String] = [:]
+    @Published var modelVariants: [String: String] = [:]
+    @Published var availableModels: [ModelOption] = []
+    @Published var mainAgentName = "elia"
 
     var hasError: Bool { wsError != nil || lastError != nil }
     var allIdle: Bool { runningCount == 0 && !hasError }
@@ -94,6 +85,7 @@ final class SubworkerManager: ObservableObject {
 
     // HTTP polling
     private var pollTimer: Timer?
+    private var pollInterval: TimeInterval = 5.0
     private var serverHealthTimer: Timer?
 
     // Session
@@ -108,6 +100,8 @@ final class SubworkerManager: ObservableObject {
         isLoading = true
         statusError = nil
         loadModelSelections()
+        fetchMainAgent()
+        fetchModels()
         connectWebSocket()
         startServerHealthPolling()
     }
@@ -208,6 +202,8 @@ final class SubworkerManager: ObservableObject {
         switch event {
         case "initial_status":
             handleInitialStatus(json)
+        case "subworker_started":
+            handleSubworkerStarted(json)
         case "subworker_completed":
             handleSubworkerCompleted(json)
         case "subworker_error":
@@ -219,7 +215,7 @@ final class SubworkerManager: ObservableObject {
                 wsError = nil
                 statusError = nil
                 wsReconnectDelay = 1.0
-                stopHTTPPolling()
+                setSlowPolling()
             }
         default:
             // Check if this is a connection success without explicit event
@@ -248,21 +244,39 @@ final class SubworkerManager: ObservableObject {
                 enabled: dict["enabled"] as? Bool ?? false,
                 running: dict["running"] as? Bool ?? false,
                 nextRun: dict["next_run"] as? String,
-                scheduleType: dict["schedule_type"] as? String
+                scheduleType: dict["schedule_type"] as? String,
+                model: dict["model"] as? String,
+                variant: dict["variant"] as? String
             )
             parsed.append(info)
         }
 
         subworkers = parsed
+        for sw in parsed {
+            if let m = sw.model, !m.isEmpty { modelSelections[sw.name] = m }
+            if let v = sw.variant { modelVariants[sw.name] = v }
+        }
         recalculateCounts()
         isLoading = false
         statusError = nil
+        lastError = nil
 
         if !wsConnected {
             wsConnected = true
             wsError = nil
             wsReconnectDelay = 1.0
             stopHTTPPolling()
+        }
+    }
+
+    private func handleSubworkerStarted(_ json: [String: Any]) {
+        guard let name = json["name"] as? String else { return }
+        AppLog.d("Subworker started: \(name)")
+
+        if let idx = subworkers.firstIndex(where: { $0.name == name }) {
+            subworkers[idx].running = true
+            subworkers[idx].lastError = nil
+            recalculateCounts()
         }
     }
 
@@ -334,6 +348,7 @@ final class SubworkerManager: ObservableObject {
     private func startHTTPPolling() {
         guard pollTimer == nil else { return }
         AppLog.d("Starting HTTP status polling (5s)")
+        pollInterval = 5.0
         pollTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 await self?.fetchStatus()
@@ -349,11 +364,30 @@ final class SubworkerManager: ObservableObject {
         pollTimer = nil
     }
 
+    /// Slow safety-net polling while WS is connected — catches missed events.
+    private func setSlowPolling() {
+        guard pollTimer == nil || pollInterval != 15.0 else { return }
+        AppLog.d("HTTP status polling every 15s (WS backup)")
+        pollInterval = 15.0
+        pollTimer?.invalidate()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.fetchStatus()
+            }
+        }
+    }
+
     private func startServerHealthPolling() {
         serverHealthTimer?.invalidate()
         serverHealthTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 await self?.fetchServerHealth()
+                // Retry until the catalog lands (first attempt may hit a
+                // restarting container).
+                if self?.availableModels.isEmpty == true {
+                    self?.fetchModels()
+                }
+                self?.fetchMainAgent()
             }
         }
         // Immediate first fetch
@@ -395,9 +429,14 @@ final class SubworkerManager: ObservableObject {
             }
             subworkers = parsed
             loadModelSelections()
+            for sw in parsed {
+                if let m = sw.model, !m.isEmpty { modelSelections[sw.name] = m }
+                if let v = sw.variant { modelVariants[sw.name] = v }
+            }
             recalculateCounts()
             isLoading = false
             statusError = nil
+            lastError = nil
             AppLog.d("Status updated: \(parsed.count) subworkers")
         } catch {
             statusError = error.localizedDescription
@@ -420,6 +459,7 @@ final class SubworkerManager: ObservableObject {
                 pid: json["pid"] as? Int,
                 restartCount: json["restart_count"] as? Int ?? 0
             )
+            fetchMainAgent()
             AppLog.d("Server health: \(json["state"] as? String ?? "?")")
         } catch {
             AppLog.d("Server health fetch error: \(error.localizedDescription)")
@@ -512,14 +552,51 @@ final class SubworkerManager: ObservableObject {
         modelSelections = json
     }
 
-    func currentModel(for name: String) -> String {
-        modelSelections[name] ?? SubworkerModels.defaultModel
+    func fetchModels() {
+        guard let url = URL(string: "\(baseURL)/models") else { return }
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+            Task { @MainActor [weak self] in
+                guard let self, let data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let raw = json["models"] as? [[String: Any]] else { return }
+                let options: [ModelOption] = raw.compactMap { m in
+                    guard let id = m["id"] as? String else { return nil }
+                    return ModelOption(
+                        id: id,
+                        name: m["name"] as? String ?? id,
+                        provider: m["provider"] as? String ?? "",
+                        variants: m["variants"] as? [String] ?? []
+                    )
+                }
+                self.availableModels = options
+                AppLog.d("Loaded \(options.count) models")
+            }
+        }.resume()
     }
 
-    func setModel(_ modelID: String, for name: String) {
+    func currentModel(for name: String) -> String {
+        if let m = modelSelections[name], !m.isEmpty { return m }
+        return subworkers.first(where: { $0.name == name })?.model ?? SubworkerModels.defaultModel
+    }
+
+    func currentVariant(for name: String) -> String {
+        if let v = modelVariants[name], !v.isEmpty { return v }
+        return subworkers.first(where: { $0.name == name })?.variant ?? ""
+    }
+
+    func setModel(_ modelID: String, variant: String, for name: String) {
         var updated = modelSelections
         updated[name] = modelID
         modelSelections = updated
+
+        var updatedVariants = modelVariants
+        updatedVariants[name] = variant
+        modelVariants = updatedVariants
+
+        if let idx = subworkers.firstIndex(where: { $0.name == name }) {
+            subworkers[idx].model = modelID
+            subworkers[idx].variant = variant.isEmpty ? nil : variant
+        }
 
         guard let data = try? JSONSerialization.data(withJSONObject: updated, options: [.prettyPrinted, .sortedKeys]) else {
             lastError = "Model selection: invalid payload"
@@ -527,20 +604,22 @@ final class SubworkerManager: ObservableObject {
         }
         do {
             try data.write(to: URL(fileURLWithPath: SubworkerModels.selectionsPath), options: .atomic)
-            AppLog.d("Model for \(name) set to \(modelID)")
+            AppLog.d("Model for \(name) set to \(modelID) (\(variant))")
         } catch {
             AppLog.d("Model save error: \(error.localizedDescription)")
             lastError = "Model save failed: \(error.localizedDescription)"
         }
-        pushModelToServer(modelID, for: name)
+        pushModelToServer(modelID, variant: variant, for: name)
     }
 
-    private func pushModelToServer(_ modelID: String, for name: String) {
+    private func pushModelToServer(_ modelID: String, variant: String, for name: String) {
         guard let url = URL(string: "\(baseURL)/status/\(name)") else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["model": modelID])
+        var payload: [String: Any] = ["model": modelID]
+        if !variant.isEmpty { payload["variant"] = variant }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
 
         URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
             Task { @MainActor [weak self] in
@@ -550,6 +629,42 @@ final class SubworkerManager: ObservableObject {
                     self?.lastError = "Model sync failed: HTTP \(http.statusCode)"
                 } else {
                     self?.lastError = nil
+                }
+            }
+        }.resume()
+    }
+
+    // MARK: - Main Agent
+
+    func fetchMainAgent() {
+        guard let url = URL(string: "\(baseURL)/main-agent") else { return }
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+            Task { @MainActor [weak self] in
+                guard let self, let data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let name = json["name"] as? String, !name.isEmpty else { return }
+                if name != self.mainAgentName {
+                    self.mainAgentName = name
+                }
+            }
+        }.resume()
+    }
+
+    func setMainAgent(_ name: String) {
+        guard let url = URL(string: "\(baseURL)/main-agent") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["name": name])
+
+        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
+            Task { @MainActor [weak self] in
+                if let error {
+                    self?.lastError = "Main agent set failed: \(error.localizedDescription)"
+                } else if let http = response as? HTTPURLResponse, http.statusCode >= 400 {
+                    self?.lastError = "Main agent set failed: HTTP \(http.statusCode)"
+                } else {
+                    self?.mainAgentName = name
                 }
             }
         }.resume()

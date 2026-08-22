@@ -80,6 +80,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Dynamic Icon
 
+    private static let runningBannerIcon: NSImage? = {
+        guard let path = Bundle.main.path(forResource: "icon_running_topbar", ofType: "png"),
+              let image = NSImage(contentsOfFile: path) else { return nil }
+        image.isTemplate = false
+        return image
+    }()
+
+    private static let serverDownBannerIcon: NSImage? = {
+        guard let path = Bundle.main.path(forResource: "icon_not_running_server", ofType: "png"),
+              let image = NSImage(contentsOfFile: path) else { return nil }
+        image.isTemplate = false
+        return image
+    }()
+
     private func updateStatusIcon() {
         guard let button = statusItem.button else { return }
 
@@ -90,17 +104,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let swHasError = subworkerManager.hasError
         let swRunning = subworkerManager.runningCount
 
+        let barHeight = max(NSStatusBar.system.thickness, 20)
+
+        if swDisconnected || swHasError {
+            let symbolName = swDisconnected ? "circle.slash" : "exclamationmark.circle"
+            let config = NSImage.SymbolConfiguration(pointSize: barHeight * 0.58, weight: .medium)
+            guard let baseImage = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
+                .withSymbolConfiguration(config) else { return }
+            button.image = tintedSymbol(baseImage, color: .systemRed)
+            return
+        }
+
+        // Elia system healthy → custom brain banner instead of the docker box.
+        if subworkerManager.serverHealth?.healthStatus == "healthy",
+           let banner = Self.runningBannerIcon?.copy() as? NSImage {
+            banner.size = NSSize(width: barHeight * 0.92, height: barHeight * 0.92)
+            if swRunning > 0 {
+                button.image = badgeImage(base: banner, count: swRunning, barHeight: barHeight)
+            } else {
+                button.image = banner
+            }
+            return
+        }
+
+        // Docker up but OpenCode server unreachable → red X banner.
+        if hasRunning, let xBanner = Self.serverDownBannerIcon?.copy() as? NSImage {
+            xBanner.size = NSSize(width: barHeight * 0.92, height: barHeight * 0.92)
+            button.image = xBanner
+            return
+        }
+
         let symbolName: String
         let tintColor: NSColor
         var badgeCount: Int?
 
-        if swDisconnected {
-            symbolName = "circle.slash"
-            tintColor = .systemRed
-        } else if swHasError {
-            symbolName = "exclamationmark.circle"
-            tintColor = .systemRed
-        } else if swRunning > 0 {
+        if swRunning > 0 {
             symbolName = "circle.fill"
             tintColor = .systemGreen
             badgeCount = swRunning
@@ -115,7 +153,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             tintColor = .systemGray
         }
 
-        let barHeight = max(NSStatusBar.system.thickness, 20)
         let glyphSize = barHeight * 0.58
         let config = NSImage.SymbolConfiguration(pointSize: glyphSize, weight: .medium)
         guard let baseImage = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
@@ -264,8 +301,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if let health = subworkerManager.serverHealth {
-            let stateEmoji = health.state == "running" ? "✅" : (health.state == "error" ? "❌" : "⏸️")
-            let healthText = "  \(stateEmoji) Server: \(health.state) (PID \(health.pid ?? 0), \(health.restartCount) restarts)"
+            let stateEmoji = health.healthStatus == "healthy" ? "✅" : "❌"
+            var healthText = "  \(stateEmoji) Server: \(health.healthStatus)"
+            if let pid = health.pid {
+                healthText += " (PID \(pid))"
+            }
             let healthItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
             healthItem.attributedTitle = emojiAwareTitle(healthText, color: .secondaryLabelColor)
             healthItem.isEnabled = false
@@ -370,6 +410,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let justCompletedAny = sw.lastCompleted != nil
             && now.timeIntervalSince(sw.lastCompleted!) < 120
 
+        let isMain = sw.name == subworkerManager.mainAgentName
+
         let statusText: String
         if sw.lastError != nil {
             statusText = "Error"
@@ -385,8 +427,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusText = "Disabled"
         }
 
+        let displayName = isMain ? "\(sw.name) ★" : sw.name
         let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        item.attributedTitle = buildAttributedItem(dot: dot, name: sw.name, status: statusText, color: color)
+        item.attributedTitle = buildAttributedItem(dot: dot, name: displayName, status: statusText, color: color)
         item.submenu = instanceMenu
 
         if let photo = ProfilePhotos.shared.circularPhoto(for: sw.name, size: 16) {
@@ -415,6 +458,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.attributedTitle = emojiAwareTitle("Status: \(statusEmoji) \(sw.running ? "Running" : (sw.enabled ? "Idle" : "Disabled"))", color: .secondaryLabelColor)
         statusItem.isEnabled = false
         submenu.addItem(statusItem)
+
+        // ── Main Agent ──
+        if sw.name == subworkerManager.mainAgentName {
+            let mainItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            mainItem.attributedTitle = emojiAwareTitle("★ MAIN AGENT — workspace: ~/EliaAI", color: .systemYellow)
+            mainItem.isEnabled = false
+            submenu.addItem(mainItem)
+
+            let unsetItem = NSMenuItem(title: "", action: #selector(toggleMainAgent(_:)), keyEquivalent: "")
+            unsetItem.attributedTitle = emojiAwareTitle("✕ Unset as Main Agent (fallback: elia)", color: .labelColor)
+            unsetItem.target = self
+            unsetItem.representedObject = ["name": sw.name, "action": "unset"]
+            submenu.addItem(unsetItem)
+        } else {
+            let setItem = NSMenuItem(title: "", action: #selector(toggleMainAgent(_:)), keyEquivalent: "")
+            setItem.attributedTitle = emojiAwareTitle("★ Set as Main Agent (workspace: ~/EliaAI)", color: .labelColor)
+            setItem.target = self
+            setItem.representedObject = ["name": sw.name, "action": "set"]
+            submenu.addItem(setItem)
+        }
 
         if let nextRun = sw.nextRun {
             let nextItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -480,21 +543,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         submenu.addItem(NSMenuItem.separator())
 
         let currentModel = subworkerManager.currentModel(for: sw.name)
+        let currentVariant = subworkerManager.currentVariant(for: sw.name)
+        var modelLabel = SubworkerModels.displayName(for: currentModel)
+        if !currentVariant.isEmpty { modelLabel += " (\(currentVariant))" }
         let modelHeader = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        modelHeader.attributedTitle = emojiAwareTitle("🧠 Model: \(SubworkerModels.displayName(for: currentModel))", color: .secondaryLabelColor)
+        modelHeader.attributedTitle = emojiAwareTitle("🧠 Model: \(modelLabel)", color: .secondaryLabelColor)
         modelHeader.isEnabled = false
         submenu.addItem(modelHeader)
 
+        // Options populate lazily via NSMenuDelegate (catalog has 500+ entries).
         let modelSubmenu = NSMenu()
         modelSubmenu.autoenablesItems = false
-        for option in SubworkerModels.all {
-            let item = NSMenuItem(title: "", action: #selector(setSubworkerModel(_:)), keyEquivalent: "")
-            item.attributedTitle = emojiAwareTitle("\(option.label)  ·  \(option.provider)", color: .labelColor)
-            item.state = option.id == currentModel ? .on : .off
-            item.target = self
-            item.representedObject = ["name": sw.name, "model": option.id]
-            modelSubmenu.addItem(item)
-        }
+        modelSubmenu.delegate = self
+        modelSubmenu.identifier = NSUserInterfaceItemIdentifier(sw.name)
         let modelItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         modelItem.attributedTitle = emojiAwareTitle("🧠 Change Model…", color: .labelColor)
         modelItem.submenu = modelSubmenu
@@ -758,7 +819,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let info = sender.representedObject as? [String: String],
               let name = info["name"],
               let modelID = info["model"] else { return }
-        subworkerManager.setModel(modelID, for: name)
+        let variant = info["variant"] ?? ""
+        subworkerManager.setModel(modelID, variant: variant, for: name)
+        setupMenu()
+    }
+
+    @objc private func toggleMainAgent(_ sender: NSMenuItem) {
+        guard let info = sender.representedObject as? [String: String],
+              let name = info["name"],
+              let action = info["action"] else { return }
+        if action == "set" {
+            subworkerManager.setMainAgent(name)
+        } else {
+            subworkerManager.setMainAgent("elia")
+        }
         setupMenu()
     }
 
@@ -1090,5 +1164,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quitApp() {
         NSApplication.shared.terminate(nil)
+    }
+}
+
+// MARK: - Lazy Model Menu Population
+
+extension AppDelegate: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard let agentName = menu.identifier?.rawValue else { return }
+        populateModelMenu(menu, agentName: agentName)
+    }
+
+    private func populateModelMenu(_ menu: NSMenu, agentName: String) {
+        menu.removeAllItems()
+
+        let models = subworkerManager.availableModels
+        guard !models.isEmpty else {
+            // Kick a refresh so the next hover shows the catalog.
+            subworkerManager.fetchModels()
+            let item = NSMenuItem(title: "Loading models…", action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+            return
+        }
+
+        let currentModel = subworkerManager.currentModel(for: agentName)
+        let currentVariant = subworkerManager.currentVariant(for: agentName)
+
+        for m in models {
+            let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            item.attributedTitle = emojiAwareTitle("\(m.name)  (\(m.provider))", color: .labelColor)
+            item.state = m.id == currentModel ? .on : .off
+            item.target = self
+            item.representedObject = ["name": agentName, "model": m.id]
+
+            if m.variants.isEmpty {
+                item.action = #selector(setSubworkerModel(_:))
+            } else {
+                // Thinking levels — selection happens in the nested menu.
+                let thinkMenu = NSMenu()
+                thinkMenu.autoenablesItems = false
+
+                let noneItem = NSMenuItem(title: "no extra thinking", action: #selector(setSubworkerModel(_:)), keyEquivalent: "")
+                noneItem.state = (m.id == currentModel && currentVariant.isEmpty) ? .on : .off
+                noneItem.target = self
+                noneItem.representedObject = ["name": agentName, "model": m.id, "variant": ""]
+                thinkMenu.addItem(noneItem)
+
+                for v in m.variants {
+                    let vi = NSMenuItem(title: "thinking: \(v)", action: #selector(setSubworkerModel(_:)), keyEquivalent: "")
+                    vi.state = (m.id == currentModel && currentVariant == v) ? .on : .off
+                    vi.target = self
+                    vi.representedObject = ["name": agentName, "model": m.id, "variant": v]
+                    thinkMenu.addItem(vi)
+                }
+
+                item.submenu = thinkMenu
+            }
+            menu.addItem(item)
+        }
     }
 }
