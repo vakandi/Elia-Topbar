@@ -296,72 +296,119 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func addSubworkerItems(to menu: NSMenu) {
         menu.addItem(NSMenuItem.separator())
 
-        let header = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        header.attributedTitle = emojiAwareTitle("🤖 Active Agents", color: .secondaryLabelColor)
-        header.isEnabled = false
-        menu.addItem(header)
-
         if subworkerManager.isLoading {
+            let header = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            header.attributedTitle = emojiAwareTitle("🤖 Active Agents", color: .secondaryLabelColor)
+            header.isEnabled = false
+            menu.addItem(header)
             menu.addItem(loadingMenuItem(text: "Loading subworkers…"))
             return
         }
         if let statusError = subworkerManager.statusError {
+            let header = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            header.attributedTitle = emojiAwareTitle("🤖 Active Agents", color: .secondaryLabelColor)
+            header.isEnabled = false
+            menu.addItem(header)
             menu.addItem(errorMenuItem(text: "Error: \(statusError)"))
             return
         }
         guard !subworkerManager.subworkers.isEmpty else {
+            let header = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            header.attributedTitle = emojiAwareTitle("🤖 Active Agents", color: .secondaryLabelColor)
+            header.isEnabled = false
+            menu.addItem(header)
             menu.addItem(disabledItem("No subworkers"))
             return
         }
 
         let now = Date()
+        let active = subworkerManager.subworkers.filter { $0.enabled }
+        let inactive = subworkerManager.subworkers.filter { !$0.enabled }
 
-        for sw in subworkerManager.subworkers {
-            let instanceMenu = buildSubworkerSubmenu(for: sw)
+        if !active.isEmpty {
+            let header = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            header.attributedTitle = emojiAwareTitle("🤖 Active Agents (\(active.count))", color: .secondaryLabelColor)
+            header.isEnabled = false
+            menu.addItem(header)
 
-            let dot: String
-            let color: NSColor
-            if sw.lastError != nil {
-                dot = "💥"; color = .systemRed
-            } else if sw.running {
-                dot = "⚡"; color = .systemGreen
-            } else if sw.enabled {
-                dot = "●"; color = .systemGreen.withAlphaComponent(0.5)
-            } else {
-                dot = "○"; color = .systemGray
+            for sw in active {
+                menu.addItem(buildSubworkerMenuItem(for: sw, now: now))
             }
-
-            let justCompletedDocs = sw.name.lowercased().contains("doc")
-                && sw.lastCompleted != nil
-                && now.timeIntervalSince(sw.lastCompleted!) < 120
-            let justCompletedAny = sw.lastCompleted != nil
-                && now.timeIntervalSince(sw.lastCompleted!) < 120
-
-            let statusText: String
-            if sw.lastError != nil {
-                statusText = "Error"
-            } else if justCompletedDocs {
-                statusText = "📝 Done"
-            } else if sw.running {
-                statusText = "Running"
-            } else if justCompletedAny {
-                statusText = "✅ Done"
-            } else if sw.enabled {
-                statusText = "Idle"
-            } else {
-                statusText = "Disabled"
-            }
-
-            let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-            item.attributedTitle = buildAttributedItem(dot: dot, name: sw.name, status: statusText, color: color)
-            item.submenu = instanceMenu
-            menu.addItem(item)
         }
+
+        if !inactive.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+            let header = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            header.attributedTitle = emojiAwareTitle("💤 Inactive Agents (\(inactive.count))", color: .secondaryLabelColor)
+            header.isEnabled = false
+            menu.addItem(header)
+
+            for sw in inactive {
+                menu.addItem(buildSubworkerMenuItem(for: sw, now: now))
+            }
+        }
+    }
+
+    private func buildSubworkerMenuItem(for sw: SubworkerInfo, now: Date) -> NSMenuItem {
+        let instanceMenu = buildSubworkerSubmenu(for: sw)
+
+        let dot: String
+        let color: NSColor
+        if sw.lastError != nil {
+            dot = "💥"; color = .systemRed
+        } else if sw.running {
+            dot = "⚡"; color = .systemGreen
+        } else if sw.enabled {
+            dot = "●"; color = .systemGreen.withAlphaComponent(0.5)
+        } else {
+            dot = "○"; color = .systemGray
+        }
+
+        let justCompletedDocs = sw.name.lowercased().contains("doc")
+            && sw.lastCompleted != nil
+            && now.timeIntervalSince(sw.lastCompleted!) < 120
+        let justCompletedAny = sw.lastCompleted != nil
+            && now.timeIntervalSince(sw.lastCompleted!) < 120
+
+        let statusText: String
+        if sw.lastError != nil {
+            statusText = "Error"
+        } else if justCompletedDocs {
+            statusText = "📝 Done"
+        } else if sw.running {
+            statusText = "Running"
+        } else if justCompletedAny {
+            statusText = "✅ Done"
+        } else if sw.enabled {
+            statusText = "Idle"
+        } else {
+            statusText = "Disabled"
+        }
+
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        item.attributedTitle = buildAttributedItem(dot: dot, name: sw.name, status: statusText, color: color)
+        item.submenu = instanceMenu
+
+        if let photo = ProfilePhotos.shared.circularPhoto(for: sw.name, size: 16) {
+            item.image = photo
+        }
+
+        return item
     }
 
     private func buildSubworkerSubmenu(for sw: SubworkerInfo) -> NSMenu {
         let submenu = NSMenu()
         submenu.autoenablesItems = false
+
+        if let photo = ProfilePhotos.shared.circularPhoto(for: sw.name, size: 120) {
+            let photoItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            let photoView = NSImageView(image: photo)
+            photoView.frame = NSRect(x: 0, y: 0, width: 120, height: 120)
+            photoView.imageScaling = .scaleProportionallyUpOrDown
+            photoItem.view = photoView
+            submenu.addItem(photoItem)
+            submenu.addItem(NSMenuItem.separator())
+        }
 
         let statusEmoji = sw.running ? "⚡" : (sw.enabled ? "⏸️" : "⛔")
         let statusItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -428,6 +475,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             enableItem.representedObject = sw.name
             submenu.addItem(enableItem)
         }
+
+        // ── Model ──
+        submenu.addItem(NSMenuItem.separator())
+
+        let currentModel = subworkerManager.currentModel(for: sw.name)
+        let modelHeader = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        modelHeader.attributedTitle = emojiAwareTitle("🧠 Model: \(SubworkerModels.displayName(for: currentModel))", color: .secondaryLabelColor)
+        modelHeader.isEnabled = false
+        submenu.addItem(modelHeader)
+
+        let modelSubmenu = NSMenu()
+        modelSubmenu.autoenablesItems = false
+        for option in SubworkerModels.all {
+            let item = NSMenuItem(title: "", action: #selector(setSubworkerModel(_:)), keyEquivalent: "")
+            item.attributedTitle = emojiAwareTitle("\(option.label)  ·  \(option.provider)", color: .labelColor)
+            item.state = option.id == currentModel ? .on : .off
+            item.target = self
+            item.representedObject = ["name": sw.name, "model": option.id]
+            modelSubmenu.addItem(item)
+        }
+        let modelItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        modelItem.attributedTitle = emojiAwareTitle("🧠 Change Model…", color: .labelColor)
+        modelItem.submenu = modelSubmenu
+        submenu.addItem(modelItem)
+
+        // ── Profile Photo ──
+        submenu.addItem(NSMenuItem.separator())
+
+        let hasPhoto = ProfilePhotos.shared.hasPhoto(for: sw.name)
+        if hasPhoto {
+            let removePhotoItem = NSMenuItem(title: "", action: #selector(removeProfilePhoto(_:)), keyEquivalent: "")
+            removePhotoItem.attributedTitle = emojiAwareTitle("🗑 Remove Profile Photo", color: .systemRed)
+            removePhotoItem.target = self
+            removePhotoItem.representedObject = sw.name
+            submenu.addItem(removePhotoItem)
+        }
+
+        let setPhotoItem = NSMenuItem(title: "", action: #selector(setProfilePhoto(_:)), keyEquivalent: "")
+        setPhotoItem.attributedTitle = emojiAwareTitle(hasPhoto ? "📷 Change Profile Photo…" : "📷 Set Profile Photo…", color: .labelColor)
+        setPhotoItem.target = self
+        setPhotoItem.representedObject = sw.name
+        submenu.addItem(setPhotoItem)
 
         return submenu
     }
@@ -523,7 +612,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         subworkerStatusItems[sw.name] = item
 
         guard let button = item.button else { return }
-        button.image = subworkerIcon(monogram: monogram(for: sw.name), color: subworkerColor(for: sw))
+        button.image = subworkerStatusIcon(for: sw)
         button.toolTip = sw.name
 
         let handler = SubworkerHoverHandler()
@@ -541,7 +630,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateSubworkerStatusIcon(for sw: SubworkerInfo) {
         guard let item = subworkerStatusItems[sw.name] else { return }
-        item.button?.image = subworkerIcon(monogram: monogram(for: sw.name), color: subworkerColor(for: sw))
+        item.button?.image = subworkerStatusIcon(for: sw)
+    }
+
+    private func subworkerStatusIcon(for sw: SubworkerInfo) -> NSImage {
+        if let photo = ProfilePhotos.shared.circularPhoto(for: sw.name, size: 20) {
+            let color = subworkerColor(for: sw)
+            return subworkerIconWithBorder(photo: photo, color: color)
+        }
+        return subworkerIcon(monogram: monogram(for: sw.name), color: subworkerColor(for: sw))
+    }
+
+    private func subworkerIconWithBorder(photo: NSImage, color: NSColor) -> NSImage {
+        let barHeight = max(NSStatusBar.system.thickness, 20)
+        let size = NSSize(width: 22, height: barHeight)
+        let diameter = barHeight * 0.92
+        return NSImage(size: size, flipped: false) { rect in
+            let dotRect = NSRect(
+                x: (rect.width - diameter) / 2,
+                y: (rect.height - diameter) / 2,
+                width: diameter,
+                height: diameter
+            )
+            color.setFill()
+            NSBezierPath(ovalIn: dotRect).fill()
+
+            let photoInset: CGFloat = 2
+            let photoRect = dotRect.insetBy(dx: photoInset, dy: photoInset)
+            let clipPath = NSBezierPath(ovalIn: photoRect)
+            clipPath.addClip()
+
+            let imageSize = photo.size
+            let scaleW = photoRect.width / imageSize.width
+            let scaleH = photoRect.height / imageSize.height
+            let scale = max(scaleW, scaleH)
+            let drawW = imageSize.width * scale
+            let drawH = imageSize.height * scale
+            let drawRect = NSRect(
+                x: photoRect.midX - drawW / 2,
+                y: photoRect.midY - drawH / 2,
+                width: drawW,
+                height: drawH
+            )
+            photo.draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 1.0)
+            return true
+        }
     }
 
     private func subworkerColor(for sw: SubworkerInfo) -> NSColor {
@@ -621,8 +754,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         subworkerManager.disableSubworker(name)
     }
 
+    @objc private func setSubworkerModel(_ sender: NSMenuItem) {
+        guard let info = sender.representedObject as? [String: String],
+              let name = info["name"],
+              let modelID = info["model"] else { return }
+        subworkerManager.setModel(modelID, for: name)
+        setupMenu()
+    }
+
     @objc private func reconnectServer() {
         subworkerManager.start()
+    }
+
+    @objc private func setProfilePhoto(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+
+        let panel = NSOpenPanel()
+        panel.title = "Profile Photo for \(name)"
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        if ProfilePhotos.shared.setPhoto(for: name, sourceURL: url) {
+            updateStatusIcon()
+            reconcileSubworkerStatusItems()
+            setupMenu()
+        }
+    }
+
+    @objc private func removeProfilePhoto(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        ProfilePhotos.shared.removePhoto(for: name)
+        updateStatusIcon()
+        reconcileSubworkerStatusItems()
+        setupMenu()
     }
 
     // MARK: - Server URL Preference
@@ -812,9 +980,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 deleteItem.isEnabled = !instance.status.isTransitioning
                 instanceMenu.addItem(deleteItem)
 
-                // Instance header with submenu
-                let statusIcon = instance.status.isRunning ? "●" : "○"
-                let instanceItem = NSMenuItem(title: "\(statusIcon) \(instance.name)", action: nil, keyEquivalent: "")
+                let headerTitle: String
+                if instance.name == "default" && instance.status.isRunning {
+                    let serverHealthy = subworkerManager.serverHealth?.healthStatus == "healthy"
+                    headerTitle = serverHealthy
+                        ? "✅ ELIA SYSTEM RUNNING"
+                        : "⚠️ Docker Running — Server Down"
+                } else if instance.name == "default" {
+                    headerTitle = "○ Docker Engine"
+                } else {
+                    let statusIcon = instance.status.isRunning ? "●" : "○"
+                    headerTitle = "\(statusIcon) \(instance.name)"
+                }
+                let instanceItem = NSMenuItem(title: headerTitle, action: nil, keyEquivalent: "")
                 instanceItem.submenu = instanceMenu
                 menu.addItem(instanceItem)
             }

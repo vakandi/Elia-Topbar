@@ -33,6 +33,39 @@ struct ServerHealth: Equatable {
     let restartCount: Int
 }
 
+// MARK: - Model Selection
+
+enum SubworkerModels {
+    /// Shared with ui_electron — trigger_template.js reads this file to pick `--model`.
+    static let selectionsPath = "/Users/vakandi/EliaAI/ui_electron/model-selections.json"
+    static let defaultModel = "opencode/big-pickle"
+
+    struct ModelOption {
+        let id: String
+        let label: String
+        let provider: String
+    }
+
+    static let all: [ModelOption] = [
+        ModelOption(id: "opencode/x-preview-f-free", label: "Ox Alpha Free (Unlimited)", provider: "unlimited"),
+        ModelOption(id: "opencode/big-pickle", label: "Big Pickle", provider: "opencode-zen"),
+        ModelOption(id: "opencode/nemotron-3.5-lightning-free", label: "Nemotron 3.5 Lightning", provider: "opencode-zen"),
+        ModelOption(id: "opencode/nemotron-3-ultra-free", label: "Nemotron 3 Ultra", provider: "opencode-zen"),
+        ModelOption(id: "opencode/hy3-free", label: "HY3", provider: "opencode-zen"),
+        ModelOption(id: "opencode/laguna-s-2.1-free", label: "Laguna S 2.1", provider: "opencode-zen"),
+        ModelOption(id: "opencode/mimo-v2.5-free", label: "MIMO V2.5", provider: "opencode-zen"),
+        ModelOption(id: "opencode/deepseek-v4-flash-free", label: "DeepSeek V4 Flash", provider: "opencode-zen"),
+        ModelOption(id: "google/gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite", provider: "openrouter"),
+        ModelOption(id: "google/gemma-4-26b-a4b-it", label: "Gemma 4 26B", provider: "openrouter"),
+        ModelOption(id: "google/gemma-4-31b-it", label: "Gemma 4 31B", provider: "openrouter"),
+    ]
+
+    static func displayName(for id: String) -> String {
+        if let option = all.first(where: { $0.id == id }) { return option.label }
+        return id.split(separator: "/").last.map(String.init) ?? id
+    }
+}
+
 // MARK: - SubworkerManager
 
 @MainActor
@@ -47,6 +80,7 @@ final class SubworkerManager: ObservableObject {
     @Published var totalEnabled = 0
     @Published var isLoading = true
     @Published var statusError: String?
+    @Published var modelSelections: [String: String] = [:]
 
     var hasError: Bool { wsError != nil || lastError != nil }
     var allIdle: Bool { runningCount == 0 && !hasError }
@@ -73,6 +107,7 @@ final class SubworkerManager: ObservableObject {
         AppLog.d("Starting SubworkerManager")
         isLoading = true
         statusError = nil
+        loadModelSelections()
         connectWebSocket()
         startServerHealthPolling()
     }
@@ -202,6 +237,7 @@ final class SubworkerManager: ObservableObject {
         }
 
         AppLog.d("Received initial_status: \(swArray.count) subworkers")
+        loadModelSelections()
 
         var parsed: [SubworkerInfo] = []
         for dict in swArray {
@@ -358,6 +394,7 @@ final class SubworkerManager: ObservableObject {
                 parsed.append(info)
             }
             subworkers = parsed
+            loadModelSelections()
             recalculateCounts()
             isLoading = false
             statusError = nil
@@ -462,6 +499,60 @@ final class SubworkerManager: ObservableObject {
             AppLog.d("Log fetch error: \(error.localizedDescription)")
             return []
         }
+    }
+
+    // MARK: - Model Selection
+
+    func loadModelSelections() {
+        guard let data = FileManager.default.contents(atPath: SubworkerModels.selectionsPath),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
+            modelSelections = [:]
+            return
+        }
+        modelSelections = json
+    }
+
+    func currentModel(for name: String) -> String {
+        modelSelections[name] ?? SubworkerModels.defaultModel
+    }
+
+    func setModel(_ modelID: String, for name: String) {
+        var updated = modelSelections
+        updated[name] = modelID
+        modelSelections = updated
+
+        guard let data = try? JSONSerialization.data(withJSONObject: updated, options: [.prettyPrinted, .sortedKeys]) else {
+            lastError = "Model selection: invalid payload"
+            return
+        }
+        do {
+            try data.write(to: URL(fileURLWithPath: SubworkerModels.selectionsPath), options: .atomic)
+            AppLog.d("Model for \(name) set to \(modelID)")
+        } catch {
+            AppLog.d("Model save error: \(error.localizedDescription)")
+            lastError = "Model save failed: \(error.localizedDescription)"
+        }
+        pushModelToServer(modelID, for: name)
+    }
+
+    private func pushModelToServer(_ modelID: String, for name: String) {
+        guard let url = URL(string: "\(baseURL)/status/\(name)") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["model": modelID])
+
+        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
+            Task { @MainActor [weak self] in
+                if let error {
+                    self?.lastError = "Model sync failed: \(error.localizedDescription)"
+                } else if let http = response as? HTTPURLResponse, http.statusCode >= 400 {
+                    self?.lastError = "Model sync failed: HTTP \(http.statusCode)"
+                } else {
+                    self?.lastError = nil
+                }
+            }
+        }.resume()
     }
 
     // MARK: - Helpers
