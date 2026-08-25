@@ -95,6 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.action = #selector(mainItemClicked(_:))
             button.sendAction(on: [.leftMouseUp])
         }
+        startIconPulseObserver()
         updateStatusIcon()
     }
 
@@ -742,7 +743,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         composed.lockFocus()
         for (i, badge) in badges.enumerated() {
             let rect = NSRect(x: iconPhotosStartX + CGFloat(i) * cell, y: 0, width: cell, height: barHeight)
-            let diameter = rect.height * 0.98
+            let diameter = rect.height * 0.86
             let dotRect = NSRect(x: rect.midX - diameter / 2,
                                  y: (rect.height - diameter) / 2,
                                  width: diameter,

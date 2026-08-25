@@ -74,12 +74,18 @@ struct TopbarSettingsView: View {
                     Button(showGuide ? "Hide reorder steps" : "How to move it next to Wi-Fi / battery") { showGuide.toggle() }
                         .controlSize(.small)
                     if showGuide {
-                        Text("""
-                        1. Hold ⌘ (Command)
-                        2. Drag the brain icon in the REAL menu bar
-                        3. Drop it right of Wi-Fi / battery — done
-                        The agent photos follow automatically.
-                        """)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Move the icon next to Wi-Fi / battery:")
+                                .font(.caption).fontWeight(.semibold)
+                            Text("1. Close this window")
+                            Text("2. Hold the ⌘ Command key on your keyboard")
+                            Text("3. While holding ⌘, click and HOLD the brain icon in the real menu bar (top-right of your screen)")
+                            Text("4. Keep ⌘ held and drag it left/right — you will see it slide between Wi-Fi, battery, clock…")
+                            Text("5. Drop it where you want (e.g. right of the Wi-Fi symbol)")
+                            Text("6. Release, then release ⌘")
+                            Text("The agent photos are part of the same icon — they move with it.")
+                                .foregroundColor(.secondary)
+                        }
                         .font(.caption)
                         .textSelection(.enabled)
                     }
@@ -91,6 +97,7 @@ struct TopbarSettingsView: View {
         }
         .padding(14)
         .frame(width: 430)
+        .frame(maxHeight: 560)
         .onAppear(perform: captureMenuBar)
     }
 
