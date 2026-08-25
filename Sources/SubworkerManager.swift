@@ -105,6 +105,8 @@ final class SubworkerManager: ObservableObject {
     private var wsReconnectDelay: TimeInterval = 1.0
     private var pingTimer: Timer?
     private var wsReconnectTimer: Timer?
+    private var pongWatchdog: Timer?
+    private var awaitingPong = false
 
     // HTTP polling
     private var pollTimer: Timer?
@@ -136,6 +138,7 @@ final class SubworkerManager: ObservableObject {
         wsConnected = false
         pingTimer?.invalidate()
         pingTimer = nil
+        clearPongState()
         wsReconnectTimer?.invalidate()
         wsReconnectTimer = nil
         stopHTTPPolling()
@@ -249,6 +252,7 @@ final class SubworkerManager: ObservableObject {
             }
         case "pong":
             AppLog.d("Received pong")
+            clearPongState()
             if !wsConnected {
                 wsConnected = true
                 wsError = nil
@@ -355,6 +359,7 @@ final class SubworkerManager: ObservableObject {
             wsError = nil
             wsReconnectDelay = 1.0
             stopHTTPPolling()
+            setSlowPolling()
         }
     }
 
@@ -396,6 +401,7 @@ final class SubworkerManager: ObservableObject {
 
     private func handleDisconnect() {
         AppLog.d("WS disconnected")
+        clearPongState()
         wsConnected = false
         statusError = "WebSocket disconnected"
         if subworkers.isEmpty {
@@ -422,14 +428,43 @@ final class SubworkerManager: ObservableObject {
         pingTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, let task = self.wsTask else { return }
+                if self.awaitingPong {
+                    AppLog.d("Previous ping never answered — treating WS as dead")
+                    self.handleDisconnect()
+                    return
+                }
                 let ping = URLSessionWebSocketTask.Message.string("{\"type\":\"ping\"}")
-                task.send(ping) { error in
-                    if let error {
-                        AppLog.d("Ping error: \(error.localizedDescription)")
+                task.send(ping) { [weak self] error in
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        if let error {
+                            AppLog.d("Ping error: \(error.localizedDescription)")
+                            self.handleDisconnect()
+                        } else {
+                            self.awaitingPong = true
+                            self.startPongWatchdog()
+                        }
                     }
                 }
             }
         }
+    }
+
+    private func startPongWatchdog() {
+        pongWatchdog?.invalidate()
+        pongWatchdog = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.awaitingPong else { return }
+                AppLog.d("No pong within 10s — reconnecting WS")
+                self.handleDisconnect()
+            }
+        }
+    }
+
+    private func clearPongState() {
+        awaitingPong = false
+        pongWatchdog?.invalidate()
+        pongWatchdog = nil
     }
 
     // MARK: - HTTP Polling
