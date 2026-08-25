@@ -30,7 +30,7 @@ cp assets/banners/icon_running_topbar.png assets/banners/icon_not_running_server
 # which the linker's ad-hoc signature on the raw binary requires. Without it a
 # downloaded (quarantined) app fails Gatekeeper as "damaged" (issue #4).
 echo "Signing bundle (ad-hoc)..."
-codesign --force --deep --sign - "$APP_BUNDLE"
+codesign --force --deep --sign "EliaTopBar Developer" "$APP_BUNDLE" 2>/dev/null || codesign --force --deep --sign - "$APP_BUNDLE"
 
 # Hard gate: a bundle that does not validate must not reach a DMG.
 echo "Verifying signature..."
