@@ -158,17 +158,31 @@ struct TopbarSettingsView: View {
             captureDenied = true
             return
         }
-        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-        guard let entry = list.first(where: { ($0[kCGWindowLayer as String] as? Int) == 24 }),
-              let windowID = entry[kCGWindowNumber as String] as? CGWindowID,
-              let cg = CGWindowListCreateImage(.null, .optionIncludingWindow, windowID, [.bestResolution])
-        else {
-            captureDenied = true
-            return
+        DispatchQueue.global(qos: .userInitiated).async {
+            let screenW = Int(NSScreen.main?.frame.width ?? 1600)
+            let cropH = Int(self.barHeight * 2)
+            let tmp = URL(fileURLWithPath: "/tmp/elia_menubar.png")
+            try? FileManager.default.removeItem(at: tmp)
+
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            task.arguments = ["-x", "-R0,0,\(screenW),\(cropH)", tmp.path]
+            do {
+                try task.run()
+                task.waitUntilExit()
+            } catch {
+                DispatchQueue.main.async { self.captureDenied = true }
+                return
+            }
+            DispatchQueue.main.async {
+                guard task.terminationStatus == 0, let img = NSImage(contentsOf: tmp) else {
+                    self.captureDenied = true
+                    return
+                }
+                self.capturedBar = img
+                try? FileManager.default.removeItem(at: tmp)
+            }
         }
-        let cgImage = cg
-        let scale = CGFloat(cgImage.width) / max(CGFloat(cgImage.height), 1)
-        capturedBar = NSImage(cgImage: cgImage, size: NSSize(width: scale * barHeight, height: barHeight))
     }
 }
 
