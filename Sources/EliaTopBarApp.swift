@@ -733,6 +733,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             badge.color.setFill()
             NSBezierPath(ovalIn: dotRect).fill()
 
+            NSGraphicsContext.saveGraphicsState()
             let photoRect = dotRect.insetBy(dx: 1, dy: 1)
             NSBezierPath(ovalIn: photoRect).addClip()
             if let photo = badge.photo {
@@ -750,6 +751,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let tsz = str.size()
                 str.draw(at: NSPoint(x: dotRect.midX - tsz.width / 2, y: dotRect.midY - tsz.height / 2))
             }
+            NSGraphicsContext.restoreGraphicsState()
         }
         base.draw(at: NSPoint(x: fleetWidth, y: (barHeight - base.size.height) / 2),
                   from: .zero, operation: .sourceOver, fraction: 1.0)
