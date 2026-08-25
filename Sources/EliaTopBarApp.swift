@@ -35,8 +35,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var subworkerManager: SubworkerManager!
     private var cancellables = Set<AnyCancellable>()
     private var logPopover: NSPopover?
-    private var fleetStatusItem: NSStatusItem?
-    private var fleetRunningNames: [String] = []
+    private var mainMenu: NSMenu?
+    /// Hit-test geometry for the merged icon: [banner][photo₁][photo₂]…
+    private var iconBannerWidth: CGFloat = 0
+    private var iconCellWidth: CGFloat = 0
     private var subworkerLogPopover: NSPopover?
     private var subworkerLogPopoverName: String?
     private var tunnelProgressController: TunnelProgressPanelController?
@@ -86,6 +88,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let button = statusItem.button {
+            button.target = self
+            button.action = #selector(mainItemClicked(_:))
+            button.sendAction(on: [.leftMouseUp])
+        }
         updateStatusIcon()
     }
 
@@ -116,6 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let swRunning = subworkerManager.runningCount
 
         let barHeight = max(NSStatusBar.system.thickness, 20)
+        let runningNames = subworkerManager.subworkers.filter(\.running).map(\.name)
 
         if swDisconnected || swHasError {
             let symbolName = swDisconnected ? "circle.slash" : "exclamationmark.circle"
@@ -123,6 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let baseImage = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
                 .withSymbolConfiguration(config) else { return }
             button.image = tintedSymbol(baseImage, color: .systemRed)
+            iconBannerWidth = button.image?.size.width ?? 0
             return
         }
 
@@ -130,11 +139,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if subworkerManager.serverHealth?.healthStatus == "healthy",
            let banner = Self.runningBannerIcon?.copy() as? NSImage {
             banner.size = NSSize(width: barHeight * 0.92, height: barHeight * 0.92)
+            var base: NSImage
             if swRunning > 0 {
-                button.image = badgeImage(base: banner, count: swRunning, barHeight: barHeight)
+                base = badgeImage(base: banner, count: swRunning, barHeight: barHeight)
             } else {
-                button.image = banner
+                base = banner
             }
+            if !runningNames.isEmpty {
+                base = appendFleetPhotos(to: base, names: runningNames, barHeight: barHeight)
+            }
+            button.image = base
             return
         }
 
@@ -142,6 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if hasRunning, let xBanner = Self.serverDownBannerIcon?.copy() as? NSImage {
             xBanner.size = NSSize(width: barHeight * 0.92, height: barHeight * 0.92)
             button.image = xBanner
+            iconBannerWidth = xBanner.size.width
             return
         }
 
@@ -172,10 +187,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let tinted = tintedSymbol(baseImage, color: tintColor)
 
         if let count = badgeCount {
-            button.image = badgeImage(base: tinted, count: count, barHeight: barHeight)
+            var composed = badgeImage(base: tinted, count: count, barHeight: barHeight)
+            if !runningNames.isEmpty {
+                composed = appendFleetPhotos(to: composed, names: runningNames, barHeight: barHeight)
+            }
+            button.image = composed
         } else {
             tinted.isTemplate = (tintColor == .labelColor)
             button.image = tinted
+            iconBannerWidth = tinted.size.width
         }
     }
 
@@ -273,7 +293,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         quitItem.target = self
         menu.addItem(quitItem)
 
-        statusItem.menu = menu
+        mainMenu = menu
     }
 
     // MARK: - Subworker Server Section
@@ -685,103 +705,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func reconcileSubworkerStatusItems() {
-        let running = subworkerManager.subworkers.filter(\.running)
-        let names = running.map(\.name)
-
-        guard !names.isEmpty else {
-            removeFleetStatusItem()
-            return
-        }
-
-        if let shown = subworkerLogPopoverName, !names.contains(shown) {
-            subworkerLogPopover?.performClose(nil)
-            subworkerLogPopover = nil
-            subworkerLogPopoverName = nil
-        }
-
-        fleetRunningNames = names
-        if fleetStatusItem == nil {
-            let item = NSStatusBar.system.statusItem(withLength: 1)
-            item.button?.target = self
-            item.button?.action = #selector(fleetItemClicked(_:))
-            item.button?.sendAction(on: [.leftMouseUp])
-            fleetStatusItem = item
-        }
-        updateFleetStatusIcon()
-    }
-
-    private func removeFleetStatusItem() {
-        if let item = fleetStatusItem {
-            NSStatusBar.system.removeStatusItem(item)
-        }
-        fleetStatusItem = nil
-        fleetRunningNames = []
-    }
-
-    private func updateFleetStatusIcon() {
-        guard let item = fleetStatusItem else { return }
-        let barHeight = max(NSStatusBar.system.thickness, 20)
+    /// Draw running-agent photos flush against the right edge of the main icon.
+    private func appendFleetPhotos(to base: NSImage, names: [String], barHeight: CGFloat) -> NSImage {
         let cell = barHeight - 2
-        item.length = CGFloat(fleetRunningNames.count) * cell + 8
-        item.button?.image = fleetCompositeImage(cellWidth: cell, barHeight: barHeight)
-        item.button?.toolTip = "Running: " + fleetRunningNames.joined(separator: ", ")
-    }
-
-    /// All running agents side by side in ONE image — zero gap between photos.
-    private func fleetCompositeImage(cellWidth: CGFloat, barHeight: CGFloat) -> NSImage {
-        let pad: CGFloat = 4
-        let total = CGFloat(fleetRunningNames.count) * cellWidth + pad * 2
-        let badges: [(photo: NSImage?, monogram: String, color: NSColor)] = fleetRunningNames.map { name in
+        let gap: CGFloat = 1
+        let badges: [(photo: NSImage?, monogram: String, color: NSColor)] = names.map { name in
             let sw = subworkerManager.subworkers.first(where: { $0.name == name })
             let color = sw.map { subworkerColor(for: $0) } ?? .systemGreen
             return (ProfilePhotos.shared.circularPhoto(for: name, size: 24),
                     monogram(for: name),
                     color)
         }
-        return NSImage(size: NSSize(width: total, height: barHeight), flipped: false) { _ in
-            for (i, badge) in badges.enumerated() {
-                let rect = NSRect(x: pad + CGFloat(i) * cellWidth, y: 0, width: cellWidth, height: barHeight)
-                let diameter = rect.height * 0.98
-                let dotRect = NSRect(x: rect.midX - diameter / 2,
-                                     y: (rect.height - diameter) / 2,
-                                     width: diameter,
-                                     height: diameter)
-                badge.color.setFill()
-                NSBezierPath(ovalIn: dotRect).fill()
+        iconCellWidth = cell
+        iconBannerWidth = base.size.width
 
-                let photoRect = dotRect.insetBy(dx: 1, dy: 1)
-                NSBezierPath(ovalIn: photoRect).addClip()
-                if let photo = badge.photo {
-                    let scale = max(photoRect.width / photo.size.width, photoRect.height / photo.size.height)
-                    let drawRect = NSRect(
-                        x: photoRect.midX - photo.size.width * scale / 2,
-                        y: photoRect.midY - photo.size.height * scale / 2,
-                        width: photo.size.width * scale,
-                        height: photo.size.height * scale
-                    )
-                    photo.draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 1.0)
-                } else {
-                    let font = NSFont.systemFont(ofSize: diameter * 0.4, weight: .bold)
-                    let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
-                    let str = NSAttributedString(string: badge.monogram, attributes: attrs)
-                    let tsz = str.size()
-                    str.draw(at: NSPoint(x: dotRect.midX - tsz.width / 2, y: dotRect.midY - tsz.height / 2))
-                }
-                NSGraphicsContext.current?.restoreGraphicsState()
+        let total = base.size.width + gap + CGFloat(names.count) * cell
+        let composed = NSImage(size: NSSize(width: total, height: max(base.size.height, barHeight)))
+        composed.lockFocus()
+        base.draw(at: NSPoint(x: 0, y: (barHeight - base.size.height) / 2),
+                  from: .zero, operation: .sourceOver, fraction: 1.0)
+        for (i, badge) in badges.enumerated() {
+            let rect = NSRect(x: base.size.width + gap + CGFloat(i) * cell, y: 0, width: cell, height: barHeight)
+            let diameter = rect.height * 0.98
+            let dotRect = NSRect(x: rect.midX - diameter / 2,
+                                 y: (rect.height - diameter) / 2,
+                                 width: diameter,
+                                 height: diameter)
+            badge.color.setFill()
+            NSBezierPath(ovalIn: dotRect).fill()
+
+            let photoRect = dotRect.insetBy(dx: 1, dy: 1)
+            NSBezierPath(ovalIn: photoRect).addClip()
+            if let photo = badge.photo {
+                let scale = max(photoRect.width / photo.size.width, photoRect.height / photo.size.height)
+                photo.draw(in: NSRect(
+                    x: photoRect.midX - photo.size.width * scale / 2,
+                    y: photoRect.midY - photo.size.height * scale / 2,
+                    width: photo.size.width * scale,
+                    height: photo.size.height * scale
+                ), from: .zero, operation: .sourceOver, fraction: 1.0)
+            } else {
+                let font = NSFont.systemFont(ofSize: diameter * 0.4, weight: .bold)
+                let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
+                let str = NSAttributedString(string: badge.monogram, attributes: attrs)
+                let tsz = str.size()
+                str.draw(at: NSPoint(x: dotRect.midX - tsz.width / 2, y: dotRect.midY - tsz.height / 2))
             }
-            return true
         }
+        composed.unlockFocus()
+        return composed
     }
 
-    /// Click routes to the agent whose photo sits under the cursor.
-    @objc private func fleetItemClicked(_ sender: NSStatusBarButton) {
-        guard !fleetRunningNames.isEmpty else { return }
+    /// Click zones: banner → main menu; agent photo → that agent's live log.
+    @objc private func mainItemClicked(_ sender: NSStatusBarButton) {
         let mouse = NSApp.currentEvent?.locationInWindow ?? sender.bounds.origin
         let point = sender.convert(mouse, from: nil)
-        let cell = sender.bounds.width / CGFloat(max(fleetRunningNames.count, 1))
-        let idx = min(max(Int(point.x / cell), 0), fleetRunningNames.count - 1)
-        let name = fleetRunningNames[idx]
+
+        if point.x < iconBannerWidth || iconCellWidth == 0 {
+            if let menu = mainMenu {
+                menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: sender)
+            }
+            return
+        }
+
+        let count = subworkerManager.subworkers.filter(\.running).count
+        guard count > 0 else { return }
+        let names = subworkerManager.subworkers.filter(\.running).map(\.name)
+        let idx = min(max(Int((point.x - iconBannerWidth) / iconCellWidth), 0), count - 1)
+        let name = names[idx]
 
         if let popover = subworkerLogPopover,
            subworkerLogPopoverName == name,
@@ -792,6 +783,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         showSubworkerLogPopover(for: name, button: sender)
+    }
+
+    private func reconcileSubworkerStatusItems() {
+        let names = subworkerManager.subworkers.filter(\.running).map(\.name)
+
+        if let shown = subworkerLogPopoverName, !names.contains(shown) {
+            subworkerLogPopover?.performClose(nil)
+            subworkerLogPopover = nil
+            subworkerLogPopoverName = nil
+        }
+        updateStatusIcon()
     }
 
     private func subworkerIconWithBorder(photo: NSImage, color: NSColor) -> NSImage {
