@@ -25,6 +25,8 @@ struct SubworkerInfo: Identifiable, Equatable {
     /// Interval-schedule hours (server sends them in /status `schedule.hours`).
     var scheduleHours: [Int]?
     var scheduleMinute: Int?
+    /// Weekday filter 0=Sun..6=Sat; nil = every day.
+    var scheduleDays: [Int]?
     var lastError: String?
     var lastCompleted: Date?
     var model: String?
@@ -305,6 +307,7 @@ final class SubworkerManager: ObservableObject {
                 scheduleType: dict["schedule_type"] as? String ?? old?.scheduleType,
                 scheduleHours: old?.scheduleHours,
                 scheduleMinute: old?.scheduleMinute,
+                scheduleDays: old?.scheduleDays,
                 lastError: running ? nil : old?.lastError,
                 lastCompleted: running ? nil : old?.lastCompleted,
                 model: dict["model"] as? String ?? old?.model,
@@ -331,6 +334,7 @@ final class SubworkerManager: ObservableObject {
         var parsed: [SubworkerInfo] = []
         for dict in swArray {
             guard let name = dict["name"] as? String else { continue }
+            let schedule = dict["schedule"] as? [String: Any]
             let info = SubworkerInfo(
                 id: name,
                 name: name,
@@ -338,6 +342,9 @@ final class SubworkerManager: ObservableObject {
                 running: dict["running"] as? Bool ?? false,
                 nextRun: dict["next_run"] as? String,
                 scheduleType: dict["schedule_type"] as? String,
+                scheduleHours: schedule?["hours"] as? [Int],
+                scheduleMinute: schedule?["minute"] as? Int,
+                scheduleDays: schedule?["days"] as? [Int],
                 model: dict["model"] as? String,
                 variant: dict["variant"] as? String
             )
@@ -550,7 +557,8 @@ final class SubworkerManager: ObservableObject {
                     nextRun: dict["next_run"] as? String,
                     scheduleType: dict["schedule_type"] as? String,
                     scheduleHours: schedule?["hours"] as? [Int],
-                    scheduleMinute: schedule?["minute"] as? Int
+                    scheduleMinute: schedule?["minute"] as? Int,
+                    scheduleDays: schedule?["days"] as? [Int]
                 )
                 parsed.append(info)
             }
@@ -695,7 +703,10 @@ final class SubworkerManager: ObservableObject {
                         variants: m["variants"] as? [String] ?? []
                     )
                 }
-                self.availableModels = options
+                let favoriteProvider = "opencode"
+                let favorites = options.filter { $0.provider == favoriteProvider }
+                let rest = options.filter { $0.provider != favoriteProvider }
+                self.availableModels = favorites + rest
                 AppLog.d("Loaded \(options.count) models")
             }
         }.resume()

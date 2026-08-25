@@ -30,6 +30,7 @@ final class SubworkerHoverHandler: NSObject {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
+    private var scheduleWindow: NSWindow?
     private var colimaManager: ColimaManager!
     private var subworkerManager: SubworkerManager!
     private var cancellables = Set<AnyCancellable>()
@@ -521,6 +522,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             submenu.addItem(schedItem)
         }
 
+        let editSchedItem = NSMenuItem(title: "", action: #selector(openScheduleEditor(_:)), keyEquivalent: "")
+        editSchedItem.attributedTitle = emojiAwareTitle("🗓 Edit Schedule…", color: .labelColor)
+        editSchedItem.target = self
+        editSchedItem.representedObject = sw.name
+        submenu.addItem(editSchedItem)
+
         if let error = sw.lastError {
             let errItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
             errItem.attributedTitle = emojiAwareTitle("❌ Error: \(error)", color: .secondaryLabelColor)
@@ -925,6 +932,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateStatusIcon()
         reconcileSubworkerStatusItems()
         setupMenu()
+    }
+
+    @objc private func openScheduleEditor(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        let rootView = SchedulePopoverView(
+            agentName: name,
+            manager: subworkerManager,
+            onClose: { [weak self] in self?.scheduleWindow?.close() }
+        )
+        if let window = scheduleWindow {
+            window.title = "Schedule — \(name)"
+            window.contentView = NSHostingView(rootView: rootView)
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 348, height: 520),
+                              styleMask: [.titled, .closable],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.title = "Schedule — \(name)"
+        window.contentView = NSHostingView(rootView: rootView)
+        window.center()
+        window.level = .floating
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        scheduleWindow = window
     }
 
     // MARK: - Server URL Preference
@@ -1421,7 +1455,8 @@ extension AppDelegate: NSMenuDelegate {
 
         for m in models {
             let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-            item.attributedTitle = emojiAwareTitle("\(m.name)  (\(m.provider))", color: .labelColor)
+            let star = m.provider == "opencode" ? "⭐ " : ""
+            item.attributedTitle = emojiAwareTitle("\(star)\(m.name)  (\(m.provider))", color: .labelColor)
             item.state = m.id == currentModel ? .on : .off
             item.target = self
             item.representedObject = ["name": agentName, "model": m.id]
