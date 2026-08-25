@@ -717,14 +717,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     color)
         }
         iconCellWidth = cell
-        let fleetWidth = CGFloat(names.count) * cell + gap
+        let padLeft: CGFloat = 3
+        let fleetWidth = padLeft + CGFloat(names.count) * cell + gap
         iconBannerWidth = fleetWidth
 
         let total = fleetWidth + base.size.width
         let composed = NSImage(size: NSSize(width: total, height: max(base.size.height, barHeight)))
         composed.lockFocus()
         for (i, badge) in badges.enumerated() {
-            let rect = NSRect(x: CGFloat(i) * cell, y: 0, width: cell, height: barHeight)
+            let rect = NSRect(x: padLeft + CGFloat(i) * cell, y: 0, width: cell, height: barHeight)
             let diameter = rect.height * 0.98
             let dotRect = NSRect(x: rect.midX - diameter / 2,
                                  y: (rect.height - diameter) / 2,
