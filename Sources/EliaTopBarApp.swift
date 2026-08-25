@@ -712,7 +712,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func addSubworkerStatusItem(for sw: SubworkerInfo) {
-        let item = NSStatusBar.system.statusItem(withLength: 24)
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         subworkerStatusItems[sw.name] = item
         AppLog.d("Adding status item for \(sw.name) — total items: \(subworkerStatusItems.count)")
 
@@ -768,8 +768,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func subworkerIconWithBorder(photo: NSImage, color: NSColor) -> NSImage {
         let barHeight = max(NSStatusBar.system.thickness, 20)
-        let size = NSSize(width: 22, height: barHeight)
-        let diameter = barHeight * 0.92
+        let size = NSSize(width: barHeight, height: barHeight)
+        let diameter = barHeight * 0.98
         return NSImage(size: size, flipped: false) { rect in
             let dotRect = NSRect(
                 x: (rect.width - diameter) / 2,
@@ -780,7 +780,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             color.setFill()
             NSBezierPath(ovalIn: dotRect).fill()
 
-            let photoInset: CGFloat = 2
+            let photoInset: CGFloat = 1
             let photoRect = dotRect.insetBy(dx: photoInset, dy: photoInset)
             let clipPath = NSBezierPath(ovalIn: photoRect)
             clipPath.addClip()
@@ -816,9 +816,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func subworkerIcon(monogram: String, color: NSColor) -> NSImage {
         let barHeight = max(NSStatusBar.system.thickness, 20)
-        let size = NSSize(width: 22, height: barHeight)
+        let size = NSSize(width: barHeight, height: barHeight)
         return NSImage(size: size, flipped: false) { rect in
-            let diameter = rect.height * 0.92
+            let diameter = rect.height * 0.98
             let dotRect = NSRect(
                 x: (rect.width - diameter) / 2,
                 y: (rect.height - diameter) / 2,
