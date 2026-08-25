@@ -109,7 +109,7 @@ struct TopbarSettingsView: View {
                 if let bar = capturedBar {
                     Image(nsImage: bar)
                         .resizable()
-                        .aspectRatio(contentMode: .fill)
+                        .scaledToFit()
                 } else {
                     Rectangle()
                         .fill(Color(nsColor: .windowBackgroundColor))
@@ -137,6 +137,7 @@ struct TopbarSettingsView: View {
                         )
                 }
             }
+            .frame(maxWidth: .infinity)
             .frame(height: barHeight + 8)
             .clipped()
 
@@ -167,13 +168,14 @@ struct TopbarSettingsView: View {
         }
         DispatchQueue.global(qos: .userInitiated).async {
             let screenW = Int(NSScreen.main?.frame.width ?? 1600)
+            let halfW = screenW / 2
             let cropH = Int(self.barHeight * 2)
             let tmp = URL(fileURLWithPath: "/tmp/elia_menubar.png")
             try? FileManager.default.removeItem(at: tmp)
 
             let task = Process()
             task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-            task.arguments = ["-x", "-R0,0,\(screenW),\(cropH)", tmp.path]
+            task.arguments = ["-x", "-R\(halfW),0,\(halfW),\(cropH)", tmp.path]
             do {
                 try task.run()
                 task.waitUntilExit()
