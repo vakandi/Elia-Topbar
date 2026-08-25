@@ -705,7 +705,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Draw running-agent photos flush against the right edge of the main icon.
+    /// Draw running-agent photos flush against the LEFT edge; banner sits right.
     private func appendFleetPhotos(to base: NSImage, names: [String], barHeight: CGFloat) -> NSImage {
         let cell = barHeight - 2
         let gap: CGFloat = 1
@@ -717,15 +717,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     color)
         }
         iconCellWidth = cell
-        iconBannerWidth = base.size.width
+        let fleetWidth = CGFloat(names.count) * cell + gap
+        iconBannerWidth = fleetWidth
 
-        let total = base.size.width + gap + CGFloat(names.count) * cell
+        let total = fleetWidth + base.size.width
         let composed = NSImage(size: NSSize(width: total, height: max(base.size.height, barHeight)))
         composed.lockFocus()
-        base.draw(at: NSPoint(x: 0, y: (barHeight - base.size.height) / 2),
-                  from: .zero, operation: .sourceOver, fraction: 1.0)
         for (i, badge) in badges.enumerated() {
-            let rect = NSRect(x: base.size.width + gap + CGFloat(i) * cell, y: 0, width: cell, height: barHeight)
+            let rect = NSRect(x: CGFloat(i) * cell, y: 0, width: cell, height: barHeight)
             let diameter = rect.height * 0.98
             let dotRect = NSRect(x: rect.midX - diameter / 2,
                                  y: (rect.height - diameter) / 2,
@@ -752,37 +751,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 str.draw(at: NSPoint(x: dotRect.midX - tsz.width / 2, y: dotRect.midY - tsz.height / 2))
             }
         }
+        base.draw(at: NSPoint(x: fleetWidth, y: (barHeight - base.size.height) / 2),
+                  from: .zero, operation: .sourceOver, fraction: 1.0)
         composed.unlockFocus()
         return composed
     }
 
-    /// Click zones: banner → main menu; agent photo → that agent's live log.
+    /// Click zones: agent photo (left) → that agent's live log; banner (right) → main menu.
     @objc private func mainItemClicked(_ sender: NSStatusBarButton) {
         let mouse = NSApp.currentEvent?.locationInWindow ?? sender.bounds.origin
         let point = sender.convert(mouse, from: nil)
 
-        if point.x < iconBannerWidth || iconCellWidth == 0 {
-            if let menu = mainMenu {
-                menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: sender)
+        if iconCellWidth > 0, point.x < iconBannerWidth {
+            let count = subworkerManager.subworkers.filter(\.running).count
+            guard count > 0 else { return }
+            let names = subworkerManager.subworkers.filter(\.running).map(\.name)
+            let idx = min(max(Int(point.x / iconCellWidth), 0), count - 1)
+            let name = names[idx]
+
+            if let popover = subworkerLogPopover,
+               subworkerLogPopoverName == name,
+               popover.isShown {
+                popover.performClose(nil)
+                subworkerLogPopover = nil
+                subworkerLogPopoverName = nil
+                return
             }
+            showSubworkerLogPopover(for: name, button: sender)
             return
         }
 
-        let count = subworkerManager.subworkers.filter(\.running).count
-        guard count > 0 else { return }
-        let names = subworkerManager.subworkers.filter(\.running).map(\.name)
-        let idx = min(max(Int((point.x - iconBannerWidth) / iconCellWidth), 0), count - 1)
-        let name = names[idx]
-
-        if let popover = subworkerLogPopover,
-           subworkerLogPopoverName == name,
-           popover.isShown {
-            popover.performClose(nil)
-            subworkerLogPopover = nil
-            subworkerLogPopoverName = nil
-            return
+        if let menu = mainMenu {
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: sender)
         }
-        showSubworkerLogPopover(for: name, button: sender)
     }
 
     private func reconcileSubworkerStatusItems() {
