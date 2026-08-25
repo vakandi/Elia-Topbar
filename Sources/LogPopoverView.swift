@@ -166,6 +166,7 @@ struct LogPopoverView: View {
         return Button(action: {
             selectedSessionId = session.id
             selectedSessionChanged = true
+            resetLiveBuffer(for: subworkerName)
             fetchMessages(sessionId: session.id)
         }) {
             VStack(alignment: .leading, spacing: 2) {
@@ -217,7 +218,7 @@ struct LogPopoverView: View {
                         }
 
                         // Live stream from WS run_log events (running agent).
-                        if !liveText.isEmpty {
+                        if !liveText(for: subworkerName, field: "text").isEmpty || !liveText(for: subworkerName, field: "reasoning").isEmpty {
                             liveStreamPanel
                         }
                     }
@@ -229,7 +230,7 @@ struct LogPopoverView: View {
                     proxy.scrollTo(last.id, anchor: .bottom)
                 }
             }
-            .onChange(of: liveText) { _ in
+            .onChange(of: liveBuffers) { _ in
                 proxy.scrollTo("live-stream", anchor: .bottom)
             }
             .onChange(of: selectedSessionChanged) { changed in
@@ -321,10 +322,16 @@ struct LogPopoverView: View {
                     .fill(Color.orange)
                     .frame(width: 6, height: 6)
             }
-            Text(liveText)
-                .font(.system(.caption2, design: .monospaced))
-                .foregroundColor(.primary.opacity(0.85))
-                .textSelection(.enabled)
+            let reasoning = liveText(for: subworkerName, field: "reasoning")
+            if !reasoning.isEmpty {
+                MarkdownView(text: reasoning, baseColor: .secondary)
+                    .font(.system(.caption2, design: .monospaced))
+            }
+            let text = liveText(for: subworkerName, field: "text")
+            if !text.isEmpty {
+                MarkdownView(text: text, baseColor: .primary)
+                    .textSelection(.enabled)
+            }
         }
         .padding(.vertical, 4)
         .id("live-stream")
@@ -610,9 +617,14 @@ struct LogPopoverView: View {
 
     // MARK: - Live log streaming (WS run_log events)
 
-    @State private var liveText = ""
+    /// Per-agent buffers — keyed by agent so concurrent runs never wipe each other.
+    @State private var liveBuffers: [String: [String: String]] = [:]
     @State private var liveAgent: String?
     @State private var runLogObserver: NSObjectProtocol?
+
+    private func liveText(for name: String, field: String) -> String {
+        liveBuffers[name]?[field] ?? ""
+    }
 
     private func observeRunLogs() {
         runLogObserver = NotificationCenter.default.addObserver(
@@ -622,15 +634,18 @@ struct LogPopoverView: View {
         ) { note in
             guard let name = note.userInfo?["name"] as? String,
                   let delta = note.userInfo?["text"] as? String else { return }
-            if liveAgent != name {
-                liveAgent = name
-                liveText = ""
+            let field = note.userInfo?["field"] as? String ?? "text"
+            if liveBuffers[name] == nil { liveBuffers[name] = [:] }
+            liveBuffers[name]?[field, default: ""] += delta
+            for (k, v) in liveBuffers[name] ?? [:] where liveBuffers[name]?[k]?.count ?? 0 > 12000 {
+                liveBuffers[name]?[k] = String(v.suffix(8000))
             }
-            if name == subworkerName {
-                liveText += delta
-                if liveText.count > 8000 { liveText = String(liveText.suffix(8000)) }
-            }
+            if name != liveAgent { liveAgent = name }
         }
+    }
+
+    private func resetLiveBuffer(for name: String) {
+        liveBuffers[name] = nil
     }
 
     private func stopObservingRunLogs() {
@@ -703,20 +718,33 @@ struct LogPopoverView: View {
             case "tool":
                 let toolName = part["tool"] as? String ?? "?"
                 let input: String? = {
-                    if let obj = part["input"] as? [String: Any],
-                       let data = try? JSONSerialization.data(withJSONObject: obj) {
+                    if let obj = part["input"] as? [String: Any] {
+                        guard JSONSerialization.isValidJSONObject(obj),
+                              let data = try? JSONSerialization.data(withJSONObject: obj) else {
+                            return String(describing: obj)
+                        }
                         return String(data: data, encoding: .utf8)
                     }
                     if let str = part["input"] as? String { return str }
+                    if let scalar = part["input"] as? NSNumber { return scalar.stringValue }
                     return nil
                 }()
                 let output: String? = {
                     if let str = part["output"] as? String { return str }
-                    if let obj = part["output"] {
-                        if let data = try? JSONSerialization.data(withJSONObject: obj),
-                           let str = String(data: data, encoding: .utf8) {
-                            return str
+                    if let num = part["output"] as? NSNumber { return num.stringValue }
+                    if let arr = part["output"] as? [Any] {
+                        guard JSONSerialization.isValidJSONObject(arr),
+                              let data = try? JSONSerialization.data(withJSONObject: arr) else {
+                            return String(describing: arr)
                         }
+                        return String(data: data, encoding: .utf8)
+                    }
+                    if let dict = part["output"] as? [String: Any] {
+                        guard JSONSerialization.isValidJSONObject(dict),
+                              let data = try? JSONSerialization.data(withJSONObject: dict) else {
+                            return String(describing: dict)
+                        }
+                        return String(data: data, encoding: .utf8)
                     }
                     return nil
                 }()

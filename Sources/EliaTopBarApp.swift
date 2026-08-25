@@ -707,6 +707,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func addSubworkerStatusItem(for sw: SubworkerInfo) {
         let item = NSStatusBar.system.statusItem(withLength: 24)
         subworkerStatusItems[sw.name] = item
+        AppLog.d("Adding status item for \(sw.name) — total items: \(subworkerStatusItems.count)")
 
         guard let button = item.button else { return }
         button.image = subworkerStatusIcon(for: sw)

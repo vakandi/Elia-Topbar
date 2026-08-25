@@ -4,12 +4,12 @@ import Combine
 // MARK: - Debug Logging
 
 enum AppLog {
-    static let debug = false
+    static let debug = true
 
     static func d(_ msg: String, file: String = #file, line: Int = #line) {
         guard debug else { return }
         let fn = (file as NSString).lastPathComponent
-        print("[DEBUG \(fn):\(line)] \(msg)")
+        FileHandle.standardError.write(Data("[DEBUG \(fn):\(line)] \(msg)\n".utf8))
     }
 }
 
@@ -247,7 +247,7 @@ final class SubworkerManager: ObservableObject {
                 NotificationCenter.default.post(
                     name: SubworkerManager.runLogNotification,
                     object: nil,
-                    userInfo: ["name": name, "text": delta]
+                    userInfo: ["name": name, "text": delta, "field": json["field"] as? String ?? "text"]
                 )
             }
         case "pong":
