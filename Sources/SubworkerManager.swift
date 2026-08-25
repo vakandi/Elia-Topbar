@@ -813,7 +813,8 @@ final class SubworkerManager: ObservableObject {
     /// Server-provided next run, or computed from the interval schedule
     /// (next slot among `scheduleHours` at `scheduleMinute`, rolling to tomorrow).
     func nextRunDate(for sw: SubworkerInfo, now: Date = Date()) -> Date? {
-        if let date = Self.parseNextRun(sw.nextRun) { return date }
+        // Server snapshots can lag behind a fired/running job — only trust future dates.
+        if let date = Self.parseNextRun(sw.nextRun), date > now { return date }
         guard sw.enabled,
               sw.scheduleType == "interval",
               let hours = sw.scheduleHours, !hours.isEmpty else { return nil }
