@@ -36,9 +36,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var logPopover: NSPopover?
     private var mainMenu: NSMenu?
-    /// Hit-test geometry for the merged icon: [banner][photo₁][photo₂]…
-    private var iconBannerWidth: CGFloat = 0
+    private var topbarSettingsWindow: NSWindow?
+    /// Hit-test geometry for the merged icon: photos zone + banner zone.
+    private var iconPhotosStartX: CGFloat = 0
     private var iconCellWidth: CGFloat = 0
+    private var iconPhotoCount: Int = 0
     private var subworkerLogPopover: NSPopover?
     private var subworkerLogPopoverName: String?
     private var tunnelProgressController: TunnelProgressPanelController?
@@ -131,7 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let baseImage = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
                 .withSymbolConfiguration(config) else { return }
             button.image = tintedSymbol(baseImage, color: .systemRed)
-            iconBannerWidth = button.image?.size.width ?? 0
+            iconPhotoCount = 0
             return
         }
 
@@ -156,7 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if hasRunning, let xBanner = Self.serverDownBannerIcon?.copy() as? NSImage {
             xBanner.size = NSSize(width: barHeight * 0.92, height: barHeight * 0.92)
             button.image = xBanner
-            iconBannerWidth = xBanner.size.width
+            iconPhotoCount = 0
             return
         }
 
@@ -195,7 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             tinted.isTemplate = (tintColor == .labelColor)
             button.image = tinted
-            iconBannerWidth = tinted.size.width
+            iconPhotoCount = 0
         }
     }
 
@@ -287,6 +289,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(launchItem)
 
         menu.addItem(NSMenuItem.separator())
+
+        // Topbar settings
+        let settingsItem = NSMenuItem(title: "⚙️ Topbar Settings…", action: #selector(openTopbarSettings(_:)), keyEquivalent: "")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
 
         // Quit
         let quitItem = NSMenuItem(title: "Quit EliaTopBar", action: #selector(quitApp), keyEquivalent: "q")
@@ -717,15 +724,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     color)
         }
         iconCellWidth = cell
-        let padLeft: CGFloat = 3
+        let side = UserDefaults.standard.string(forKey: "fleetPhotosSide") ?? "left"
+        let storedPad = UserDefaults.standard.double(forKey: "fleetLeftPad")
+        let padLeft: CGFloat = side == "left" ? CGFloat(storedPad == 0 ? 3 : storedPad) : 1
         let fleetWidth = padLeft + CGFloat(names.count) * cell + gap
-        iconBannerWidth = fleetWidth
+        if side == "right" {
+            iconPhotosStartX = base.size.width + gap
+        } else {
+            iconPhotosStartX = padLeft
+        }
+        iconPhotoCount = names.count
 
-        let total = fleetWidth + base.size.width
+        let total: CGFloat = side == "right"
+            ? iconPhotosStartX + CGFloat(names.count) * cell
+            : fleetWidth + base.size.width
         let composed = NSImage(size: NSSize(width: total, height: max(base.size.height, barHeight)))
         composed.lockFocus()
         for (i, badge) in badges.enumerated() {
-            let rect = NSRect(x: padLeft + CGFloat(i) * cell, y: 0, width: cell, height: barHeight)
+            let rect = NSRect(x: iconPhotosStartX + CGFloat(i) * cell, y: 0, width: cell, height: barHeight)
             let diameter = rect.height * 0.98
             let dotRect = NSRect(x: rect.midX - diameter / 2,
                                  y: (rect.height - diameter) / 2,
@@ -754,7 +770,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             NSGraphicsContext.restoreGraphicsState()
         }
-        base.draw(at: NSPoint(x: fleetWidth, y: (barHeight - base.size.height) / 2),
+        let baseX: CGFloat = side == "right" ? 0 : fleetWidth
+        base.draw(at: NSPoint(x: baseX, y: (barHeight - base.size.height) / 2),
                   from: .zero, operation: .sourceOver, fraction: 1.0)
         composed.unlockFocus()
         return composed
@@ -765,11 +782,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let mouse = NSApp.currentEvent?.locationInWindow ?? sender.bounds.origin
         let point = sender.convert(mouse, from: nil)
 
-        if iconCellWidth > 0, point.x < iconBannerWidth {
-            let count = subworkerManager.subworkers.filter(\.running).count
-            guard count > 0 else { return }
+        if iconPhotoCount > 0, point.x >= iconPhotosStartX,
+           point.x < iconPhotosStartX + CGFloat(iconPhotoCount) * iconCellWidth {
+            let idx = min(max(Int((point.x - iconPhotosStartX) / iconCellWidth), 0), iconPhotoCount - 1)
             let names = subworkerManager.subworkers.filter(\.running).map(\.name)
-            let idx = min(max(Int(point.x / iconCellWidth), 0), count - 1)
+            guard idx < names.count else { return }
             let name = names[idx]
 
             if let popover = subworkerLogPopover,
@@ -993,6 +1010,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         scheduleWindow = window
+    }
+
+    @objc private func openTopbarSettings(_ sender: NSMenuItem) {
+        if let w = topbarSettingsWindow { w.close() }
+        let contentView = NSHostingView(rootView: TopbarSettingsView(
+            currentIcon: statusItem.button?.image,
+            onRefresh: { [weak self] in self?.updateStatusIcon() }
+        ))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 420),
+                              styleMask: [.titled, .closable],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.title = "Topbar Settings"
+        window.contentView = contentView
+        window.center()
+        window.level = .floating
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        topbarSettingsWindow = window
+    }
+
+    private func startIconPulseObserver() {
+        NotificationCenter.default.addObserver(forName: .eliaPulseMainIcon, object: nil, queue: .main) { [weak self] _ in
+            guard let button = self?.statusItem.button else { return }
+            var delay = 0.0
+            for _ in 0..<4 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { button.alphaValue = 0.15 }
+                delay += 0.25
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { button.alphaValue = 1.0 }
+                delay += 0.25
+            }
+        }
     }
 
     // MARK: - Server URL Preference
