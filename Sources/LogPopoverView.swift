@@ -4,6 +4,8 @@ struct SessionLogEntry: Identifiable {
     let id: String
     let role: String
     let agent: String?
+    let model: String?
+    let variant: String?
     let timestamp: Date?
     let entries: [LogEntry]
 
@@ -52,7 +54,6 @@ struct LogPopoverView: View {
     @State private var messages: [SessionLogEntry] = []
     @State private var messagesLoading = false
     @State private var messagesError: String?
-    @State private var pollTimer: Timer?
 
     // Batch loading state
     @State private var allSessionIds: [String] = []
@@ -65,6 +66,7 @@ struct LogPopoverView: View {
     @State private var scrollTarget: UUID?
     @State private var selectedSessionChanged = false
     @State private var lastMessagesFingerprint = 0
+    private let maxMessages = 200
 
     var body: some View {
         VStack(spacing: 0) {
@@ -97,10 +99,10 @@ struct LogPopoverView: View {
         .frame(width: 760, height: 560)
         .onAppear {
             fetchSessions()
-            startPolling()
+            observeRunLogs()
         }
         .onDisappear {
-            stopPolling()
+            stopObservingRunLogs()
         }
     }
 
@@ -210,53 +212,13 @@ struct LogPopoverView: View {
                             .padding()
                     } else {
                         ForEach(messages) { msg in
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack {
-                                    Text(msg.role.uppercased())
-                                        .font(.system(.caption, design: .monospaced))
-                                        .foregroundColor(.white)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(msg.role == "assistant" ? Color.blue : Color.green)
-                                        .cornerRadius(4)
-                                    if let agent = msg.agent {
-                                        Text(agent)
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    if let ts = msg.timestamp {
-                                        Text(ts, style: .time)
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    Spacer()
-                                }
-
-                                ForEach(Array(msg.entries.enumerated()), id: \.offset) { _, entry in
-                                    switch entry {
-                                    case .text(let t):
-                                        MarkdownView(text: t, baseColor: .primary)
-                                            .fixedSize(horizontal: false, vertical: true)
-                                    case .reasoning(let r):
-                                        toolBanner(
-                                            icon: "brain.head.profile",
-                                            title: "Thinking",
-                                            color: .purple,
-                                            content: r
-                                        )
-                                    case .tool(let name, let input, let output):
-                                        toolBanner(
-                                            icon: toolIcon(name),
-                                            title: toolDisplayName(name),
-                                            color: toolColor(name),
-                                            content: formatToolContent(name: name, input: input, output: output)
-                                        )
-                                    }
-                                }
-                            }
-                            .padding(.vertical, 4)
-                            .id(msg.id)
+                            messageRow(msg)
                             Divider()
+                        }
+
+                        // Live stream from WS run_log events (running agent).
+                        if !liveText.isEmpty {
+                            liveStreamPanel
                         }
                     }
                 }
@@ -267,20 +229,106 @@ struct LogPopoverView: View {
                     proxy.scrollTo(last.id, anchor: .bottom)
                 }
             }
+            .onChange(of: liveText) { _ in
+                proxy.scrollTo("live-stream", anchor: .bottom)
+            }
             .onChange(of: selectedSessionChanged) { changed in
                 guard changed else { return }
                 selectedSessionChanged = false
-                // LazyVStack materializes rows progressively — repin to the
-                // bottom until layout settles so long sessions land at the end.
-                for delay in [0.05, 0.2, 0.45, 0.8, 1.2] {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                        if let last = messages.last {
-                            proxy.scrollTo(last.id, anchor: .bottom)
-                        }
+                // Single delayed scroll — enough for LazyVStack to materialize
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    if let last = messages.last {
+                        proxy.scrollTo(last.id, anchor: .bottom)
                     }
                 }
             }
         }
+    }
+
+    private func messageRow(_ msg: SessionLogEntry) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text((msg.agent ?? msg.role).uppercased())
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(msg.role == "assistant" ? Color.blue : Color.green)
+                    .cornerRadius(4)
+                if let model = msg.model {
+                    Text(msg.variant.flatMap { $0.isEmpty ? nil : "\(model) (\($0))" } ?? model)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                if let ts = msg.timestamp {
+                    Text(ts, style: .time)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+
+            ForEach(Array(msg.entries.enumerated()), id: \.offset) { _, entry in
+                messageEntry(entry)
+            }
+        }
+        .padding(.vertical, 4)
+        .id(msg.id)
+    }
+
+    @ViewBuilder
+    private func messageEntry(_ entry: SessionLogEntry.LogEntry) -> some View {
+        switch entry {
+        case .text(let t):
+            MarkdownView(text: t, baseColor: .primary)
+                .fixedSize(horizontal: false, vertical: true)
+        case .reasoning(let r):
+            // Grey plain text with a thin grey bar —
+            // visually distinct from the reply without a banner.
+            HStack(alignment: .top, spacing: 6) {
+                Rectangle()
+                    .fill(Color.gray.opacity(0.35))
+                    .frame(width: 2)
+                MarkdownView(text: r, baseColor: .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        case .tool(let name, let input, let output):
+            toolBanner(
+                icon: toolIcon(name),
+                title: toolDisplayName(name),
+                color: toolColor(name),
+                content: formatToolContent(name: name, input: input, output: output)
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var liveStreamPanel: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text("LIVE")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.orange)
+                    .cornerRadius(4)
+                Text(liveAgent ?? subworkerName)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Circle()
+                    .fill(Color.orange)
+                    .frame(width: 6, height: 6)
+            }
+            Text(liveText)
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundColor(.primary.opacity(0.85))
+                .textSelection(.enabled)
+        }
+        .padding(.vertical, 4)
+        .id("live-stream")
+        Divider()
     }
 
     // MARK: - Tool Banner Rendering
@@ -322,14 +370,16 @@ struct LogPopoverView: View {
 
     private func toolIcon(_ name: String) -> String {
         switch name.lowercased() {
-        case "bash", "shell": return "terminal"
+        case "bash", "shell", "interactive_bash": return "terminal"
         case "read", "view": return "doc.text"
         case "write", "edit": return "pencil.and.document"
         case "grep", "search": return "magnifyingglass"
         case "glob", "find": return "folder"
-        case "task", "agent": return "person.2"
+        case "task", "agent", "call_omo_agent": return "person.2"
+        case "skill": return "wand.and.stars"
+        case "background_output", "background_cancel": return "arrow.triangle.2.circlepath"
         case "codegraph_explore": return "point.3.connected.trianglepath.dotted"
-        case "websearch", "web_search_exa": return "globe"
+        case "websearch", "web_search_exa", "webfetch": return "globe"
         default: return "wrench.and.screwdriver"
         }
     }
@@ -337,12 +387,17 @@ struct LogPopoverView: View {
     private func toolDisplayName(_ name: String) -> String {
         switch name.lowercased() {
         case "bash": return "Terminal"
+        case "interactive_bash": return "Shell"
         case "read": return "Read File"
         case "write": return "Write File"
         case "edit": return "Edit File"
         case "grep": return "Search"
         case "glob": return "Find Files"
         case "task": return "Subtask"
+        case "call_omo_agent": return "Agent Call"
+        case "skill": return "Skill"
+        case "background_output": return "BG Output"
+        case "background_cancel": return "BG Cancel"
         case "codegraph_explore": return "CodeGraph"
         case "websearch", "web_search_exa": return "Web Search"
         case "webfetch": return "Fetch URL"
@@ -352,12 +407,14 @@ struct LogPopoverView: View {
 
     private func toolColor(_ name: String) -> Color {
         switch name.lowercased() {
-        case "bash", "shell": return .orange
+        case "bash", "shell", "interactive_bash": return .orange
         case "read", "view": return .cyan
         case "write": return .green
         case "edit": return .yellow
         case "grep", "search", "glob", "find": return .purple
-        case "task", "agent": return .pink
+        case "task", "agent", "call_omo_agent": return .pink
+        case "skill": return .indigo
+        case "background_output", "background_cancel": return .teal
         case "codegraph_explore": return .mint
         case "websearch", "web_search_exa", "webfetch": return .blue
         default: return .blue
@@ -366,39 +423,73 @@ struct LogPopoverView: View {
 
     private func formatToolContent(name: String, input: String?, output: String?) -> String {
         var parts: [String] = []
+
         if let input, !input.isEmpty {
-            // For bash tools, show the command
-            if name.lowercased() == "bash" || name.lowercased() == "shell" {
-                if let data = input.data(using: .utf8),
-                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let cmd = obj["command"] as? String {
-                    parts.append("$ \(cmd)")
-                } else {
-                    parts.append(input.prefix(500).description)
-                }
-            } else {
-                // Parse JSON input for other tools
-                if let data = input.data(using: .utf8),
-                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    let keys = ["description", "query", "pattern", "filePath", "content", "command", "url", "prompt"]
-                    for key in keys {
-                        if let val = obj[key] as? String, !val.isEmpty {
-                            parts.append("\(key): \(val.prefix(300))")
-                        }
-                    }
-                    if parts.isEmpty {
-                        parts.append(input.prefix(500).description)
-                    }
-                } else {
-                    parts.append(input.prefix(500).description)
-                }
+            let formatted = formatToolInput(name: name, raw: input)
+            if !formatted.isEmpty { parts.append(formatted) }
+        }
+
+        if let output, !output.isEmpty {
+            let display = output.count > 600 ? String(output.prefix(600)) + "…" : output
+            parts.append(display)
+        }
+
+        return parts.joined(separator: "\n")
+    }
+
+    private func formatToolInput(name: String, raw: String) -> String {
+        guard let data = raw.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return String(raw.prefix(500))
+        }
+
+        switch name.lowercased() {
+        case "bash", "shell", "interactive_bash":
+            if let cmd = obj["command"] as? String { return "$ \(cmd)" }
+
+        case "read":
+            if let path = obj["filePath"] as? String { return path }
+
+        case "write":
+            if let path = obj["filePath"] as? String {
+                let preview = (obj["content"] as? String ?? "").prefix(120)
+                return "\(path)\n\(preview)"
+            }
+
+        case "edit":
+            if let path = obj["filePath"] as? String { return path }
+
+        case "grep":
+            if let pattern = obj["pattern"] as? String { return pattern }
+
+        case "glob":
+            if let pattern = obj["pattern"] as? String { return pattern }
+
+        case "task":
+            if let prompt = obj["prompt"] as? String { return String(prompt.prefix(300)) }
+            if let desc = obj["description"] as? String { return desc }
+
+        case "websearch", "web_search_exa":
+            if let query = obj["query"] as? String { return query }
+
+        case "webfetch":
+            if let url = obj["url"] as? String { return url }
+
+        case "codegraph_explore":
+            if let query = obj["query"] as? String { return query }
+
+        default:
+            break
+        }
+
+        let fallbackKeys = ["command", "query", "pattern", "filePath", "content", "url", "prompt", "description", "script", "selector"]
+        for key in fallbackKeys {
+            if let val = obj[key] as? String, !val.isEmpty {
+                return "\(key): \(val.prefix(300))"
             }
         }
-        if let output, !output.isEmpty {
-            let trimmed = output.count > 600 ? String(output.prefix(600)) + "…" : output
-            parts.append(trimmed)
-        }
-        return parts.joined(separator: "\n")
+
+        return String(raw.prefix(500))
     }
 
     // MARK: - Session Helpers
@@ -425,7 +516,7 @@ struct LogPopoverView: View {
         sessionsLoading = true
         sessionsError = nil
 
-        URLSession.shared.dataTask(with: url) { data, _, _ in
+        URLSession.shared.dataTask(with: EliaAuth.authorize(url)) { data, _, _ in
             DispatchQueue.main.async {
                 guard let data = data,
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -485,7 +576,7 @@ struct LogPopoverView: View {
             return
         }
 
-        URLSession.shared.dataTask(with: url) { data, _, _ in
+        URLSession.shared.dataTask(with: EliaAuth.authorize(url)) { data, _, _ in
             DispatchQueue.main.async {
                 defer { isLoadingMore = false }
                 guard let data = data,
@@ -517,20 +608,36 @@ struct LogPopoverView: View {
         }.resume()
     }
 
-    // MARK: - Polling
+    // MARK: - Live log streaming (WS run_log events)
 
-    private func startPolling() {
-        stopPolling()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
-            if let sid = selectedSessionId {
-                fetchMessages(sessionId: sid, showSpinner: false)
+    @State private var liveText = ""
+    @State private var liveAgent: String?
+    @State private var runLogObserver: NSObjectProtocol?
+
+    private func observeRunLogs() {
+        runLogObserver = NotificationCenter.default.addObserver(
+            forName: SubworkerManager.runLogNotification,
+            object: nil,
+            queue: .main
+        ) { note in
+            guard let name = note.userInfo?["name"] as? String,
+                  let delta = note.userInfo?["text"] as? String else { return }
+            if liveAgent != name {
+                liveAgent = name
+                liveText = ""
+            }
+            if name == subworkerName {
+                liveText += delta
+                if liveText.count > 8000 { liveText = String(liveText.suffix(8000)) }
             }
         }
     }
 
-    private func stopPolling() {
-        pollTimer?.invalidate()
-        pollTimer = nil
+    private func stopObservingRunLogs() {
+        if let obs = runLogObserver {
+            NotificationCenter.default.removeObserver(obs)
+            runLogObserver = nil
+        }
     }
 
     // MARK: - Fetch Messages
@@ -539,7 +646,7 @@ struct LogPopoverView: View {
         guard let url = URL(string: "\(baseURL)/sessions/\(subworkerName)?session_id=\(sessionId)&limit=50") else { return }
         if showSpinner { messagesLoading = true }
 
-        URLSession.shared.dataTask(with: url) { data, _, _ in
+        URLSession.shared.dataTask(with: EliaAuth.authorize(url)) { data, _, _ in
             DispatchQueue.main.async {
                 defer { messagesLoading = false }
                 guard let data = data,
@@ -556,9 +663,10 @@ struct LogPopoverView: View {
                 }
                 lastMessagesFingerprint = fingerprint
 
-                messages = rawMessages.enumerated().compactMap { idx, raw in
+                let allParsed = rawMessages.enumerated().compactMap { idx, raw in
                     parseMessage(raw, id: "\(sessionId)-\(idx)")
                 }
+                messages = allParsed.count > maxMessages ? Array(allParsed.suffix(maxMessages)) : allParsed
                 messagesError = nil
 
                 selectedSessionChanged = true
@@ -599,9 +707,19 @@ struct LogPopoverView: View {
                        let data = try? JSONSerialization.data(withJSONObject: obj) {
                         return String(data: data, encoding: .utf8)
                     }
+                    if let str = part["input"] as? String { return str }
                     return nil
                 }()
-                let output = part["output"] as? String
+                let output: String? = {
+                    if let str = part["output"] as? String { return str }
+                    if let obj = part["output"] {
+                        if let data = try? JSONSerialization.data(withJSONObject: obj),
+                           let str = String(data: data, encoding: .utf8) {
+                            return str
+                        }
+                    }
+                    return nil
+                }()
                 return .tool(name: toolName, input: input, output: output)
             default:
                 return nil
@@ -609,7 +727,9 @@ struct LogPopoverView: View {
         }
 
         guard !entries.isEmpty else { return nil }
-        return SessionLogEntry(id: id, role: role, agent: agent, timestamp: timestamp, entries: entries)
+        let model = info["model"] as? String
+        let variant = info["variant"] as? String
+        return SessionLogEntry(id: id, role: role, agent: agent, model: model, variant: variant, timestamp: timestamp, entries: entries)
     }
 }
 

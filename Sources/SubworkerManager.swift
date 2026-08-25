@@ -22,6 +22,9 @@ struct SubworkerInfo: Identifiable, Equatable {
     var running: Bool
     var nextRun: String?
     var scheduleType: String?
+    /// Interval-schedule hours (server sends them in /status `schedule.hours`).
+    var scheduleHours: [Int]?
+    var scheduleMinute: Int?
     var lastError: String?
     var lastCompleted: Date?
     var model: String?
@@ -52,6 +55,26 @@ struct ModelOption: Identifiable {
     let name: String
     let provider: String
     let variants: [String] // reasoning effort levels (low/medium/high/max…)
+}
+
+enum EliaAuth {
+    static let defaultToken = "70c0bb6a44c6cb1f45f07ee25ddb9038c042b82ddb1f7b15d9e5417b1b3bd039"
+
+    static var token: String {
+        let stored = UserDefaults.standard.string(forKey: "eliaAuthToken") ?? ""
+        return stored.isEmpty ? defaultToken : stored
+    }
+
+    static func authorize(_ request: URLRequest) -> URLRequest {
+        var request = request
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(token, forHTTPHeaderField: "X-Elia-Token")
+        return request
+    }
+
+    static func authorize(_ url: URL) -> URLRequest {
+        authorize(URLRequest(url: url))
+    }
 }
 
 // MARK: - SubworkerManager
@@ -145,7 +168,10 @@ final class SubworkerManager: ObservableObject {
         }
 
         AppLog.d("Connecting WS to \(wsURL)")
-        let task = session.webSocketTask(with: url)
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        let queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "token", value: EliaAuth.token)]
+        components.queryItems = queryItems
+        let task = session.webSocketTask(with: components.url!)
         wsTask = task
         task.resume()
 
@@ -202,12 +228,25 @@ final class SubworkerManager: ObservableObject {
         switch event {
         case "initial_status":
             handleInitialStatus(json)
+            applyServerHealth(from: json)
+        case "status_update":
+            handleStatusUpdate(json)
+            applyServerHealth(from: json)
         case "subworker_started":
             handleSubworkerStarted(json)
         case "subworker_completed":
             handleSubworkerCompleted(json)
         case "subworker_error":
             handleSubworkerError(json)
+        case "run_log":
+            if let name = json["name"] as? String,
+               let delta = json["text"] as? String {
+                NotificationCenter.default.post(
+                    name: SubworkerManager.runLogNotification,
+                    object: nil,
+                    userInfo: ["name": name, "text": delta]
+                )
+            }
         case "pong":
             AppLog.d("Received pong")
             if !wsConnected {
@@ -224,6 +263,56 @@ final class SubworkerManager: ObservableObject {
             }
             AppLog.d("Unknown WS event: \(event)")
         }
+    }
+
+    static let runLogNotification = Notification.Name("SubworkerRunLog")
+
+    /// Single source of truth for server state — WS events carry it so the
+    /// icon and the menu can never disagree.
+    private func applyServerHealth(from json: [String: Any]) {
+        guard let status = json["opencode_health"] as? String else { return }
+        let mapped = ServerHealth(
+            state: status == "healthy" ? "running" : "stopped",
+            healthStatus: status,
+            pid: nil,
+            restartCount: 0
+        )
+        if mapped != serverHealth {
+            serverHealth = mapped
+        }
+    }
+
+    /// Full snapshot pushed by the server on every state change — replaces HTTP polling.
+    private func handleStatusUpdate(_ json: [String: Any]) {
+        guard let swArray = json["subworkers"] as? [[String: Any]] else { return }
+
+        let previous = subworkers
+        var parsed: [SubworkerInfo] = []
+        for dict in swArray {
+            guard let name = dict["name"] as? String else { continue }
+            let old = previous.first(where: { $0.name == name })
+            let running = dict["running"] as? Bool ?? false
+            let info = SubworkerInfo(
+                id: name,
+                name: name,
+                enabled: dict["enabled"] as? Bool ?? false,
+                running: running,
+                nextRun: dict["next_run"] as? String ?? old?.nextRun,
+                scheduleType: dict["schedule_type"] as? String ?? old?.scheduleType,
+                scheduleHours: old?.scheduleHours,
+                scheduleMinute: old?.scheduleMinute,
+                lastError: running ? nil : old?.lastError,
+                lastCompleted: running ? nil : old?.lastCompleted,
+                model: dict["model"] as? String ?? old?.model,
+                variant: dict["variant"] as? String ?? old?.variant
+            )
+            parsed.append(info)
+            if let m = info.model, !m.isEmpty { modelSelections[name] = m }
+            if let v = info.variant { modelVariants[name] = v }
+        }
+
+        subworkers = parsed
+        recalculateCounts()
     }
 
     private func handleInitialStatus(_ json: [String: Any]) {
@@ -401,7 +490,7 @@ final class SubworkerManager: ObservableObject {
         AppLog.d("Fetching /status")
 
         do {
-            let (data, response) = try await session.data(from: url)
+            let (data, response) = try await session.data(for: EliaAuth.authorize(url))
             if let http = response as? HTTPURLResponse, http.statusCode >= 400 {
                 statusError = "Status: HTTP \(http.statusCode)"
                 isLoading = false
@@ -417,13 +506,16 @@ final class SubworkerManager: ObservableObject {
             var parsed: [SubworkerInfo] = []
             for dict in swArray {
                 guard let name = dict["name"] as? String else { continue }
+                let schedule = dict["schedule"] as? [String: Any]
                 let info = SubworkerInfo(
                     id: name,
                     name: name,
                     enabled: dict["enabled"] as? Bool ?? false,
                     running: dict["running"] as? Bool ?? false,
                     nextRun: dict["next_run"] as? String,
-                    scheduleType: dict["schedule_type"] as? String
+                    scheduleType: dict["schedule_type"] as? String,
+                    scheduleHours: schedule?["hours"] as? [Int],
+                    scheduleMinute: schedule?["minute"] as? Int
                 )
                 parsed.append(info)
             }
@@ -450,7 +542,7 @@ final class SubworkerManager: ObservableObject {
         AppLog.d("Fetching /server/health")
 
         do {
-            let (data, _) = try await session.data(from: url)
+            let (data, _) = try await session.data(for: EliaAuth.authorize(url))
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
 
             serverHealth = ServerHealth(
@@ -469,7 +561,7 @@ final class SubworkerManager: ObservableObject {
     func triggerSubworker(_ name: String) {
         guard let url = URL(string: "\(baseURL)/trigger/\(name)") else { return }
         AppLog.d("Triggering subworker: \(name)")
-        var request = URLRequest(url: url)
+        var request = EliaAuth.authorize(url)
         request.httpMethod = "POST"
 
         URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
@@ -492,7 +584,7 @@ final class SubworkerManager: ObservableObject {
     func enableSubworker(_ name: String) {
         guard let url = URL(string: "\(baseURL)/enable/\(name)") else { return }
         AppLog.d("Enabling subworker: \(name)")
-        var request = URLRequest(url: url)
+        var request = EliaAuth.authorize(url)
         request.httpMethod = "POST"
 
         URLSession.shared.dataTask(with: request) { [weak self] _, _, error in
@@ -510,7 +602,7 @@ final class SubworkerManager: ObservableObject {
     func disableSubworker(_ name: String) {
         guard let url = URL(string: "\(baseURL)/disable/\(name)") else { return }
         AppLog.d("Disabling subworker: \(name)")
-        var request = URLRequest(url: url)
+        var request = EliaAuth.authorize(url)
         request.httpMethod = "POST"
 
         URLSession.shared.dataTask(with: request) { [weak self] _, _, error in
@@ -530,7 +622,7 @@ final class SubworkerManager: ObservableObject {
         AppLog.d("Fetching logs for \(name)")
 
         do {
-            let (data, _) = try await session.data(from: url)
+            let (data, _) = try await session.data(for: EliaAuth.authorize(url))
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let logLines = json["lines"] as? [String] else { return [] }
             AppLog.d("Got \(logLines.count) log lines for \(name)")
@@ -554,7 +646,7 @@ final class SubworkerManager: ObservableObject {
 
     func fetchModels() {
         guard let url = URL(string: "\(baseURL)/models") else { return }
-        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+        URLSession.shared.dataTask(with: EliaAuth.authorize(url)) { [weak self] data, _, _ in
             Task { @MainActor [weak self] in
                 guard let self, let data,
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -614,7 +706,7 @@ final class SubworkerManager: ObservableObject {
 
     private func pushModelToServer(_ modelID: String, variant: String, for name: String) {
         guard let url = URL(string: "\(baseURL)/status/\(name)") else { return }
-        var request = URLRequest(url: url)
+        var request = EliaAuth.authorize(url)
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         var payload: [String: Any] = ["model": modelID]
@@ -638,7 +730,7 @@ final class SubworkerManager: ObservableObject {
 
     func fetchMainAgent() {
         guard let url = URL(string: "\(baseURL)/main-agent") else { return }
-        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+        URLSession.shared.dataTask(with: EliaAuth.authorize(url)) { [weak self] data, _, _ in
             Task { @MainActor [weak self] in
                 guard let self, let data,
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -652,7 +744,7 @@ final class SubworkerManager: ObservableObject {
 
     func setMainAgent(_ name: String) {
         guard let url = URL(string: "\(baseURL)/main-agent") else { return }
-        var request = URLRequest(url: url)
+        var request = EliaAuth.authorize(url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["name": name])
@@ -668,6 +760,49 @@ final class SubworkerManager: ObservableObject {
                 }
             }
         }.resume()
+    }
+
+    // MARK: - Next Run Helpers
+
+    private static let isoParser: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    static func parseNextRun(_ string: String?) -> Date? {
+        guard let string else { return nil }
+        return isoParser.date(from: string)
+    }
+
+    /// Server-provided next run, or computed from the interval schedule
+    /// (next slot among `scheduleHours` at `scheduleMinute`, rolling to tomorrow).
+    func nextRunDate(for sw: SubworkerInfo, now: Date = Date()) -> Date? {
+        if let date = Self.parseNextRun(sw.nextRun) { return date }
+        guard sw.enabled,
+              sw.scheduleType == "interval",
+              let hours = sw.scheduleHours, !hours.isEmpty else { return nil }
+        let minute = sw.scheduleMinute ?? 0
+        let calendar = Calendar.current
+        for hour in hours.sorted() {
+            if let candidate = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: now),
+               candidate > now {
+                return candidate
+            }
+        }
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+        return calendar.date(bySettingHour: hours.min()!, minute: minute, second: 0, of: tomorrow)
+    }
+
+    /// Minutes under 2h ("45m"), hours beyond ("3h"), "due" when overdue.
+    static func countdownLabel(until date: Date?, now: Date = Date()) -> String? {
+        guard let date else { return nil }
+        let seconds = Int(date.timeIntervalSince(now))
+        if seconds <= 0 { return "due" }
+        if seconds < 60 { return "<1m" }
+        let minutes = seconds / 60
+        if minutes < 120 { return "\(minutes)m" }
+        return "\(minutes / 60)h"
     }
 
     // MARK: - Helpers

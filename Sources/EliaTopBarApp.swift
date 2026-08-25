@@ -38,6 +38,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var subworkerHoverHandlers: [String: SubworkerHoverHandler] = [:]
     private var subworkerLogPopover: NSPopover?
     private var subworkerLogPopoverName: String?
+    private var tunnelProgressController: TunnelProgressPanelController?
+    private var tunnelStatusCache: [String: Any]?
+    private var tunnelStatusInFlight = false
+    private var tunnelPollTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         colimaManager = ColimaManager()
@@ -71,6 +75,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.reconcileSubworkerStatusItems()
         }
         .store(in: &cancellables)
+
+        // Cloudflare tunnel status — keep the menu line fresh (30s cadence).
+        refreshTunnelStatus()
+        tunnelPollTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+            self?.refreshTunnelStatus()
+        }
     }
 
     private func setupStatusItem() {
@@ -244,10 +254,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshItem.target = self
         menu.addItem(refreshItem)
 
-        menu.addItem(refreshIntervalMenuItem())
-
         // Server URL preference
         addServerURLMenuItems(to: menu)
+
+        // Remote domain via Cloudflare Tunnel — requires local network
+        addTunnelMenuItems(to: menu)
 
         let launchItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         launchItem.target = self
@@ -428,8 +439,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let displayName = isMain ? "\(sw.name) ★" : sw.name
+        let nextCountdown = sw.enabled
+            ? SubworkerManager.countdownLabel(until: subworkerManager.nextRunDate(for: sw, now: now), now: now)
+            : nil
         let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        item.attributedTitle = buildAttributedItem(dot: dot, name: displayName, status: statusText, color: color)
+        item.attributedTitle = buildAttributedItem(
+            dot: dot,
+            name: displayName,
+            status: statusText,
+            color: color,
+            badge: nextCountdown.map { "⏱ \($0)" }
+        )
         item.submenu = instanceMenu
 
         if let photo = ProfilePhotos.shared.circularPhoto(for: sw.name, size: 16) {
@@ -444,11 +464,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         submenu.autoenablesItems = false
 
         if let photo = ProfilePhotos.shared.circularPhoto(for: sw.name, size: 120) {
-            let photoItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            let containerWidth: CGFloat = 240
+            let container = NSView(frame: NSRect(x: 0, y: 0, width: containerWidth, height: 120))
             let photoView = NSImageView(image: photo)
-            photoView.frame = NSRect(x: 0, y: 0, width: 120, height: 120)
+            photoView.frame = NSRect(x: (containerWidth - 120) / 2, y: 0, width: 120, height: 120)
             photoView.imageScaling = .scaleProportionallyUpOrDown
-            photoItem.view = photoView
+            photoView.autoresizingMask = [.minXMargin, .maxXMargin]
+            container.addSubview(photoView)
+            let photoItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            photoItem.view = container
             submenu.addItem(photoItem)
             submenu.addItem(NSMenuItem.separator())
         }
@@ -479,9 +503,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             submenu.addItem(setItem)
         }
 
-        if let nextRun = sw.nextRun {
+        if let nextDate = subworkerManager.nextRunDate(for: sw) {
+            let timeFormatter = DateFormatter()
+            timeFormatter.dateFormat = "EEE HH:mm"
+            let countdown = SubworkerManager.countdownLabel(until: nextDate)
+            let when = countdown == "due" ? "due now" : "in \(countdown ?? "?")"
             let nextItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-            nextItem.attributedTitle = emojiAwareTitle("🕐 Next Run: \(nextRun)", color: .secondaryLabelColor)
+            nextItem.attributedTitle = emojiAwareTitle("🕐 Next Run: \(timeFormatter.string(from: nextDate)) (\(when))", color: .secondaryLabelColor)
             nextItem.isEnabled = false
             submenu.addItem(nextItem)
         }
@@ -582,7 +610,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return submenu
     }
 
-    private func buildAttributedItem(dot: String, name: String, status: String, color: NSColor) -> NSAttributedString {
+    private func buildAttributedItem(dot: String, name: String, status: String, color: NSColor, badge: String? = nil) -> NSAttributedString {
         let result = NSMutableAttributedString()
 
         let dotIsEmoji = !(dot == "●" || dot == "○")
@@ -605,6 +633,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ]
         let padding = String(repeating: " ", count: max(1, 24 - displayName.count))
         result.append(NSAttributedString(string: "\(padding)\(status)", attributes: statusAttrs))
+
+        if let badge {
+            let badgePad = String(repeating: " ", count: max(1, 10 - status.count))
+            result.append(NSAttributedString(string: "\(badgePad)\(badge)", attributes: [
+                .foregroundColor: NSColor.systemTeal,
+                .font: NSFont.menuFont(ofSize: 0)
+            ]))
+        }
 
         return result
     }
@@ -676,6 +712,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.image = subworkerStatusIcon(for: sw)
         button.toolTip = sw.name
 
+        // Click toggles the live log popover.
+        button.action = #selector(statusItemClicked(_:))
+        button.target = self
+        button.sendAction(on: [.leftMouseUp])
+
+        // Hover opens it too.
         let handler = SubworkerHoverHandler()
         handler.onEnter = { [weak self] in
             self?.showSubworkerLogPopover(for: sw.name, button: button)
@@ -687,6 +729,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             userInfo: nil
         ))
         subworkerHoverHandlers[sw.name] = handler
+    }
+
+    @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
+        guard let name = subworkerStatusItems.first(where: { $0.value.button === sender })?.key else { return }
+
+        if let popover = subworkerLogPopover,
+           subworkerLogPopoverName == name,
+           popover.isShown {
+            popover.performClose(nil)
+            subworkerLogPopover = nil
+            subworkerLogPopoverName = nil
+            return
+        }
+        showSubworkerLogPopover(for: name, button: sender)
     }
 
     private func updateSubworkerStatusIcon(for sw: SubworkerInfo) {
@@ -795,6 +851,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         subworkerLogPopover = popover
         subworkerLogPopoverName = name
+        // A transient popover shown while another app is frontmost closes
+        // immediately — activate our app first.
+        NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 
@@ -880,6 +939,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         urlItem.attributedTitle = emojiAwareTitle("🔗 Change Server URL…", color: .labelColor)
         urlItem.target = self
         menu.addItem(urlItem)
+
+        let authItem = NSMenuItem(title: "", action: #selector(setAuthToken), keyEquivalent: "")
+        let hasCustomToken = !(UserDefaults.standard.string(forKey: "eliaAuthToken") ?? "").isEmpty
+        authItem.attributedTitle = emojiAwareTitle(hasCustomToken ? "🔑 Auth Token: custom" : "🔑 Auth Token: default", color: .secondaryLabelColor)
+        authItem.target = self
+        menu.addItem(authItem)
+    }
+
+    @objc private func setAuthToken() {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Auth Token"
+        alert.informativeText = "Leave empty to use the built-in default token."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSTextField(string: UserDefaults.standard.string(forKey: "eliaAuthToken") ?? "")
+        field.placeholderString = "ELIA_AUTH_TOKEN"
+        field.frame = NSRect(x: 0, y: 0, width: 300, height: 24)
+        alert.accessoryView = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        UserDefaults.standard.set(field.stringValue.trimmingCharacters(in: .whitespaces), forKey: "eliaAuthToken")
+        subworkerManager.updateBaseURL(subworkerManager.currentBaseURL)
     }
 
     @objc private func changeServerURL() {
@@ -903,6 +984,173 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         UserDefaults.standard.set(url, forKey: "subworkerServerURL")
         subworkerManager.updateBaseURL(url)
+    }
+
+    private func addTunnelMenuItems(to menu: NSMenu) {
+        let current = UserDefaults.standard.string(forKey: "tunnelDomain") ?? ""
+        let title = current.isEmpty ? "🌐 Setup Remote Domain…" : "🌐 Remote Domain: \(current)"
+        let domainItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        domainItem.attributedTitle = emojiAwareTitle(title, color: .secondaryLabelColor)
+        domainItem.isEnabled = false
+        menu.addItem(domainItem)
+        if !current.isEmpty {
+            menu.addItem(tunnelStatusMenuItem())
+        }
+        let setupItem = NSMenuItem(title: "", action: #selector(setupTunnel), keyEquivalent: "")
+        let label = current.isEmpty ? "🌐 Setup Remote Domain…" : "🌐 Change Remote Domain…"
+        setupItem.attributedTitle = emojiAwareTitle(label, color: .labelColor)
+        setupItem.target = self
+        menu.addItem(setupItem)
+        if !current.isEmpty {
+            let resetItem = NSMenuItem(title: "", action: #selector(resetTunnel), keyEquivalent: "")
+            resetItem.attributedTitle = emojiAwareTitle("🌐 Reset Remote Domain…", color: .systemRed)
+            resetItem.target = self
+            menu.addItem(resetItem)
+        }
+    }
+
+    private func tunnelStatusMenuItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        item.isEnabled = false
+
+        guard let cache = tunnelStatusCache else {
+            item.attributedTitle = emojiAwareTitle("🌐 Tunnel: checking…", color: .secondaryLabelColor)
+            return item
+        }
+
+        let running = cache["cloudflared_running"] as? Bool ?? false
+        let publicOk = cache["public_ok"] as? Bool ?? false
+        let step = cache["step"] as? String ?? ""
+        let lastError = cache["last_error"] as? String
+
+        if step == "error", let lastError, !lastError.isEmpty {
+            item.attributedTitle = emojiAwareTitle("🔴 Tunnel error — \(lastError)", color: .systemRed)
+            item.toolTip = lastError
+        } else if publicOk {
+            item.attributedTitle = emojiAwareTitle("🟢 Tunnel live — reachable everywhere", color: .systemGreen)
+        } else if running {
+            item.attributedTitle = emojiAwareTitle("🟠 Connector up — verifying access…", color: .systemOrange)
+        } else {
+            item.attributedTitle = emojiAwareTitle("🔴 Connector stopped", color: .systemRed)
+        }
+        return item
+    }
+
+    private func refreshTunnelStatus() {
+        guard UserDefaults.standard.string(forKey: "tunnelDomain") != nil,
+              !tunnelStatusInFlight else { return }
+        tunnelStatusInFlight = true
+        let baseURL = UserDefaults.standard.string(forKey: "subworkerServerURL") ?? "http://localhost:5656"
+        guard let url = URL(string: "\(baseURL)/tunnel/status") else {
+            tunnelStatusInFlight = false
+            return
+        }
+        var req = EliaAuth.authorize(url)
+        req.httpMethod = "GET"
+        URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.tunnelStatusInFlight = false
+                guard let data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+                let changed = self.tunnelStatusCache.map { prev in
+                    prev["step"] as? String != json["step"] as? String
+                        || prev["cloudflared_running"] as? Bool != json["cloudflared_running"] as? Bool
+                        || prev["public_ok"] as? Bool != json["public_ok"] as? Bool
+                        || (prev["last_error"] as? String ?? "") != (json["last_error"] as? String ?? "")
+                } ?? true
+                guard changed else { return }
+                self.tunnelStatusCache = json
+                self.setupMenu()
+            }
+        }.resume()
+    }
+
+    @objc private func resetTunnel() {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Reset Cloudflare?"
+        alert.informativeText = "This permanently deletes the DNS record and the tunnel on Cloudflare and stops the connector. The server goes back to LAN-only until setup runs again."
+        alert.addButton(withTitle: "Reset")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let baseURL = UserDefaults.standard.string(forKey: "subworkerServerURL") ?? "http://localhost:5656"
+        guard let url = URL(string: "\(baseURL)/tunnel/remove") else { return }
+        var req = EliaAuth.authorize(url)
+        req.httpMethod = "POST"
+        URLSession.shared.dataTask(with: req) { [weak self] _, _, _ in
+            DispatchQueue.main.async {
+                UserDefaults.standard.removeObject(forKey: "tunnelDomain")
+                self?.setupMenu()
+                let done = NSAlert()
+                done.messageText = "Cloudflare reset"
+                done.informativeText = "The domain was removed from Cloudflare and the connector stopped."
+                done.runModal()
+            }
+        }.resume()
+    }
+
+    @objc private func setupTunnel() {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Remote Domain (Cloudflare Tunnel)"
+        alert.informativeText = "Enter your domain (e.g. elia.surfai.tech) and your Cloudflare API Token (Zone:DNS Edit + Account:Tunnel Edit). The server will create the tunnel on your Mac (local network required)."
+        alert.addButton(withTitle: "Setup Tunnel")
+        alert.addButton(withTitle: "Cancel")
+        let domainField = NSTextField(string: UserDefaults.standard.string(forKey: "tunnelDomain") ?? "")
+        domainField.placeholderString = "elia.surfai.tech"
+        domainField.frame = NSRect(x: 0, y: 24, width: 320, height: 24)
+        let tokenField = NSTextField(string: UserDefaults.standard.string(forKey: "cfApiToken") ?? "")
+        tokenField.placeholderString = "Cloudflare API Token"
+        tokenField.frame = NSRect(x: 0, y: 0, width: 320, height: 24)
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 56))
+        container.addSubview(domainField)
+        container.addSubview(tokenField)
+        alert.accessoryView = container
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let domain = domainField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let token = tokenField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !domain.isEmpty, !token.isEmpty else { return }
+        UserDefaults.standard.set(domain, forKey: "tunnelDomain")
+        UserDefaults.standard.set(token, forKey: "cfApiToken")
+        let baseURL = UserDefaults.standard.string(forKey: "subworkerServerURL") ?? "http://localhost:5656"
+        guard let url = URL(string: "\(baseURL)/tunnel/setup") else { return }
+        var req = EliaAuth.authorize(url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["domain": domain, "api_token": token])
+        URLSession.shared.dataTask(with: req) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if let error {
+                    let err = NSAlert()
+                    err.messageText = "Tunnel Setup Failed"
+                    err.informativeText = "Could not reach the server: \(error.localizedDescription)"
+                    err.runModal()
+                    return
+                }
+                var status: String?
+                var message: String?
+                if let data,
+                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    status = obj["status"] as? String
+                    message = (obj["message"] as? String)
+                        ?? (obj["detail"] as? String)
+                        ?? (obj["last_error"] as? String)
+                }
+                if status == "error" {
+                    let err = NSAlert()
+                    err.messageText = "Tunnel Setup Failed"
+                    err.informativeText = message ?? "The server reported an error while starting tunnel setup."
+                    err.runModal()
+                    return
+                }
+                let controller = TunnelProgressPanelController(domain: domain)
+                controller.onClose = { [weak self] in self?.tunnelProgressController = nil }
+                controller.show()
+                self.tunnelProgressController = controller
+            }
+        }.resume()
     }
 
     // MARK: - Existing Colima Methods
@@ -965,21 +1213,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let item = NSMenuItem(title: text, action: nil, keyEquivalent: "")
         item.isEnabled = false
         return item
-    }
-
-    private func refreshIntervalMenuItem() -> NSMenuItem {
-        let submenu = NSMenu()
-        let current = colimaManager.refreshInterval
-        for seconds in [5.0, 10.0, 30.0, 60.0] {
-            let item = NSMenuItem(title: "\(Int(seconds)) seconds", action: #selector(setInterval(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = seconds
-            item.state = seconds == current ? .on : .off
-            submenu.addItem(item)
-        }
-        let intervalItem = NSMenuItem(title: "Refresh Interval", action: nil, keyEquivalent: "")
-        intervalItem.submenu = submenu
-        return intervalItem
     }
 
     private var launchAtLoginEnabled: Bool {
@@ -1134,12 +1367,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func setInterval(_ sender: NSMenuItem) {
-        guard let seconds = sender.representedObject as? TimeInterval else { return }
-        colimaManager.setRefreshInterval(seconds)
-        setupMenu()
-    }
-
     @objc private func toggleLaunchAtLogin() {
         let service = SMAppService.mainApp
         do {
@@ -1223,5 +1450,354 @@ extension AppDelegate: NSMenuDelegate {
             }
             menu.addItem(item)
         }
+    }
+}
+
+final class TunnelProgressPanelController: NSObject, NSWindowDelegate {
+    private struct StepDefinition {
+        let key: String
+        let title: String
+    }
+
+    private enum StepVisual {
+        case pending
+        case active
+        case completed
+        case error
+    }
+
+    private static let steps: [StepDefinition] = [
+        StepDefinition(key: "verifying_token", title: "Verifying API token"),
+        StepDefinition(key: "checking_zone", title: "Checking the domain zone"),
+        StepDefinition(key: "creating_tunnel", title: "Creating the tunnel"),
+        StepDefinition(key: "routing_dns", title: "Routing DNS"),
+        StepDefinition(key: "starting_cloudflared", title: "Starting the connector"),
+        StepDefinition(key: "verifying_public", title: "Verifying public access"),
+    ]
+
+    var onClose: (() -> Void)?
+
+    private let domain: String
+    private var panel: NSPanel?
+    private var pollTimer: Timer?
+    private let pollSession = URLSession(configuration: .ephemeral)
+    private var lastActiveStepIndex: Int?
+    private var consecutiveFailures = 0
+
+    private var headlineLabel: NSTextField!
+    private var bannerLabel: NSTextField!
+    private var noteLabel: NSTextField!
+    private var retryButton: NSButton!
+    private var indicatorContainers: [NSView] = []
+    private var rowLabels: [NSTextField] = []
+
+    init(domain: String) {
+        self.domain = domain
+        super.init()
+    }
+
+    func show() {
+        guard panel == nil else { return }
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 320),
+            styleMask: [.titled, .closable, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = "Cloudflare Tunnel Setup"
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.isReleasedWhenClosed = false
+        panel.delegate = self
+        let content = buildContentView()
+        panel.contentView = content
+        let fitting = content.fittingSize
+        panel.setContentSize(NSSize(width: max(420, fitting.width), height: fitting.height))
+        panel.center()
+        self.panel = panel
+        panel.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        render(states: Array(repeating: .pending, count: Self.steps.count),
+               headline: "Setting up Cloudflare Tunnel…",
+               errorText: nil,
+               terminal: false)
+        startPolling()
+    }
+
+    private func buildContentView() -> NSView {
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 320))
+
+        headlineLabel = NSTextField(labelWithString: "Setting up Cloudflare Tunnel…")
+        headlineLabel.font = .boldSystemFont(ofSize: 14)
+        headlineLabel.alignment = .center
+        headlineLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let rowsStack = NSStackView(views: [])
+        rowsStack.orientation = .vertical
+        rowsStack.alignment = .leading
+        rowsStack.spacing = 8
+
+        for step in Self.steps {
+            let container = NSView()
+            container.translatesAutoresizingMaskIntoConstraints = false
+            container.widthAnchor.constraint(equalToConstant: 22).isActive = true
+            container.heightAnchor.constraint(equalToConstant: 22).isActive = true
+
+            let label = NSTextField(labelWithString: step.title)
+            label.font = .systemFont(ofSize: 13)
+
+            let row = NSStackView(views: [container, label])
+            row.orientation = .horizontal
+            row.spacing = 10
+            row.alignment = .centerY
+
+            indicatorContainers.append(container)
+            rowLabels.append(label)
+            rowsStack.addArrangedSubview(row)
+        }
+
+        bannerLabel = NSTextField(wrappingLabelWithString: "")
+        bannerLabel.font = .systemFont(ofSize: 12)
+        bannerLabel.textColor = .systemRed
+        bannerLabel.maximumNumberOfLines = 0
+        bannerLabel.alphaValue = 0
+        bannerLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        bannerLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        bannerLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 380).isActive = true
+
+        noteLabel = NSTextField(labelWithString: "")
+        noteLabel.font = .systemFont(ofSize: 11)
+        noteLabel.textColor = .secondaryLabelColor
+
+        retryButton = NSButton(title: "Retry", target: self, action: #selector(retryClicked))
+        retryButton.bezelStyle = .rounded
+        retryButton.isHidden = true
+        let closeButton = NSButton(title: "Close", target: self, action: #selector(closeClicked))
+        closeButton.bezelStyle = .rounded
+        closeButton.keyEquivalent = "\r"
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let buttonsRow = NSStackView(views: [spacer, retryButton, closeButton])
+        buttonsRow.orientation = .horizontal
+        buttonsRow.spacing = 8
+        buttonsRow.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let outer = NSStackView(views: [headlineLabel, rowsStack, bannerLabel, noteLabel, buttonsRow])
+        outer.orientation = .vertical
+        outer.alignment = .leading
+        outer.spacing = 12
+        outer.edgeInsets = NSEdgeInsets(top: 16, left: 20, bottom: 16, right: 20)
+        outer.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(outer)
+        NSLayoutConstraint.activate([
+            outer.topAnchor.constraint(equalTo: content.topAnchor),
+            outer.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            outer.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            outer.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+        ])
+        return content
+    }
+
+    private func startPolling() {
+        stopPolling()
+        let timer = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in
+            self?.pollOnce()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        pollTimer = timer
+        pollOnce()
+    }
+
+    private func stopPolling() {
+        pollTimer?.invalidate()
+        pollTimer = nil
+    }
+
+    private func pollOnce() {
+        let baseURL = UserDefaults.standard.string(forKey: "subworkerServerURL") ?? "http://localhost:5656"
+        guard let url = URL(string: "\(baseURL)/tunnel/status") else { return }
+        let request = EliaAuth.authorize(url)
+        pollSession.dataTask(with: request) { [weak self] data, _, _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard let data,
+                      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    self.consecutiveFailures += 1
+                    self.noteLabel.stringValue = "Waiting for server… (\(self.consecutiveFailures))"
+                    return
+                }
+                self.apply(statusJSON: obj)
+            }
+        }.resume()
+    }
+
+    private func apply(statusJSON obj: [String: Any]) {
+        consecutiveFailures = 0
+        noteLabel.stringValue = ""
+        let step = obj["step"] as? String ?? "idle"
+
+        if step == "done" {
+            stopPolling()
+            let liveDomain = (obj["domain"] as? String) ?? domain
+            render(states: Array(repeating: .completed, count: Self.steps.count),
+                   headline: "Tunnel is live — https://\(liveDomain)",
+                   errorText: nil,
+                   terminal: true)
+            return
+        }
+
+        if step == "error" {
+            stopPolling()
+            let message = obj["last_error"] as? String ?? "The tunnel setup failed."
+            render(states: statesThroughFailure(at: failureIndex()),
+                   headline: "Tunnel Setup Failed",
+                   errorText: message,
+                   terminal: true)
+            return
+        }
+
+        if let index = Self.steps.firstIndex(where: { $0.key == step }) {
+            lastActiveStepIndex = index
+            var states = Array(repeating: StepVisual.pending, count: Self.steps.count)
+            for i in 0..<Self.steps.count {
+                states[i] = i < index ? .completed : (i == index ? .active : .pending)
+            }
+            render(states: states,
+                   headline: "Setting up Cloudflare Tunnel…",
+                   errorText: nil,
+                   terminal: false)
+        } else {
+            render(states: Array(repeating: .pending, count: Self.steps.count),
+                   headline: "Setting up Cloudflare Tunnel…",
+                   errorText: nil,
+                   terminal: false)
+        }
+    }
+
+    private func failureIndex() -> Int {
+        lastActiveStepIndex ?? 0
+    }
+
+    private func statesThroughFailure(at index: Int) -> [StepVisual] {
+        var states = Array(repeating: StepVisual.pending, count: Self.steps.count)
+        for i in 0..<Self.steps.count {
+            states[i] = i < index ? .completed : (i == index ? .error : .pending)
+        }
+        return states
+    }
+
+    private func render(states: [StepVisual], headline: String, errorText: String?, terminal: Bool) {
+        headlineLabel.stringValue = headline
+        for (index, container) in indicatorContainers.enumerated() where index < states.count {
+            applyIndicator(to: container, state: states[index])
+            rowLabels[index].textColor = textColor(for: states[index])
+        }
+        if let errorText {
+            bannerLabel.stringValue = errorText
+            bannerLabel.alphaValue = 1
+        } else {
+            bannerLabel.stringValue = ""
+            bannerLabel.alphaValue = 0
+        }
+        retryButton.isHidden = !(terminal && errorText != nil)
+    }
+
+    private func textColor(for state: StepVisual) -> NSColor {
+        switch state {
+        case .pending: return .secondaryLabelColor
+        case .active: return .labelColor
+        case .completed: return .labelColor
+        case .error: return .systemRed
+        }
+    }
+
+    private func applyIndicator(to container: NSView, state: StepVisual) {
+        container.subviews.forEach { $0.removeFromSuperview() }
+        switch state {
+        case .active:
+            let spinner = NSProgressIndicator()
+            spinner.style = .spinning
+            spinner.controlSize = .small
+            spinner.isIndeterminate = true
+            spinner.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(spinner)
+            NSLayoutConstraint.activate([
+                spinner.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+                spinner.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            ])
+            spinner.startAnimation(nil)
+        case .pending:
+            addSymbol("○", color: .secondaryLabelColor, to: container)
+        case .completed:
+            addSymbol("✓", color: .systemGreen, to: container)
+        case .error:
+            addSymbol("✗", color: .systemRed, to: container)
+        }
+    }
+
+    private func addSymbol(_ symbol: String, color: NSColor, to container: NSView) {
+        let label = NSTextField(labelWithString: symbol)
+        label.font = .systemFont(ofSize: 13, weight: .bold)
+        label.textColor = color
+        label.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+        ])
+    }
+
+    @objc private func retryClicked() {
+        guard let savedDomain = UserDefaults.standard.string(forKey: "tunnelDomain"),
+              let savedToken = UserDefaults.standard.string(forKey: "cfApiToken") else { return }
+        lastActiveStepIndex = nil
+        consecutiveFailures = 0
+        render(states: Array(repeating: .pending, count: Self.steps.count),
+               headline: "Setting up Cloudflare Tunnel…",
+               errorText: nil,
+               terminal: false)
+        postSetup(domain: savedDomain, token: savedToken) { [weak self] in
+            self?.startPolling()
+        }
+    }
+
+    private func postSetup(domain: String, token: String, onSuccess: @escaping () -> Void) {
+        let baseURL = UserDefaults.standard.string(forKey: "subworkerServerURL") ?? "http://localhost:5656"
+        guard let url = URL(string: "\(baseURL)/tunnel/setup") else { return }
+        var request = EliaAuth.authorize(url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["domain": domain, "api_token": token])
+        pollSession.dataTask(with: request) { [weak self] data, _, _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if let data,
+                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   obj["status"] as? String == "error" {
+                    self.stopPolling()
+                    let message = (obj["message"] as? String)
+                        ?? (obj["detail"] as? String)
+                        ?? (obj["last_error"] as? String)
+                        ?? "The tunnel setup failed."
+                    self.render(states: self.statesThroughFailure(at: self.failureIndex()),
+                                headline: "Tunnel Setup Failed",
+                                errorText: message,
+                                terminal: true)
+                    return
+                }
+                onSuccess()
+            }
+        }.resume()
+    }
+
+    @objc private func closeClicked() {
+        panel?.close()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        stopPolling()
+        panel?.delegate = nil
+        panel = nil
+        onClose?()
     }
 }

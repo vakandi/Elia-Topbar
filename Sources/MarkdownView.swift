@@ -16,10 +16,30 @@ struct MarkdownView: View {
 
     private let blocks: [Block]
 
+    private static var blockCache: [String: [Block]] = [:]
+    private static let cacheLock = NSLock()
+    private static let maxCacheSize = 200
+
     init(text: String, baseColor: Color) {
         self.text = text
         self.baseColor = baseColor
-        self.blocks = Self.parseBlocks(text, baseColor: baseColor)
+
+        let cacheKey = text
+        Self.cacheLock.lock()
+        if let cached = Self.blockCache[cacheKey] {
+            Self.cacheLock.unlock()
+            self.blocks = cached
+        } else {
+            Self.cacheLock.unlock()
+            let parsed = Self.parseBlocks(text, baseColor: baseColor)
+            Self.cacheLock.lock()
+            if Self.blockCache.count >= Self.maxCacheSize {
+                Self.blockCache.removeAll()
+            }
+            Self.blockCache[cacheKey] = parsed
+            Self.cacheLock.unlock()
+            self.blocks = parsed
+        }
     }
 
     var body: some View {
