@@ -107,11 +107,26 @@ struct TopbarSettingsView: View {
                     Rectangle()
                         .fill(Color(nsColor: .windowBackgroundColor))
                         .overlay(
-                            Text(captureDenied
-                                 ? "Enable Screen Recording permission for a live preview"
-                                 : "Capturing menu bar…")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            VStack(spacing: 6) {
+                                Text(captureDenied
+                                     ? "Live preview needs Screen Recording permission"
+                                     : "Capturing menu bar…")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                if captureDenied {
+                                    Button("Grant permission…") {
+                                        _ = CGRequestScreenCaptureAccess()
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                                            captureMenuBar()
+                                        }
+                                    }
+                                    .controlSize(.small)
+                                    .buttonStyle(.borderedProminent)
+                                    Text("After approving, click again if the preview stays empty.")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
                         )
                 }
             }
