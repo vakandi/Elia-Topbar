@@ -721,6 +721,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Log Popover
 
+    private func clampPopoverInsideScreen(_ popover: NSPopover) {
+        DispatchQueue.main.async { [weak popover] in
+            guard let popover, popover.isShown,
+                  let win = popover.contentViewController?.view.window,
+                  let screen = win.screen ?? NSScreen.main else { return }
+            let margin: CGFloat = 8
+            var frame = win.frame
+            let maxRight = screen.visibleFrame.maxX - margin
+            let minLeft = screen.visibleFrame.minX + margin
+            if frame.maxX > maxRight { frame.origin.x = maxRight - frame.width }
+            if frame.minX < minLeft { frame.origin.x = minLeft }
+            if frame != win.frame { win.setFrame(frame, display: true) }
+        }
+    }
+
     @objc private func showLogs(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
 
@@ -734,6 +749,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         logPopover = popover
         if let button = statusItem.button {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            clampPopoverInsideScreen(popover)
         }
     }
 
@@ -939,22 +955,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // immediately — activate our app first.
         NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-
-        // NSPopover does not clamp itself — icon next to Wi-Fi overflows the screen.
-        if let win = popover.contentViewController?.view.window,
-           let screen = win.screen ?? NSScreen.main {
-            let margin: CGFloat = 8
-            var frame = win.frame
-            if frame.maxX > screen.visibleFrame.maxX - margin {
-                frame.origin.x = screen.visibleFrame.maxX - margin - frame.width
-            }
-            if frame.minX < screen.visibleFrame.minX + margin {
-                frame.origin.x = screen.visibleFrame.minX + margin
-            }
-            if frame != win.frame {
-                win.setFrame(frame, display: true)
-            }
-        }
+        clampPopoverInsideScreen(popover)
     }
 
     // MARK: - Subworker Actions

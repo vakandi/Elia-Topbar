@@ -13,8 +13,6 @@ struct TopbarSettingsView: View {
     var onOrderChange: (String) -> Void
 
     @State private var previewIcon: NSImage?
-    @State private var capturedBar: NSImage?
-    @State private var captureDenied = false
 
     private let staticBarImage: NSImage? = {
         guard let path = Bundle.main.path(forResource: "menubar-preview", ofType: "png") else { return nil }
