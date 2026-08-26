@@ -459,6 +459,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.popUpInstanceMenu(name: name, anchorView: anchor)
         })
         anchorRef = hosting
+        hosting.sizingOptions = [.preferredContentSize]
+        hosting.frame = NSRect(x: 0, y: 0,
+                               width: 300,
+                               height: CGFloat(min(rows.count, 5)) * 26)
         let item = NSMenuItem()
         item.view = hosting
         return item
