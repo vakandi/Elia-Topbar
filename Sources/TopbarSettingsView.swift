@@ -26,14 +26,6 @@ struct TopbarSettingsView: View {
     @State private var runPopupDuration: Double = UserDefaults.standard.object(forKey: "runPopupDuration") as? Double ?? 10
     @State private var showGuide = false
     @State private var orderMode: String = UserDefaults.standard.string(forKey: "fleetOrderMode") ?? "default"
-    @State private var scrollThreshold: Int = {
-        let v = UserDefaults.standard.integer(forKey: "fleetScrollThreshold")
-        return v > 0 ? v : 10
-    }()
-    @State private var visibleRows: Int = {
-        let v = UserDefaults.standard.integer(forKey: "fleetVisibleRows")
-        return v > 0 ? v : 5
-    }()
 
     private let barHeight: CGFloat = 20
     private let defaults = UserDefaults.standard
@@ -87,22 +79,6 @@ struct TopbarSettingsView: View {
                         onOrderChange(mode)
                         onRefresh()
                         previewIcon = iconProvider()
-                    }
-
-                    Stepper(value: $scrollThreshold, in: 5...40, step: 1) {
-                        Text("Scroll after \(scrollThreshold) agents")
-                    }
-                    .onChange(of: scrollThreshold) { v in
-                        defaults.set(v, forKey: "fleetScrollThreshold")
-                        onRefresh()
-                    }
-
-                    Stepper(value: $visibleRows, in: 3...15, step: 1) {
-                        Text("Show \(visibleRows) rows when scrolling")
-                    }
-                    .onChange(of: visibleRows) { v in
-                        defaults.set(v, forKey: "fleetVisibleRows")
-                        onRefresh()
                     }
                 }
                 .padding(6)
@@ -171,7 +147,6 @@ struct TopbarSettingsView: View {
         .frame(width: 430)
         .frame(maxHeight: 560)
         .onAppear {
-            captureMenuBar()
             previewIcon = iconProvider()
         }
     }
@@ -181,35 +156,13 @@ struct TopbarSettingsView: View {
     private var menuBarPreview: some View {
         ZStack(alignment: .topLeading) {
             Group {
-                if let bar = capturedBar {
+                if let bar = staticBarImage {
                     Image(nsImage: bar)
                         .resizable()
-                        .scaledToFit()
+                        .aspectRatio(contentMode: .fill)
                 } else {
                     Rectangle()
                         .fill(Color(nsColor: .windowBackgroundColor))
-                        .overlay(
-                            VStack(spacing: 6) {
-                                Text(captureDenied
-                                     ? "Live preview needs Screen Recording permission"
-                                     : "Capturing menu bar…")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                if captureDenied {
-                                    Button("Grant permission…") {
-                                        _ = CGRequestScreenCaptureAccess()
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                                            captureMenuBar()
-                                        }
-                                    }
-                                    .controlSize(.small)
-                                    .buttonStyle(.borderedProminent)
-                                    Text("After approving, click again if the preview stays empty.")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        )
                 }
             }
             .frame(maxWidth: .infinity)
@@ -234,39 +187,6 @@ struct TopbarSettingsView: View {
         }
         .cornerRadius(5)
         .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.secondary.opacity(0.4)))
-    }
-
-    private func captureMenuBar() {
-        guard CGPreflightScreenCaptureAccess() else {
-            captureDenied = true
-            return
-        }
-        DispatchQueue.global(qos: .userInitiated).async {
-            let screenW = Int(NSScreen.main?.frame.width ?? 1600)
-            let halfW = screenW / 2
-            let cropH = Int(self.barHeight * 1.4)
-            let tmp = URL(fileURLWithPath: "/tmp/elia_menubar.png")
-            try? FileManager.default.removeItem(at: tmp)
-
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-            task.arguments = ["-x", "-R\(halfW),0,\(halfW),\(cropH)", tmp.path]
-            do {
-                try task.run()
-                task.waitUntilExit()
-            } catch {
-                DispatchQueue.main.async { self.captureDenied = true }
-                return
-            }
-            DispatchQueue.main.async {
-                guard task.terminationStatus == 0, let img = NSImage(contentsOf: tmp) else {
-                    self.captureDenied = true
-                    return
-                }
-                self.capturedBar = img
-                try? FileManager.default.removeItem(at: tmp)
-            }
-        }
     }
 }
 

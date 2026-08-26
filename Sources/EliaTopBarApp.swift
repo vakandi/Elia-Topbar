@@ -429,24 +429,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .filter { !$0.enabled }
             .sorted { subworkerManager.recency($0.name) > subworkerManager.recency($1.name) }
 
-        // Above this total, each agent section becomes its own scrollable list
-        // (test value 10 — production target is 20). User-configurable.
-        let storedThreshold = UserDefaults.standard.integer(forKey: "fleetScrollThreshold")
-        let fleetScrollThreshold = storedThreshold > 0 ? storedThreshold : 10
-        let useScrollSections = active.count + inactive.count >= fleetScrollThreshold
-
         if !active.isEmpty {
             let header = NSMenuItem(title: "", action: nil, keyEquivalent: "")
             header.attributedTitle = emojiAwareTitle("🤖 Active Agents (\(active.count))", color: .secondaryLabelColor)
             header.isEnabled = false
             menu.addItem(header)
 
-            if useScrollSections {
-                menu.addItem(scrollableAgentSection(active))
-            } else {
-                for sw in active {
-                    menu.addItem(buildSubworkerMenuItem(for: sw, now: now))
-                }
+            for sw in active {
+                menu.addItem(buildSubworkerMenuItem(for: sw, now: now))
             }
         }
 
@@ -457,71 +447,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             header.isEnabled = false
             menu.addItem(header)
 
-            if useScrollSections {
-                menu.addItem(scrollableAgentSection(inactive))
-            } else {
-                for sw in inactive {
-                    menu.addItem(buildSubworkerMenuItem(for: sw, now: now))
-                }
+            for sw in inactive {
+                menu.addItem(buildSubworkerMenuItem(for: sw, now: now))
             }
-        }
-    }
-
-    /// Embeds agents in an independently scrollable view; clicking a row pops
-    /// that agent's regular submenu at the mouse position.
-    private func scrollableAgentSection(_ agents: [SubworkerInfo]) -> NSMenuItem {
-        let rows: [AgentRowModel] = agents.map { sw in
-            let item = buildSubworkerMenuItem(for: sw, now: Date())
-            return AgentRowModel(
-                name: sw.name,
-                image: ProfilePhotos.shared.circularPhoto(for: sw.name, size: 16),
-                attributedTitle: item.attributedTitle ?? NSAttributedString(string: sw.name)
-            )
-        }
-        let names = agents.map(\.name)
-        let storedRows = UserDefaults.standard.integer(forKey: "fleetVisibleRows")
-        let visibleRows = storedRows > 0 ? storedRows : 5
-
-        var anchorRef: AgentListHostingView?
-        let hosting = AgentListHostingView(rootView: AgentScrollListView(rows: rows, visibleRows: visibleRows))
-        hosting.rowHeight = 26
-        hosting.onClickAt = { [weak self] idx in
-            guard let self, names.indices.contains(idx), let anchor = anchorRef else { return }
-            let name = names[idx]
-            var rootMenu = anchor.enclosingMenuItem?.menu
-            while let parent = rootMenu?.supermenu { rootMenu = parent }
-            rootMenu?.cancelTracking()
-            let at = NSEvent.mouseLocation
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                guard let sw = self.subworkerManager.subworkers.first(where: { $0.name == name }) else { return }
-                let details = self.buildSubworkerSubmenu(for: sw)
-                details.autoenablesItems = false
-                details.popUp(positioning: nil, at: at, in: nil)
-            }
-        }
-        anchorRef = hosting
-        hosting.sizingOptions = [.preferredContentSize]
-        hosting.frame = NSRect(x: 0, y: 0,
-                               width: 300,
-                               height: CGFloat(min(rows.count, max(visibleRows, 1))) * 26)
-        let item = NSMenuItem()
-        item.view = hosting
-        return item
-    }
-
-    private func popUpInstanceMenu(name: String, anchorView: NSView) {
-        guard let sw = subworkerManager.subworkers.first(where: { $0.name == name }) else { return }
-        let menu = buildSubworkerSubmenu(for: sw)
-        menu.autoenablesItems = false
-
-        // The parent dropdown is still tracking — its run loop kills any nested
-        // popUp. End tracking first, then present after the teardown settles.
-        let at = NSEvent.mouseLocation
-        var rootMenu = anchorView.enclosingMenuItem?.menu
-        while let parent = rootMenu?.supermenu { rootMenu = parent }
-        rootMenu?.cancelTracking()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            menu.popUp(positioning: nil, at: at, in: nil)
         }
     }
 
@@ -1011,6 +939,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // immediately — activate our app first.
         NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+
+        // NSPopover does not clamp itself — icon next to Wi-Fi overflows the screen.
+        if let win = popover.contentViewController?.view.window,
+           let screen = win.screen ?? NSScreen.main {
+            let margin: CGFloat = 8
+            var frame = win.frame
+            if frame.maxX > screen.visibleFrame.maxX - margin {
+                frame.origin.x = screen.visibleFrame.maxX - margin - frame.width
+            }
+            if frame.minX < screen.visibleFrame.minX + margin {
+                frame.origin.x = screen.visibleFrame.minX + margin
+            }
+            if frame != win.frame {
+                win.setFrame(frame, display: true)
+            }
+        }
     }
 
     // MARK: - Subworker Actions
