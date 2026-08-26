@@ -6,55 +6,45 @@ struct AgentRowModel {
     let attributedTitle: NSAttributedString
 }
 
-/// Independently scrollable agent list embedded as an NSMenuItem view.
-/// Only this list scrolls under the mouse — the rest of the dropdown stays put.
+/// Render-only list (no SwiftUI gestures — see AgentListHostingView).
 struct AgentScrollListView: View {
     let rows: [AgentRowModel]
     var visibleRows: Int = 5
-    /// Row tap → the agent's full details menu.
-    var onPick: (String) -> Void
 
     private let rowHeight: CGFloat = 26
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                ForEach(rows, id: \.name) { row in
-                    RowButton(model: row, rowHeight: rowHeight) {
-                        onPick(row.name)
+        VStack(spacing: 0) {
+            ForEach(rows, id: \.name) { row in
+                HStack(spacing: 6) {
+                    if let img = row.image {
+                        Image(nsImage: img).resizable().frame(width: 16, height: 16)
                     }
-                    if row.name != rows.last?.name {
-                        Divider().padding(.leading, 8)
-                    }
+                    AttributedText(attributedString: row.attributedTitle)
+                    Spacer()
                 }
+                .padding(.horizontal, 8)
+                .frame(height: rowHeight)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if rows.count > 1 {
+                Divider().padding(.leading, 8)
             }
         }
         .frame(width: 300, height: CGFloat(min(rows.count, max(visibleRows, 1))) * rowHeight)
     }
+}
 
-    private struct RowButton: View {
-        let model: AgentRowModel
-        let rowHeight: CGFloat
-        var onPick: () -> Void
+/// Hosting view that swallows mouseDown (so the parent menu stays predictable)
+/// and reports which row was hit, top row = index 0.
+final class AgentListHostingView: NSHostingView<AgentScrollListView> {
+    var rowHeight: CGFloat = 26
+    var onClickAt: ((Int) -> Void)?
 
-        @State private var hovering = false
-
-        var body: some View {
-            HStack(spacing: 6) {
-                if let img = model.image {
-                    Image(nsImage: img).resizable().frame(width: 16, height: 16)
-                }
-                AttributedText(attributedString: model.attributedTitle)
-                Spacer()
-            }
-            .padding(.horizontal, 8)
-            .frame(height: rowHeight)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onHover { hovering = $0 }
-            .background(hovering ? Color.accentColor.opacity(0.25) : Color.clear)
-            .onTapGesture { onPick() }
-        }
+    override func mouseDown(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        let idx = Int(p.y / max(rowHeight, 1))
+        onClickAt?(idx)
     }
 }
 

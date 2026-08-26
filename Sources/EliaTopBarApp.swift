@@ -478,17 +478,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 attributedTitle: item.attributedTitle ?? NSAttributedString(string: sw.name)
             )
         }
-        var anchorRef: NSHostingView<AgentScrollListView>?
+        let names = agents.map(\.name)
         let storedRows = UserDefaults.standard.integer(forKey: "fleetVisibleRows")
         let visibleRows = storedRows > 0 ? storedRows : 5
-        let hosting = NSHostingView(rootView: AgentScrollListView(
-            rows: rows,
-            visibleRows: visibleRows,
-            onPick: { [weak self] name in
-                guard let self, let anchor = anchorRef else { return }
-                self.popUpInstanceMenu(name: name, anchorView: anchor)
+
+        var anchorRef: AgentListHostingView?
+        let hosting = AgentListHostingView(rootView: AgentScrollListView(rows: rows, visibleRows: visibleRows))
+        hosting.rowHeight = 26
+        hosting.onClickAt = { [weak self] idx in
+            guard let self, names.indices.contains(idx), let anchor = anchorRef else { return }
+            let name = names[idx]
+            var rootMenu = anchor.enclosingMenuItem?.menu
+            while let parent = rootMenu?.supermenu { rootMenu = parent }
+            rootMenu?.cancelTracking()
+            let at = NSEvent.mouseLocation
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                guard let sw = self.subworkerManager.subworkers.first(where: { $0.name == name }) else { return }
+                let details = self.buildSubworkerSubmenu(for: sw)
+                details.autoenablesItems = false
+                details.popUp(positioning: nil, at: at, in: nil)
             }
-        ))
+        }
         anchorRef = hosting
         hosting.sizingOptions = [.preferredContentSize]
         hosting.frame = NSRect(x: 0, y: 0,
