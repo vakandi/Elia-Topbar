@@ -47,6 +47,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var tunnelStatusCache: [String: Any]?
     private var tunnelStatusInFlight = false
     private var tunnelPollTimer: Timer?
+    private var previousRunningNames: Set<String> = []
+    private var seenFirstSubworkerSnapshot = false
+
+    private func detectNewlyRunningAgents() {
+        let running = Set(subworkerManager.subworkers.filter(\.running).map(\.name))
+        defer {
+            previousRunningNames = running
+            seenFirstSubworkerSnapshot = true
+        }
+        guard seenFirstSubworkerSnapshot else { return }
+        let newly = running.subtracting(previousRunningNames)
+        guard !newly.isEmpty, let buttonWindow = statusItem.button?.window else { return }
+        let dropX = buttonWindow.frame.midX
+        let duration = UserDefaults.standard.object(forKey: "runPopupDuration") as? Double ?? 10
+        for name in newly.sorted() {
+            RunPopupController.shared.show(for: name, dropX: dropX, duration: duration)
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         colimaManager = ColimaManager()
@@ -75,9 +93,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             subworkerManager.$statusError.map { _ in () }.eraseToAnyPublisher()
         )
         .sink { [weak self] _ in
-            self?.updateStatusIcon()
-            self?.setupMenu()
-            self?.reconcileSubworkerStatusItems()
+            guard let self else { return }
+            self.updateStatusIcon()
+            self.setupMenu()
+            self.reconcileSubworkerStatusItems()
         }
         .store(in: &cancellables)
 
@@ -402,8 +421,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let now = Date()
-        let active = subworkerManager.subworkers.filter { $0.enabled }
-        let inactive = subworkerManager.subworkers.filter { !$0.enabled }
+        // Most recent session first, in both lists.
+        let active = subworkerManager.subworkers
+            .filter { $0.enabled }
+            .sorted { subworkerManager.recency($0.name) > subworkerManager.recency($1.name) }
+        let inactive = subworkerManager.subworkers
+            .filter { !$0.enabled }
+            .sorted { subworkerManager.recency($0.name) > subworkerManager.recency($1.name) }
 
         // Above this total, each agent section becomes its own scrollable list
         // (test value 10 — production target is 20).
@@ -472,14 +496,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let sw = subworkerManager.subworkers.first(where: { $0.name == name }) else { return }
         let menu = buildSubworkerSubmenu(for: sw)
         menu.autoenablesItems = false
-        let mouseGlobal = NSEvent.mouseLocation
-        let local: NSPoint
-        if let win = anchorView.window {
-            local = anchorView.convert(win.convertFromScreen(NSRect(origin: mouseGlobal, size: .zero)).origin, from: nil)
-        } else {
-            local = NSPoint(x: 0, y: anchorView.bounds.height)
+
+        // The parent dropdown is still tracking — its run loop kills any nested
+        // popUp. End tracking first, then present after the teardown settles.
+        let at = NSEvent.mouseLocation
+        var rootMenu = anchorView.enclosingMenuItem?.menu
+        while let parent = rootMenu?.supermenu { rootMenu = parent }
+        rootMenu?.cancelTracking()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+            menu.popUp(positioning: nil, at: at, in: nil)
         }
-        menu.popUp(positioning: nil, at: local, in: anchorView)
     }
 
     private func buildSubworkerMenuItem(for sw: SubworkerInfo, now: Date) -> NSMenuItem {

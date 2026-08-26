@@ -869,9 +869,7 @@ final class SubworkerManager: ObservableObject {
     }
 
     /// Running agents ordered by the user's fleetOrderMode:
-    /// default (server order) · runs_desc/runs_asc (completed runs this session)
-    /// · latest_msg (most recent streaming activity first, live-reordering)
-    /// · alpha (name A→Z)
+    /// default (most recent session first) · runs_desc/runs_asc · latest_msg · alpha
     func sortedRunningNames() -> [String] {
         let running = subworkers.filter(\.running)
         switch fleetOrderMode {
@@ -884,7 +882,14 @@ final class SubworkerManager: ObservableObject {
         case "alpha":
             return running.map(\.name).sorted()
         default:
-            return running.map(\.name)
+            return running.sorted { recency($0.name) > recency($1.name) }.map(\.name)
         }
+    }
+
+    /// Most recent known session moment: live streaming activity or last completion.
+    func recency(_ name: String) -> Date {
+        let stream = lastActivity[name] ?? .distantPast
+        let completed = subworkers.first(where: { $0.name == name })?.lastCompleted ?? .distantPast
+        return max(stream, completed)
     }
 }
