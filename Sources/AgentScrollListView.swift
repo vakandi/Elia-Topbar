@@ -10,34 +10,32 @@ struct AgentRowModel {
 /// Only this list scrolls under the mouse — the rest of the dropdown stays put.
 struct AgentScrollListView: View {
     let rows: [AgentRowModel]
-    /// Row tap → live log viewer. "⋯" tap → full details menu.
+    var visibleRows: Int = 5
+    /// Row tap → the agent's full details menu.
     var onPick: (String) -> Void
-    var onOptions: (String) -> Void
 
     private let rowHeight: CGFloat = 26
-    private let visibleRows: CGFloat = 5
 
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
                 ForEach(rows, id: \.name) { row in
-                    RowButton(model: row, rowHeight: rowHeight,
-                              onPick: { onPick(row.name) },
-                              onOptions: { onOptions(row.name) })
+                    RowButton(model: row, rowHeight: rowHeight) {
+                        onPick(row.name)
+                    }
                     if row.name != rows.last?.name {
                         Divider().padding(.leading, 8)
                     }
                 }
             }
         }
-        .frame(width: 300, height: CGFloat(min(rows.count, Int(visibleRows))) * rowHeight)
+        .frame(width: 300, height: CGFloat(min(rows.count, max(visibleRows, 1))) * rowHeight)
     }
 
     private struct RowButton: View {
         let model: AgentRowModel
         let rowHeight: CGFloat
         var onPick: () -> Void
-        var onOptions: () -> Void
 
         @State private var hovering = false
 
@@ -48,13 +46,6 @@ struct AgentScrollListView: View {
                 }
                 AttributedText(attributedString: model.attributedTitle)
                 Spacer()
-                Button(action: onOptions) {
-                    Text("⋯")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 4)
-                }
-                .buttonStyle(.plain)
             }
             .padding(.horizontal, 8)
             .frame(height: rowHeight)

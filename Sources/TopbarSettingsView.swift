@@ -21,6 +21,14 @@ struct TopbarSettingsView: View {
     @State private var runPopupDuration: Double = UserDefaults.standard.object(forKey: "runPopupDuration") as? Double ?? 10
     @State private var showGuide = false
     @State private var orderMode: String = UserDefaults.standard.string(forKey: "fleetOrderMode") ?? "default"
+    @State private var scrollThreshold: Int = {
+        let v = UserDefaults.standard.integer(forKey: "fleetScrollThreshold")
+        return v > 0 ? v : 10
+    }()
+    @State private var visibleRows: Int = {
+        let v = UserDefaults.standard.integer(forKey: "fleetVisibleRows")
+        return v > 0 ? v : 5
+    }()
 
     private let barHeight: CGFloat = 20
     private let defaults = UserDefaults.standard
@@ -75,6 +83,22 @@ struct TopbarSettingsView: View {
                         onRefresh()
                         previewIcon = iconProvider()
                     }
+
+                    Stepper(value: $scrollThreshold, in: 5...40, step: 1) {
+                        Text("Scroll after \(scrollThreshold) agents")
+                    }
+                    .onChange(of: scrollThreshold) { v in
+                        defaults.set(v, forKey: "fleetScrollThreshold")
+                        onRefresh()
+                    }
+
+                    Stepper(value: $visibleRows, in: 3...15, step: 1) {
+                        Text("Show \(visibleRows) rows when scrolling")
+                    }
+                    .onChange(of: visibleRows) { v in
+                        defaults.set(v, forKey: "fleetVisibleRows")
+                        onRefresh()
+                    }
                 }
                 .padding(6)
             } label: {
@@ -93,6 +117,8 @@ struct TopbarSettingsView: View {
                             .monospacedDigit()
                             .foregroundColor(.secondary)
                             .frame(width: 34, alignment: .trailing)
+                        Button("Test") { onTestRunPopup() }
+                            .controlSize(.small)
                     }
                     Text("Photo + live bubble dropping from the icon when an agent starts. Click it to dismiss.")
                         .font(.caption)

@@ -430,8 +430,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sorted { subworkerManager.recency($0.name) > subworkerManager.recency($1.name) }
 
         // Above this total, each agent section becomes its own scrollable list
-        // (test value 10 — production target is 20).
-        let fleetScrollThreshold = 10
+        // (test value 10 — production target is 20). User-configurable.
+        let storedThreshold = UserDefaults.standard.integer(forKey: "fleetScrollThreshold")
+        let fleetScrollThreshold = storedThreshold > 0 ? storedThreshold : 10
         let useScrollSections = active.count + inactive.count >= fleetScrollThreshold
 
         if !active.isEmpty {
@@ -478,12 +479,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         }
         var anchorRef: NSHostingView<AgentScrollListView>?
+        let storedRows = UserDefaults.standard.integer(forKey: "fleetVisibleRows")
+        let visibleRows = storedRows > 0 ? storedRows : 5
         let hosting = NSHostingView(rootView: AgentScrollListView(
             rows: rows,
+            visibleRows: visibleRows,
             onPick: { [weak self] name in
-                self?.showSubworkerLogPopover(for: name, button: self?.statusItem.button)
-            },
-            onOptions: { [weak self] name in
                 guard let self, let anchor = anchorRef else { return }
                 self.popUpInstanceMenu(name: name, anchorView: anchor)
             }
@@ -492,7 +493,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hosting.sizingOptions = [.preferredContentSize]
         hosting.frame = NSRect(x: 0, y: 0,
                                width: 300,
-                               height: CGFloat(min(rows.count, 5)) * 26)
+                               height: CGFloat(min(rows.count, max(visibleRows, 1))) * 26)
         let item = NSMenuItem()
         item.view = hosting
         return item
@@ -1102,7 +1103,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let w = topbarSettingsWindow { w.close() }
         let contentView = NSHostingView(rootView: TopbarSettingsView(
             iconProvider: { [weak self] in self?.statusItem.button?.image },
-            onRefresh: { [weak self] in self?.updateStatusIcon() },
+            onRefresh: { [weak self] in
+                self?.updateStatusIcon()
+                self?.setupMenu()
+            },
+            onTestRunPopup: { [weak self] in
+                guard let self else { return }
+                let dropX = self.statusItem.button?.window?.frame.midX
+                    ?? (NSScreen.main?.frame.midX ?? 400)
+                let name = self.subworkerManager.subworkers.first?.name ?? "test-agent"
+                let stored = UserDefaults.standard.object(forKey: "runPopupDuration") as? Double ?? 10
+                RunPopupController.shared.show(for: name, dropX: dropX, duration: stored == 0 ? 10 : stored)
+            },
             onOrderChange: { [weak self] mode in
                 self?.subworkerManager.fleetOrderMode = mode
                 self?.updateStatusIcon()
