@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EliaTopBar — macOS Menu Bar Command Center for the Elia Agent Ecosystem</title>
+<meta name="description" content="Native macOS menu bar command center for the Elia agent ecosystem. Live subworker status, run popup animations, real-time logs, one-click triggers — plus full Colima instance control.">
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-card: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #8b5cf6;
+    --accent2: #22d3ee;
+    --green: #3fb950;
+    --orange: #f0883e;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+  }
+  a { color: var(--accent2); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .container { max-width: 1000px; margin: 0 auto; padding: 0 24px; }
+
+  header {
+    padding: 64px 0 40px;
+    text-align: center;
+    background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(139, 92, 246, 0.18), transparent);
+  }
+  header img.banner { max-width: 720px; width: 100%; border-radius: 12px; }
+  header h1 { font-size: 2.4rem; margin: 28px 0 8px; letter-spacing: -0.02em; }
+  header h1 .grad {
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  header p.tagline { color: var(--muted); font-size: 1.15rem; max-width: 640px; margin: 0 auto; }
+  .badges { margin-top: 18px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .badges img { height: 22px; }
+
+  .cta { margin-top: 28px; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: 12px 26px; border-radius: 10px;
+    font-weight: 600; font-size: 1rem; transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .btn:hover { transform: translateY(-2px); text-decoration: none; }
+  .btn-primary {
+    background: linear-gradient(90deg, var(--accent), #6d4ae0); color: #fff;
+    box-shadow: 0 4px 20px rgba(139, 92, 246, 0.35);
+  }
+  .btn-secondary { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); }
+
+  section { padding: 48px 0; }
+  section h2 { font-size: 1.6rem; margin-bottom: 24px; text-align: center; }
+  .screenshots { display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; align-items: flex-start; }
+  .screenshots img {
+    border-radius: 12px; border: 1px solid var(--border);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+  }
+  .screenshots img.menu { width: 560px; max-width: 100%; }
+  .screenshots img.agents { width: 340px; max-width: 100%; }
+  .caption { text-align: center; color: var(--muted); font-size: .9rem; margin-top: 14px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
+  .card {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 22px; transition: border-color .2s ease;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card h3 { font-size: 1.05rem; margin-bottom: 8px; }
+  .card p { color: var(--muted); font-size: .93rem; }
+
+  pre.arch {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; overflow-x: auto; font-size: .8rem; line-height: 1.45; color: var(--muted);
+  }
+  code.inline {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px;
+    padding: 2px 7px; font-size: .88em; font-family: "SF Mono", Menlo, monospace;
+  }
+  pre.cmd {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 20px; overflow-x: auto; font-family: "SF Mono", Menlo, monospace;
+    font-size: .88rem; color: var(--green);
+  }
+  table { width: 100%; border-collapse: collapse; background: var(--bg-card); border-radius: 12px; overflow: hidden; }
+  th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border); font-size: .93rem; }
+  th { background: rgba(139, 92, 246, 0.12); color: var(--text); }
+  td:first-child { white-space: nowrap; font-weight: 600; }
+  td { color: var(--muted); }
+
+  footer { border-top: 1px solid var(--border); padding: 32px 0; text-align: center; color: var(--muted); font-size: .9rem; }
+  footer .heart { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header class="container">
+  <img class="banner" src="banner.png" alt="EliaTopBar banner">
+  <h1>Elia<span class="grad">TopBar</span></h1>
+  <p class="tagline">Native macOS menu bar command center for the Elia agent ecosystem.
+  Live subworker status, run popup animations, real-time logs, one-click triggers — plus full Colima instance control.</p>
+  <div class="badges">
+    <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT">
+    <img src="https://img.shields.io/badge/Swift-5.9-orange.svg" alt="Swift 5.9">
+    <img src="https://img.shields.io/badge/macOS-13%2B-blue.svg" alt="macOS 13+">
+    <img src="https://img.shields.io/badge/Connects%20to-EliaAgent-8B5CF6.svg" alt="Connects to EliaAgent">
+  </div>
+  <div class="cta">
+    <a class="btn btn-primary" href="https://github.com/vakandi/Elia-Topbar/releases/latest">⬇️ Download DMG</a>
+    <a class="btn btn-secondary" href="https://github.com/vakandi/Elia-Topbar">View on GitHub</a>
+  </div>
+</header>
+
+<section class="container">
+  <div class="screenshots">
+    <img class="menu" src="screenshot-menu.png" alt="EliaTopBar menu — Subworker Server, Active Agents, Manual Run, Colima instances">
+    <img class="agents" src="screenshot-agents.png" alt="EliaTopBar active agents — live subworker states and controls">
+  </div>
+  <p class="caption">The full dashboard menu &amp; per-agent controls, live from the menu bar.</p>
+</section>
+
+<section class="container">
+  <h2>What Is This?</h2>
+  <p style="text-align:center; color: var(--muted); max-width: 760px; margin: 0 auto 28px;">
+    <strong style="color: var(--text);">EliaTopBar</strong> sits in your macOS menu bar and gives you real-time command over the
+    <a href="https://github.com/vakandi/EliaAgent">Elia agent ecosystem</a> — without opening a browser or terminal.
+    It connects over <code class="inline">WebSocket</code> to the Elia FastAPI server and turns every subworker into a live, actionable dashboard row.
+  </p>
+  <div class="grid">
+    <div class="card"><h3>🟢 Live agent states</h3><p>Running, idle, disabled, error, done — pushed over WebSocket, never polled.</p></div>
+    <div class="card"><h3>📍 Per-agent menu bar icons</h3><p>Each running subworker gets its own top-bar photo with a state-colored ring.</p></div>
+    <div class="card"><h3>💬 Run popup animation</h3><p>When an agent starts, its photo drops from the icon with a live output bubble — visible even over fullscreen video.</p></div>
+    <div class="card"><h3>🖱️ Full LogViewer</h3><p>Click an agent photo to browse sessions, messages, reasoning and tool calls — always clamped inside the screen.</p></div>
+    <div class="card"><h3>⚡ One-click triggers</h3><p>Manual Run Subworker dropdown, enable / disable, next run, schedule — everything from the menu.</p></div>
+    <div class="card"><h3>⚙️ Topbar Settings</h3><p>Agent photos side, live padding slider, run animation duration + test trigger. Zero permissions required.</p></div>
+    <div class="card"><h3>❤️ Server health</h3><p>Connection state, PID, restart count, reconnect — at a glance.</p></div>
+    <div class="card"><h3>🐳 Colima control</h3><p>Start / stop / restart instances, open a shell, inspect resources, launch at login.</p></div>
+  </div>
+</section>
+
+<section class="container">
+  <h2>Architecture</h2>
+  <pre class="arch">
+┌────────────────────────────────────────────────────────────────┐
+│  EliaTopBar  (macOS menu bar app, Swift 5.9)                   │
+│                                                                │
+│   menu bar icon  ◄─── dynamic state (running / error / idle)   │
+│   per-agent photos ◄── live fleet with state-colored rings     │
+│   run popup      ◄─── photo drop + live bubble on run start    │
+│   log popover    ◄─── click any agent photo                    │
+└──────────────────────────────┬─────────────────────────────────┘
+                               │ WebSocket (ws://localhost:5656/ws)
+                               │ HTTP  (/status, /trigger, /enable,
+                               │        /disable, /logs, /server/health)
+                               ▼
+┌────────────────────────────────────────────────────────────────┐
+│  EliaAgent  (FastAPI in Docker)                                │
+│                                                                │
+│   subworker scheduler  ◄─── agents run on schedule or trigger  │
+│   /ws real-time events  ─── initial_status, subworker_started, │
+│                            run_log, subworker_completed, pong  │
+└────────────────────────────────────────────────────────────────┘</pre>
+  <p class="caption">EliaTopBar is the <strong>control surface</strong>; <a href="https://github.com/vakandi/EliaAgent">EliaAgent</a> is the <strong>engine</strong>.</p>
+</section>
+
+<section class="container">
+  <h2>Quick Start</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>1 · Download</h3>
+      <p>Grab <code class="inline">EliaTopBar-vX.Y.Z-arm64.dmg</code> from the
+      <a href="https://github.com/vakandi/Elia-Topbar/releases/latest">latest release</a>,
+      open it and drag <strong>EliaTopBar</strong> to Applications.</p>
+    </div>
+    <div class="card">
+      <h3>2 · First launch</h3>
+      <p>Ad-hoc signed, not notarized: right-click the app → <strong>Open</strong>, then confirm.
+      Stubborn? <code class="inline">xattr -dr com.apple.quarantine /Applications/EliaTopBar.app</code></p>
+    </div>
+    <div class="card">
+      <h3>3 · Connect</h3>
+      <p>Make sure the EliaAgent server runs on <code class="inline">localhost:5656</code>.
+      The app auto-connects — no config file, no env vars. Different host? <strong>Change Server URL…</strong></p>
+    </div>
+  </div>
+  <p class="caption" style="margin-top:22px;">Prefer building from source?</p>
+  <pre class="cmd">git clone https://github.com/vakandi/Elia-Topbar.git
+cd Elia-Topbar
+./build-app.sh          # ad-hoc signed
+open EliaTopBar.app</pre>
+</section>
+
+<section class="container">
+  <h2>Requirements</h2>
+  <table>
+    <tr><th>Requirement</th><th>Detail</th></tr>
+    <tr><td>macOS</td><td>13.0+ (Ventura or newer), Apple Silicon</td></tr>
+    <tr><td>Swift toolchain</td><td>5.9+ (only for building from source)</td></tr>
+    <tr><td>EliaAgent</td><td>FastAPI server, default <code class="inline">localhost:5656</code> (optional — for subworker features)</td></tr>
+    <tr><td>Colima</td><td><code class="inline">brew install colima</code> (optional — only for container management)</td></tr>
+  </table>
+</section>
+
+<footer>
+  <div class="container">
+    <p>Built with <span class="heart">♥</span> for the Elia agent ecosystem ·
+    <a href="https://github.com/vakandi/Elia-Topbar">GitHub</a> ·
+    <a href="https://github.com/vakandi/Elia-Topbar/releases/latest">Releases</a> ·
+    <a href="https://github.com/vakandi/EliaAgent">EliaAgent</a></p>
+    <p style="margin-top:8px;">MIT License</p>
+  </div>
+</footer>
+
+</body>
+</html>

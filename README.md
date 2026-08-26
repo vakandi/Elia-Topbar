@@ -36,10 +36,15 @@ and turns every subworker into a live, actionable dashboard row.
 - 🟢 **Live agent states** pushed over WebSocket — running, idle, disabled, error, done
 - 📍 **Per-agent menu bar icons** — each running subworker gets its own top-bar dot with a
   monogram, colored by state (green = healthy, red = error)
-- 🖱️ **Hover-to-view logs** — move your cursor over an agent icon and a real-time log
-  overlay appears (2s polling, with loading spinner and full error display)
+- 💬 **Run popup animation** — when an agent starts, its photo drops from the menu bar
+  icon with a live chat bubble streaming the run output — visible even over fullscreen
+  video, auto-retracts, click to dismiss
+- 🖱️ **Click-to-view LogViewer** — click an agent photo to open the full session browser
+  (sessions, messages, tool calls, live stream), always clamped inside the screen
 - ⚡ **Manual Run Subworker** — trigger any subworker on demand from a dropdown
 - 🔁 **Enable / Disable, next run, schedule** — per-agent submenu with everything you need
+- ⚙️ **Topbar Settings** — agent photos side, live padding, run animation duration + test
+  trigger — zero permissions required
 - ❤️ **Server health** — connection state, PID, restart count, reconnect button
 - ⏱️ **Loading + error states everywhere** — every server-loaded menu shows a spinner
   while fetching, then data — or the full error message if it fails
@@ -58,7 +63,9 @@ open a shell, inspect resources, delete, auto-refresh and launch-at-login.
 | **WebSocket live updates** | Real-time status pushed from the Elia FastAPI server (`ws://localhost:5656/ws`) |
 | **Active Agents list** | Every subworker with live state: `⚡ Running`, `⏸️ Idle`, `⛔ Disabled`, `💥 Error`, `✅ Done` |
 | **Per-agent top bar icons** | Running agents each get a colored status dot with their monogram in the menu bar |
-| **Live log overlay** | Hover an agent icon → real-time logs (`/logs/{name}?lines=50`), refreshed every 2s |
+| **Run popup animation** | Agent photo drops from the icon + live output bubble when a run starts — visible over fullscreen video, auto-retracts (configurable), click to dismiss |
+| **LogViewer** | Full session browser per agent: sessions list, messages, reasoning, tool-call banners, live stream — always clamped inside the screen |
+| **Topbar Settings panel** | Agent photos side (left/right of banner), live padding slider, run animation duration + test trigger — no permissions needed |
 | **Manual Run Subworker** | Trigger any subworker from a dropdown — no terminal needed |
 | **Per-agent submenu** | Status, next run, schedule, last run, view logs, trigger now, enable / disable |
 | **Server health section** | Connection state, running/total counts, server state + PID + restarts, reconnect |
@@ -110,6 +117,12 @@ lives on the server, and the menu bar just renders it.
 ---
 
 ## 🚀 Quick Start
+
+### Download
+
+Grab the latest DMG or ZIP from the
+[releases page](https://github.com/vakandi/Elia-Topbar/releases/latest):
+download `EliaTopBar-vX.Y.Z-arm64.dmg`, open it, drag **EliaTopBar** to Applications.
 
 ### Build from Source
 
@@ -178,6 +191,9 @@ Running subworkers appear as individual dots in the menu bar:
 | Setting | How | Default |
 |---------|-----|---------|
 | Server URL | Menu → **Change Server URL…** | `http://localhost:5656` |
+| Agent photos side | Topbar Settings → **Agent photos** | Left of banner |
+| Icon padding | Topbar Settings → **Left / Right padding** (live preview) | 3 pt |
+| Run popup duration | Topbar Settings → **Run animation** (0 = off) | 10 s |
 | Refresh interval | Menu → **Refresh Interval** (Colima section) | 5 s |
 | Launch at Login | Menu → **Launch at Login** | off |
 
