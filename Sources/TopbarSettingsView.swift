@@ -7,20 +7,20 @@ import AppKit
 /// macOS exposes no API to place an NSStatusItem next to Wi-Fi/battery — the only
 /// supported mechanism is native ⌘-drag reordering, which this UI teaches.
 struct TopbarSettingsView: View {
-    var currentIcon: NSImage?
+    var iconProvider: () -> NSImage?
     var onRefresh: () -> Void
+    var onOrderChange: (String) -> Void
 
+    @State private var previewIcon: NSImage?
     @State private var capturedBar: NSImage?
     @State private var captureDenied = false
     @State private var ghostX: CGFloat = 0
     @State private var photosSide: String = UserDefaults.standard.string(forKey: "fleetPhotosSide") ?? "left"
-    @State private var leftPad: Double = {
-        let v = UserDefaults.standard.double(forKey: "fleetLeftPad")
-        return v == 0 ? 3 : v
-    }()
+    @State private var leftPad: Double = UserDefaults.standard.object(forKey: "fleetLeftPad") as? Double ?? 3
     @State private var showGuide = false
+    @State private var orderMode: String = UserDefaults.standard.string(forKey: "fleetOrderMode") ?? "default"
 
-    private let barHeight: CGFloat = 26
+    private let barHeight: CGFloat = 20
     private let defaults = UserDefaults.standard
 
     var body: some View {
@@ -46,15 +46,32 @@ struct TopbarSettingsView: View {
                     .onChange(of: photosSide) { side in
                         defaults.set(side, forKey: "fleetPhotosSide")
                         onRefresh()
+                        previewIcon = iconProvider()
                     }
 
                     HStack {
-                        Text("Left padding")
-                        Slider(value: $leftPad, in: 0...10, step: 1) { _ in
-                            defaults.set(leftPad, forKey: "fleetLeftPad")
-                            onRefresh()
-                        }
+                        Text(photosSide == "right" ? "Right padding" : "Left padding")
+                        Slider(value: $leftPad, in: 0...10, step: 1)
+                            .onChange(of: leftPad) { _ in
+                                defaults.set(leftPad, forKey: "fleetLeftPad")
+                                onRefresh()
+                                previewIcon = iconProvider()
+                            }
                         Text("\(Int(leftPad))pt").monospacedDigit().foregroundColor(.secondary)
+                    }
+
+                    Picker("Icon order", selection: $orderMode) {
+                        Text("Default (server)").tag("default")
+                        Text("Most runs first").tag("runs_desc")
+                        Text("Fewest runs first").tag("runs_asc")
+                        Text("Latest message (live)").tag("latest_msg")
+                        Text("Alphabetical A→Z").tag("alpha")
+                    }
+                    .onChange(of: orderMode) { mode in
+                        defaults.set(mode, forKey: "fleetOrderMode")
+                        onOrderChange(mode)
+                        onRefresh()
+                        previewIcon = iconProvider()
                     }
                 }
                 .padding(6)
@@ -98,7 +115,10 @@ struct TopbarSettingsView: View {
         .padding(14)
         .frame(width: 430)
         .frame(maxHeight: 560)
-        .onAppear(perform: captureMenuBar)
+        .onAppear {
+            captureMenuBar()
+            previewIcon = iconProvider()
+        }
     }
 
     // MARK: - Preview
@@ -141,11 +161,11 @@ struct TopbarSettingsView: View {
             .frame(height: barHeight + 8)
             .clipped()
 
-            if let icon = currentIcon {
+            if let icon = previewIcon {
                 Image(nsImage: icon)
                     .resizable()
                     .scaledToFit()
-                    .frame(height: barHeight - 4)
+                    .frame(height: barHeight - 5)
                     .shadow(radius: 2)
                     .offset(x: ghostX, y: 4)
                     .gesture(
@@ -169,7 +189,7 @@ struct TopbarSettingsView: View {
         DispatchQueue.global(qos: .userInitiated).async {
             let screenW = Int(NSScreen.main?.frame.width ?? 1600)
             let halfW = screenW / 2
-            let cropH = Int(self.barHeight * 2)
+            let cropH = Int(self.barHeight * 1.4)
             let tmp = URL(fileURLWithPath: "/tmp/elia_menubar.png")
             try? FileManager.default.removeItem(at: tmp)
 

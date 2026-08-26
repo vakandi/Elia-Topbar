@@ -93,6 +93,12 @@ final class SubworkerManager: ObservableObject {
     @Published var totalEnabled = 0
     @Published var isLoading = true
     @Published var statusError: String?
+    /// Fleet icon ordering mode (see sortedRunningNames).
+    @Published var fleetOrderMode: String = UserDefaults.standard.string(forKey: "fleetOrderMode") ?? "default"
+    /// Last streaming activity per agent — drives "latest_msg" ordering.
+    @Published var lastActivity: [String: Date] = [:]
+    /// Completed-run counters this app session — drives "runs" ordering.
+    @Published var runCounts: [String: Int] = [:]
     @Published var modelSelections: [String: String] = [:]
     @Published var modelVariants: [String: String] = [:]
     @Published var availableModels: [ModelOption] = []
@@ -246,6 +252,7 @@ final class SubworkerManager: ObservableObject {
         case "run_log":
             if let name = json["name"] as? String,
                let delta = json["text"] as? String {
+                lastActivity[name] = Date()
                 NotificationCenter.default.post(
                     name: SubworkerManager.runLogNotification,
                     object: nil,
@@ -385,6 +392,7 @@ final class SubworkerManager: ObservableObject {
         guard let name = json["name"] as? String else { return }
         AppLog.d("Subworker completed: \(name)")
 
+        runCounts[name, default: 0] += 1
         if let idx = subworkers.firstIndex(where: { $0.name == name }) {
             subworkers[idx].running = false
             subworkers[idx].lastError = nil
@@ -858,5 +866,25 @@ final class SubworkerManager: ObservableObject {
         runningCount = subworkers.filter(\.running).count
         totalEnabled = subworkers.filter(\.enabled).count
         AppLog.d("Counts: \(runningCount) running / \(totalEnabled) enabled")
+    }
+
+    /// Running agents ordered by the user's fleetOrderMode:
+    /// default (server order) · runs_desc/runs_asc (completed runs this session)
+    /// · latest_msg (most recent streaming activity first, live-reordering)
+    /// · alpha (name A→Z)
+    func sortedRunningNames() -> [String] {
+        let running = subworkers.filter(\.running)
+        switch fleetOrderMode {
+        case "runs_desc":
+            return running.sorted { runCounts[$0.name, default: 0] > runCounts[$1.name, default: 0] }.map(\.name)
+        case "runs_asc":
+            return running.sorted { runCounts[$0.name, default: 0] < runCounts[$1.name, default: 0] }.map(\.name)
+        case "latest_msg":
+            return running.sorted { (lastActivity[$0.name] ?? .distantPast) > (lastActivity[$1.name] ?? .distantPast) }.map(\.name)
+        case "alpha":
+            return running.map(\.name).sorted()
+        default:
+            return running.map(\.name)
+        }
     }
 }

@@ -126,7 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let swRunning = subworkerManager.runningCount
 
         let barHeight = max(NSStatusBar.system.thickness, 20)
-        let runningNames = subworkerManager.subworkers.filter(\.running).map(\.name)
+        let runningNames = subworkerManager.sortedRunningNames()
 
         if swDisconnected || swHasError {
             let symbolName = swDisconnected ? "circle.slash" : "exclamationmark.circle"
@@ -405,14 +405,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let active = subworkerManager.subworkers.filter { $0.enabled }
         let inactive = subworkerManager.subworkers.filter { !$0.enabled }
 
+        // Above this total, each agent section becomes its own scrollable list
+        // (test value 10 — production target is 20).
+        let fleetScrollThreshold = 10
+        let useScrollSections = active.count + inactive.count >= fleetScrollThreshold
+
         if !active.isEmpty {
             let header = NSMenuItem(title: "", action: nil, keyEquivalent: "")
             header.attributedTitle = emojiAwareTitle("🤖 Active Agents (\(active.count))", color: .secondaryLabelColor)
             header.isEnabled = false
             menu.addItem(header)
 
-            for sw in active {
-                menu.addItem(buildSubworkerMenuItem(for: sw, now: now))
+            if useScrollSections {
+                menu.addItem(scrollableAgentSection(active))
+            } else {
+                for sw in active {
+                    menu.addItem(buildSubworkerMenuItem(for: sw, now: now))
+                }
             }
         }
 
@@ -423,10 +432,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             header.isEnabled = false
             menu.addItem(header)
 
-            for sw in inactive {
-                menu.addItem(buildSubworkerMenuItem(for: sw, now: now))
+            if useScrollSections {
+                menu.addItem(scrollableAgentSection(inactive))
+            } else {
+                for sw in inactive {
+                    menu.addItem(buildSubworkerMenuItem(for: sw, now: now))
+                }
             }
         }
+    }
+
+    /// Embeds agents in an independently scrollable view; clicking a row pops
+    /// that agent's regular submenu at the mouse position.
+    private func scrollableAgentSection(_ agents: [SubworkerInfo]) -> NSMenuItem {
+        let rows: [AgentRowModel] = agents.map { sw in
+            let item = buildSubworkerMenuItem(for: sw, now: Date())
+            return AgentRowModel(
+                name: sw.name,
+                image: ProfilePhotos.shared.circularPhoto(for: sw.name, size: 16),
+                attributedTitle: item.attributedTitle ?? NSAttributedString(string: sw.name)
+            )
+        }
+        var anchorRef: NSHostingView<AgentScrollListView>?
+        let hosting = NSHostingView(rootView: AgentScrollListView(rows: rows) { [weak self] name in
+            guard let self, let anchor = anchorRef else { return }
+            self.popUpInstanceMenu(name: name, anchorView: anchor)
+        })
+        anchorRef = hosting
+        let item = NSMenuItem()
+        item.view = hosting
+        return item
+    }
+
+    private func popUpInstanceMenu(name: String, anchorView: NSView) {
+        guard let sw = subworkerManager.subworkers.first(where: { $0.name == name }) else { return }
+        let menu = buildSubworkerSubmenu(for: sw)
+        menu.autoenablesItems = false
+        let mouseGlobal = NSEvent.mouseLocation
+        let local: NSPoint
+        if let win = anchorView.window {
+            local = anchorView.convert(win.convertFromScreen(NSRect(origin: mouseGlobal, size: .zero)).origin, from: nil)
+        } else {
+            local = NSPoint(x: 0, y: anchorView.bounds.height)
+        }
+        menu.popUp(positioning: nil, at: local, in: anchorView)
     }
 
     private func buildSubworkerMenuItem(for sw: SubworkerInfo, now: Date) -> NSMenuItem {
@@ -726,13 +775,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         iconCellWidth = cell
         let side = UserDefaults.standard.string(forKey: "fleetPhotosSide") ?? "left"
-        let storedPad = UserDefaults.standard.double(forKey: "fleetLeftPad")
-        let padLeft: CGFloat = side == "left" ? CGFloat(storedPad == 0 ? 3 : storedPad) : 1
-        let fleetWidth = padLeft + CGFloat(names.count) * cell + gap
+        let storedPad = UserDefaults.standard.object(forKey: "fleetLeftPad") as? Double
+        let pad: CGFloat = CGFloat(storedPad ?? 3)
+        let fleetWidth = pad + CGFloat(names.count) * cell + gap
         if side == "right" {
-            iconPhotosStartX = base.size.width + gap
+            iconPhotosStartX = base.size.width + pad
         } else {
-            iconPhotosStartX = padLeft
+            iconPhotosStartX = pad
         }
         iconPhotoCount = names.count
 
@@ -786,7 +835,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if iconPhotoCount > 0, point.x >= iconPhotosStartX,
            point.x < iconPhotosStartX + CGFloat(iconPhotoCount) * iconCellWidth {
             let idx = min(max(Int((point.x - iconPhotosStartX) / iconCellWidth), 0), iconPhotoCount - 1)
-            let names = subworkerManager.subworkers.filter(\.running).map(\.name)
+            let names = subworkerManager.sortedRunningNames()
             guard idx < names.count else { return }
             let name = names[idx]
 
@@ -1016,12 +1065,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openTopbarSettings(_ sender: NSMenuItem) {
         if let w = topbarSettingsWindow { w.close() }
         let contentView = NSHostingView(rootView: TopbarSettingsView(
-            currentIcon: statusItem.button?.image,
-            onRefresh: { [weak self] in self?.updateStatusIcon() }
+            iconProvider: { [weak self] in self?.statusItem.button?.image },
+            onRefresh: { [weak self] in self?.updateStatusIcon() },
+            onOrderChange: { [weak self] mode in
+                self?.subworkerManager.fleetOrderMode = mode
+                self?.updateStatusIcon()
+            }
         ))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 420),
-                              styleMask: [.titled, .closable],
+                              styleMask: [.titled, .closable, .resizable],
                               backing: .buffered, defer: false)
+        window.minSize = NSSize(width: 460, height: 380)
         window.isReleasedWhenClosed = false
         window.title = "Topbar Settings"
         window.contentView = contentView

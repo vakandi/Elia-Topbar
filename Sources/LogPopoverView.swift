@@ -110,6 +110,32 @@ struct LogPopoverView: View {
 
     private var sessionSidebar: some View {
         VStack(spacing: 0) {
+            VStack(spacing: 6) {
+                if let photo = ProfilePhotos.shared.circularPhoto(for: subworkerName, size: 72) {
+                    Image(nsImage: photo)
+                        .resizable()
+                        .frame(width: 72, height: 72)
+                } else {
+                    ZStack {
+                        Circle()
+                            .fill(Color.accentColor.opacity(0.22))
+                        Text(agentMonogram)
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundColor(.accentColor)
+                    }
+                    .frame(width: 72, height: 72)
+                }
+                Text(subworkerName)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+                    .help(subworkerName)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+
+            Divider()
+
             Text("Sessions")
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -500,6 +526,14 @@ struct LogPopoverView: View {
     }
 
     // MARK: - Session Helpers
+
+    private var agentMonogram: String {
+        let parts = subworkerName.split(separator: "-").map(String.init)
+        let initials = parts.prefix(2).compactMap { $0.first.map(String.init) }.joined().uppercased()
+        if initials.count == 2 { return initials }
+        let firstWord = parts.first ?? subworkerName
+        return String(firstWord.prefix(2)).uppercased()
+    }
 
     private func sessionTitle(_ session: SessionItem) -> String {
         if let t = session.title, !t.isEmpty { return t }
