@@ -478,10 +478,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         }
         var anchorRef: NSHostingView<AgentScrollListView>?
-        let hosting = NSHostingView(rootView: AgentScrollListView(rows: rows) { [weak self] name in
-            guard let self, let anchor = anchorRef else { return }
-            self.popUpInstanceMenu(name: name, anchorView: anchor)
-        })
+        let hosting = NSHostingView(rootView: AgentScrollListView(
+            rows: rows,
+            onPick: { [weak self] name in
+                self?.showSubworkerLogPopover(for: name, button: self?.statusItem.button)
+            },
+            onOptions: { [weak self] name in
+                guard let self, let anchor = anchorRef else { return }
+                self.popUpInstanceMenu(name: name, anchorView: anchor)
+            }
+        ))
         anchorRef = hosting
         hosting.sizingOptions = [.preferredContentSize]
         hosting.frame = NSRect(x: 0, y: 0,
@@ -503,7 +509,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var rootMenu = anchorView.enclosingMenuItem?.menu
         while let parent = rootMenu?.supermenu { rootMenu = parent }
         rootMenu?.cancelTracking()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             menu.popUp(positioning: nil, at: at, in: nil)
         }
     }

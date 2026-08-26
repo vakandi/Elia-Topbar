@@ -9,6 +9,7 @@ import AppKit
 struct TopbarSettingsView: View {
     var iconProvider: () -> NSImage?
     var onRefresh: () -> Void
+    var onTestRunPopup: () -> Void = {}
     var onOrderChange: (String) -> Void
 
     @State private var previewIcon: NSImage?
@@ -17,6 +18,7 @@ struct TopbarSettingsView: View {
     @State private var ghostX: CGFloat = 0
     @State private var photosSide: String = UserDefaults.standard.string(forKey: "fleetPhotosSide") ?? "left"
     @State private var leftPad: Double = UserDefaults.standard.object(forKey: "fleetLeftPad") as? Double ?? 3
+    @State private var runPopupDuration: Double = UserDefaults.standard.object(forKey: "runPopupDuration") as? Double ?? 10
     @State private var showGuide = false
     @State private var orderMode: String = UserDefaults.standard.string(forKey: "fleetOrderMode") ?? "default"
 
@@ -77,6 +79,28 @@ struct TopbarSettingsView: View {
                 .padding(6)
             } label: {
                 Text("Layout").font(.caption).foregroundColor(.secondary)
+            }
+
+            GroupBox {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Duration")
+                        Slider(value: $runPopupDuration, in: 0...30, step: 1)
+                            .onChange(of: runPopupDuration) { _ in
+                                defaults.set(runPopupDuration, forKey: "runPopupDuration")
+                            }
+                        Text(runPopupDuration == 0 ? "Off" : "\(Int(runPopupDuration))s")
+                            .monospacedDigit()
+                            .foregroundColor(.secondary)
+                            .frame(width: 34, alignment: .trailing)
+                    }
+                    Text("Photo + live bubble dropping from the icon when an agent starts. Click it to dismiss.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(6)
+            } label: {
+                Text("Run animation").font(.caption).foregroundColor(.secondary)
             }
 
             GroupBox {
