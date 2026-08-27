@@ -358,8 +358,6 @@ struct LogPopoverView: View {
             MarkdownView(text: t, baseColor: .primary)
                 .fixedSize(horizontal: false, vertical: true)
         case .reasoning(let r):
-            // Grey plain text with a thin grey bar —
-            // visually distinct from the reply without a banner.
             HStack(alignment: .top, spacing: 6) {
                 Rectangle()
                     .fill(Color.gray.opacity(0.35))
@@ -368,13 +366,52 @@ struct LogPopoverView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         case .tool(let name, let input, let output):
-            toolBanner(
-                icon: toolIcon(name),
-                title: toolDisplayName(name),
-                color: toolColor(name),
-                content: formatToolContent(name: name, input: input, output: output)
-            )
+            if name.lowercased() == "edit", let input, !input.isEmpty,
+               let diff = parseEditPayload(input) {
+                editDiffBanner(filePath: diff.path, oldString: diff.old, newString: diff.new)
+            } else if name.lowercased() == "write", let input, !input.isEmpty,
+                      let wp = parseWritePayload(input) {
+                writeFileBanner(filePath: wp.path, contentPreview: wp.preview, output: output)
+            } else {
+                toolBanner(
+                    icon: toolIcon(name),
+                    title: toolDisplayName(name),
+                    color: toolColor(name),
+                    content: formatToolContent(name: name, input: input, output: output)
+                )
+            }
         }
+    }
+
+    private func hostPath(_ path: String) -> String {
+        if path.hasPrefix("/data/") {
+            return path.replacingOccurrences(of: "/data/", with: "/Users/vakandi/EliaAI/", options: .anchored)
+        }
+        if path == "/data" { return "/Users/vakandi/EliaAI" }
+        return path
+    }
+
+    private struct EditPayload { let path: String; let old: String; let new: String }
+    private struct WritePayload { let path: String; let preview: String }
+
+    private func parseEditPayload(_ raw: String) -> EditPayload? {
+        guard let data = raw.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let path = (obj["filePath"] as? String ?? obj["file_path"] as? String ?? obj["path"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+        guard !path.isEmpty else { return nil }
+        let old = obj["oldString"] as? String ?? obj["old_string"] as? String ?? obj["oldText"] as? String ?? ""
+        let new = obj["newString"] as? String ?? obj["new_string"] as? String ?? obj["newText"] as? String ?? ""
+        if old.isEmpty && new.isEmpty { return nil }
+        return EditPayload(path: hostPath(path), old: old, new: new)
+    }
+
+    private func parseWritePayload(_ raw: String) -> WritePayload? {
+        guard let data = raw.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let path = (obj["filePath"] as? String ?? obj["file_path"] as? String ?? obj["path"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+        guard !path.isEmpty else { return nil }
+        let content = obj["content"] as? String ?? ""
+        return WritePayload(path: hostPath(path), preview: String(content.prefix(500)))
     }
 
     private func systemBanner(_ b: RunBanner) -> some View {
@@ -471,12 +508,19 @@ struct LogPopoverView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 case .liveTool(let name, let input, let output):
-                    toolBanner(
-                        icon: toolIcon(name),
-                        title: toolDisplayName(name),
-                        color: toolColor(name),
-                        content: formatToolContent(name: name, input: input, output: output)
-                    )
+                    let lname = name.lowercased()
+                    if lname == "edit", let input, let diff = parseEditLivePayload(input, output: output) {
+                        editDiffBanner(filePath: diff.path, oldString: diff.old, newString: diff.new)
+                    } else if lname == "write", let input, let wp = parseWriteLivePayload(input) {
+                        writeFileBanner(filePath: wp.path, contentPreview: wp.preview, output: output)
+                    } else {
+                        toolBanner(
+                            icon: toolIcon(name),
+                            title: toolDisplayName(name),
+                            color: toolColor(name),
+                            content: formatToolContent(name: name, input: input, output: output)
+                        )
+                    }
                 }
             }
         }
@@ -498,7 +542,8 @@ struct LogPopoverView: View {
     // MARK: - Tool Banner Rendering
 
     private func toolBanner(icon: String, title: String, color: Color, content: String) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let safeContent = content.isEmpty ? "—" : content
+        return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
                     .font(.caption2)
@@ -515,7 +560,7 @@ struct LogPopoverView: View {
             .clipShape(RoundedCorner(radius: 6, corners: [.topLeft, .topRight]))
 
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(content)
+                Text(safeContent)
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundColor(.primary.opacity(0.8))
                     .textSelection(.enabled)
@@ -530,6 +575,130 @@ struct LogPopoverView: View {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(color.opacity(0.2), lineWidth: 1)
         )
+    }
+
+    private func writeFileBanner(filePath: String, contentPreview: String, output: String?) -> some View {
+        let name = (filePath as NSString).lastPathComponent
+        let dir = (filePath as NSString).deletingLastPathComponent
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.badge.plus").font(.caption2).foregroundColor(.green)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(name).font(.system(.caption, design: .monospaced)).fontWeight(.semibold).foregroundColor(.green)
+                    Text(dir).font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary).lineLimit(1).truncationMode(.middle)
+                }
+                Spacer()
+                if let out = output, !out.isEmpty {
+                    Text(out).font(.caption2).foregroundColor(.secondary).lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(Color.green.opacity(0.1))
+            .clipShape(RoundedCorner(radius: 6, corners: [.topLeft, .topRight]))
+            if !contentPreview.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    Text(contentPreview)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.primary.opacity(0.7))
+                        .textSelection(.enabled)
+                        .padding(.horizontal, 8).padding(.vertical, 6)
+                }
+                .background(Color(nsColor: .controlBackgroundColor))
+                .frame(maxHeight: 120)
+                .clipShape(RoundedCorner(radius: 6, corners: [.bottomLeft, .bottomRight]))
+            }
+        }
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.green.opacity(0.25), lineWidth: 1))
+    }
+
+    private func editDiffBanner(filePath: String, oldString: String, newString: String) -> some View {
+        let oldLines = oldString.components(separatedBy: "\n")
+        let newLines = newString.components(separatedBy: "\n")
+        let diff = lineDiff(old: oldLines, new: newLines)
+        let name = (filePath as NSString).lastPathComponent
+        let dir = (filePath as NSString).deletingLastPathComponent
+        let added = diff.filter { $0.kind == .added }.count
+        let removed = diff.filter { $0.kind == .removed }.count
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "pencil.and.scribble").font(.caption2).foregroundColor(.orange)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(name).font(.system(.caption, design: .monospaced)).fontWeight(.semibold).foregroundColor(.orange)
+                    Text(dir).font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary).lineLimit(1).truncationMode(.middle)
+                }
+                Spacer()
+                Text("+\(added) −\(removed)").font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundColor(.secondary)
+                    .padding(.horizontal, 6).padding(.vertical, 2).background(Color.secondary.opacity(0.12)).cornerRadius(4)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(Color.orange.opacity(0.1))
+            .clipShape(RoundedCorner(radius: 6, corners: [.topLeft, .topRight]))
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(diff.prefix(80).enumerated()), id: \.offset) { _, row in
+                    HStack(spacing: 6) {
+                        Text(row.kind.prefix).font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundColor(row.kind.color).frame(width: 14, alignment: .center)
+                        Text(row.text).font(.system(size: 10, design: .monospaced)).foregroundColor(row.kind == .added ? .green : row.kind == .removed ? .red : .primary.opacity(0.85)).lineLimit(1).truncationMode(.tail)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .background(row.kind.bg)
+                }
+                if diff.count > 80 {
+                    Text("… \(diff.count - 80) more lines").font(.caption2).foregroundColor(.secondary).padding(6)
+                }
+            }
+            .background(Color(nsColor: .controlBackgroundColor))
+            .frame(maxHeight: 220)
+            .clipShape(RoundedCorner(radius: 6, corners: [.bottomLeft, .bottomRight]))
+        }
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.orange.opacity(0.25), lineWidth: 1))
+    }
+
+    private enum DiffKind { case added, removed, unchanged
+        var prefix: String { switch self { case .added: return "+"; case .removed: return "−"; case .unchanged: return " " } }
+        var color: Color { switch self { case .added: return .green; case .removed: return .red; case .unchanged: return .secondary } }
+        var bg: Color { switch self { case .added: return Color.green.opacity(0.08); case .removed: return Color.red.opacity(0.08); case .unchanged: return .clear } }
+    }
+    private struct DiffRow { let kind: DiffKind; let text: String }
+    private func lineDiff(old: [String], new: [String]) -> [DiffRow] {
+        if old.isEmpty { return new.map { DiffRow(kind: .added, text: $0) } }
+        if new.isEmpty { return old.map { DiffRow(kind: .removed, text: $0) } }
+        var i = 0, j = 0
+        var out: [DiffRow] = []
+        while i < old.count || j < new.count {
+            if i < old.count && j < new.count && old[i] == new[j] {
+                out.append(DiffRow(kind: .unchanged, text: old[i])); i+=1; j+=1
+            } else if j < new.count && (i >= old.count || !old[i...].contains(new[j])) {
+                out.append(DiffRow(kind: .added, text: new[j])); j+=1
+            } else if i < old.count {
+                out.append(DiffRow(kind: .removed, text: old[i])); i+=1
+            } else {
+                out.append(DiffRow(kind: .added, text: new[j])); j+=1
+            }
+        }
+        return out
+    }
+
+    private func parseEditLivePayload(_ raw: String, output: String?) -> EditPayload? {
+        guard let data = raw.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            if raw.contains("oldString") || raw.contains("old_string") { return nil }
+            return nil
+        }
+        let path = (obj["filePath"] as? String ?? obj["file_path"] as? String ?? obj["path"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+        if path.isEmpty { return nil }
+        let old = obj["oldString"] as? String ?? obj["old_string"] as? String ?? ""
+        let new = obj["newString"] as? String ?? obj["new_string"] as? String ?? ""
+        if old.isEmpty && new.isEmpty { return nil }
+        return EditPayload(path: hostPath(path), old: old, new: new)
+    }
+    private func parseWriteLivePayload(_ raw: String) -> WritePayload? {
+        guard let data = raw.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let path = (obj["filePath"] as? String ?? obj["file_path"] as? String ?? obj["path"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+        if path.isEmpty { return nil }
+        let content = obj["content"] as? String ?? obj["input"] as? String ?? ""
+        return WritePayload(path: hostPath(path), preview: String(content.prefix(500)))
     }
 
     private func toolIcon(_ name: String) -> String {
@@ -604,7 +773,14 @@ struct LogPopoverView: View {
     private func formatToolInput(name: String, raw: String) -> String {
         guard let data = raw.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed == "{}" || trimmed == "()" || trimmed.isEmpty { return "" }
             return String(raw.prefix(500))
+        }
+        if obj.isEmpty { return "" }
+
+        func fp(_ o: [String: Any]) -> String? {
+            (o["filePath"] as? String ?? o["file_path"] as? String ?? o["path"] as? String ?? o["filepath"] as? String)
         }
 
         switch name.lowercased() {
@@ -612,16 +788,19 @@ struct LogPopoverView: View {
             if let cmd = obj["command"] as? String { return "$ \(cmd)" }
 
         case "read":
-            if let path = obj["filePath"] as? String { return path }
+            if let path = fp(obj) { return hostPath(path) }
 
         case "write":
-            if let path = obj["filePath"] as? String {
-                let preview = (obj["content"] as? String ?? "").prefix(120)
-                return "\(path)\n\(preview)"
+            if let path = fp(obj) {
+                let hp = hostPath(path)
+                if let content = obj["content"] as? String, !content.isEmpty {
+                    return "\(hp)\n\(content.prefix(200))"
+                }
+                return hp
             }
 
         case "edit":
-            if let path = obj["filePath"] as? String { return path }
+            if let path = fp(obj) { return hostPath(path) }
 
         case "grep":
             if let pattern = obj["pattern"] as? String { return pattern }
@@ -832,7 +1011,11 @@ struct LogPopoverView: View {
             let parsed: (String, String?, String?) = {
                 if let data = delta.data(using: .utf8),
                    let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    return (obj["tool"] as? String ?? "tool", obj["input"] as? String, obj["output"] as? String)
+                    let tool = obj["tool"] as? String ?? "tool"
+                    if obj["filePath"] != nil || obj["oldString"] != nil || obj["content"] != nil {
+                        return (tool, delta, obj["output"] as? String)
+                    }
+                    return (tool, obj["input"] as? String, obj["output"] as? String)
                 }
                 return (delta.isEmpty ? "tool" : delta, nil, nil)
             }()
