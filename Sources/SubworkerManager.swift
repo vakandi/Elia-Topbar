@@ -28,6 +28,8 @@ struct SubworkerInfo: Identifiable, Equatable {
     var scheduleMinute: Int?
     /// Weekday filter 0=Sun..6=Sat; nil = every day.
     var scheduleDays: [Int]?
+    var scheduleExpression: String?
+    var scheduleEvery: Int?
     var lastError: String?
     var lastCompleted: Date?
     var model: String?
@@ -373,16 +375,20 @@ final class SubworkerManager: ObservableObject {
             guard let name = dict["name"] as? String else { continue }
             let old = previous.first(where: { $0.name == name })
             let running = dict["running"] as? Bool ?? false
+            let sched = dict["schedule"] as? [String: Any]
+            let sType = dict["schedule_type"] as? String ?? sched?["type"] as? String ?? old?.scheduleType
             let info = SubworkerInfo(
                 id: name,
                 name: name,
                 enabled: dict["enabled"] as? Bool ?? false,
                 running: running,
                 nextRun: dict["next_run"] as? String ?? old?.nextRun,
-                scheduleType: dict["schedule_type"] as? String ?? old?.scheduleType,
-                scheduleHours: old?.scheduleHours,
-                scheduleMinute: old?.scheduleMinute,
-                scheduleDays: old?.scheduleDays,
+                scheduleType: sType,
+                scheduleHours: sched?["hours"] as? [Int] ?? old?.scheduleHours,
+                scheduleMinute: sched?["minute"] as? Int ?? old?.scheduleMinute,
+                scheduleDays: sched?["days"] as? [Int] ?? old?.scheduleDays,
+                scheduleExpression: sched?["expression"] as? String ?? old?.scheduleExpression,
+                scheduleEvery: sched?["every"] as? Int ?? old?.scheduleEvery,
                 lastError: running ? nil : old?.lastError,
                 lastCompleted: running ? nil : old?.lastCompleted,
                 model: dict["model"] as? String ?? old?.model,
@@ -410,16 +416,19 @@ final class SubworkerManager: ObservableObject {
         for dict in swArray {
             guard let name = dict["name"] as? String else { continue }
             let schedule = dict["schedule"] as? [String: Any]
+            let sType = dict["schedule_type"] as? String ?? schedule?["type"] as? String
             let info = SubworkerInfo(
                 id: name,
                 name: name,
                 enabled: dict["enabled"] as? Bool ?? false,
                 running: dict["running"] as? Bool ?? false,
                 nextRun: dict["next_run"] as? String,
-                scheduleType: dict["schedule_type"] as? String,
+                scheduleType: sType,
                 scheduleHours: schedule?["hours"] as? [Int],
                 scheduleMinute: schedule?["minute"] as? Int,
                 scheduleDays: schedule?["days"] as? [Int],
+                scheduleExpression: schedule?["expression"] as? String,
+                scheduleEvery: schedule?["every"] as? Int,
                 model: dict["model"] as? String,
                 variant: dict["variant"] as? String
             )
@@ -625,16 +634,19 @@ final class SubworkerManager: ObservableObject {
             for dict in swArray {
                 guard let name = dict["name"] as? String else { continue }
                 let schedule = dict["schedule"] as? [String: Any]
+                let sType = dict["schedule_type"] as? String ?? schedule?["type"] as? String
                 let info = SubworkerInfo(
                     id: name,
                     name: name,
                     enabled: dict["enabled"] as? Bool ?? false,
                     running: dict["running"] as? Bool ?? false,
                     nextRun: dict["next_run"] as? String,
-                    scheduleType: dict["schedule_type"] as? String,
+                    scheduleType: sType,
                     scheduleHours: schedule?["hours"] as? [Int],
                     scheduleMinute: schedule?["minute"] as? Int,
-                    scheduleDays: schedule?["days"] as? [Int]
+                    scheduleDays: schedule?["days"] as? [Int],
+                    scheduleExpression: schedule?["expression"] as? String,
+                    scheduleEvery: schedule?["every"] as? Int
                 )
                 parsed.append(info)
             }

@@ -1122,8 +1122,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 348, height: 520),
-                              styleMask: [.titled, .closable],
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 404, height: 640),
+                              styleMask: [.titled, .closable, .resizable],
                               backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.title = "Schedule — \(name)"
