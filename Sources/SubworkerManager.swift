@@ -345,6 +345,8 @@ final class SubworkerManager: ObservableObject {
 
     static let runLogNotification = Notification.Name("SubworkerRunLog")
     static let runBannerNotification = Notification.Name("SubworkerRunBanner")
+    static let subworkerStartedNotification = Notification.Name("SubworkerStarted")
+    static let subworkerCompletedNotification = Notification.Name("SubworkerCompleted")
 
     /// Single source of truth for server state — WS events carry it so the
     /// icon and the menu can never disagree.
@@ -452,6 +454,7 @@ final class SubworkerManager: ObservableObject {
             subworkers[idx].lastError = nil
             recalculateCounts()
         }
+        NotificationCenter.default.post(name: Self.subworkerStartedNotification, object: nil, userInfo: ["name": name])
     }
 
     private func handleSubworkerCompleted(_ json: [String: Any]) {
@@ -465,6 +468,7 @@ final class SubworkerManager: ObservableObject {
             subworkers[idx].lastCompleted = Date()
         }
         recalculateCounts()
+        NotificationCenter.default.post(name: Self.subworkerCompletedNotification, object: nil, userInfo: ["name": name])
     }
 
     private func handleSubworkerError(_ json: [String: Any]) {
@@ -478,6 +482,7 @@ final class SubworkerManager: ObservableObject {
         }
         lastError = "\(name): \(errorMsg)"
         recalculateCounts()
+        NotificationCenter.default.post(name: Self.subworkerCompletedNotification, object: nil, userInfo: ["name": name, "error": errorMsg])
     }
 
     private func handleDisconnect() {

@@ -98,6 +98,11 @@ struct LogPopoverView: View {
 
     @State private var banners: [RunBanner] = []
     @State private var bannerObserver: NSObjectProtocol?
+    @State private var liveRunning = false
+    @State private var liveStartedAt: Date?
+    @State private var liveStartedObserver: NSObjectProtocol?
+    @State private var liveCompletedObserver: NSObjectProtocol?
+    @State private var liveTick = 0
 
     private var displayItems: [DisplayItem] {
         var items: [DisplayItem] = messages.map { .message($0) }
@@ -139,10 +144,14 @@ struct LogPopoverView: View {
             fetchSessions()
             observeRunLogs()
             observeRunBanners()
+            observeLiveLifecycle()
+            startLiveTick()
+            checkInitialRunningState()
         }
         .onDisappear {
             stopObservingRunLogs()
             stopObservingRunBanners()
+            stopObservingLiveLifecycle()
         }
     }
 
@@ -273,23 +282,36 @@ struct LogPopoverView: View {
                         Text(err)
                             .foregroundColor(.red)
                             .padding()
-                    } else if displayItems.isEmpty {
-                        Text(selectedSessionId == nil ? "Select a session" : "No messages in this session")
-                            .foregroundColor(.secondary)
-                            .padding()
                     } else {
-                        ForEach(displayItems) { item in
-                            switch item {
-                            case .message(let msg):
-                                messageRow(msg)
-                            case .banner(let b):
-                                systemBanner(b)
+                        if !displayItems.isEmpty {
+                            ForEach(displayItems) { item in
+                                switch item {
+                                case .message(let msg):
+                                    messageRow(msg)
+                                case .banner(let b):
+                                    systemBanner(b)
+                                }
+                                Divider()
                             }
-                            Divider()
                         }
-
                         if hasLiveContent(for: subworkerName) {
                             liveStreamPanel
+                        } else if liveRunning {
+                            liveWaitingView
+                        } else if displayItems.isEmpty {
+                            if selectedSessionId == nil {
+                                Text("Select a session")
+                                    .foregroundColor(.secondary)
+                                    .padding()
+                            } else {
+                                VStack(spacing: 8) {
+                                    Text("No messages in this session")
+                                        .foregroundColor(.secondary)
+                                    Text("Trigger the agent or wait for it to write its first message.")
+                                        .font(.caption2).foregroundColor(.secondary.opacity(0.7))
+                                }
+                                .padding()
+                            }
                         }
                     }
                 }
@@ -527,6 +549,91 @@ struct LogPopoverView: View {
         .padding(.vertical, 4)
         .id("live-stream")
         Divider()
+    }
+
+    private var liveWaitingView: some View {
+        let elapsed: String = {
+            guard let start = liveStartedAt else { return "" }
+            let s = Int(Date().timeIntervalSince(start))
+            if s < 60 { return "\(s)s" }
+            return "\(s/60)m \(s%60)s"
+        }()
+        let dots = String(repeating: ".", count: (liveTick % 3) + 1)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text("LIVE").font(.system(.caption, design: .monospaced)).foregroundColor(.white).padding(.horizontal, 6).padding(.vertical, 2).background(Color.orange).cornerRadius(4)
+                Text(subworkerName).font(.caption).foregroundColor(.secondary)
+                Spacer()
+                ProgressView().controlSize(.mini).scaleEffect(0.7)
+                if !elapsed.isEmpty {
+                    Text(elapsed).font(.caption2).foregroundColor(.secondary)
+                }
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.mini)
+                    Text("Agent running\(dots)")
+                        .font(.caption).foregroundColor(.primary)
+                    Spacer()
+                }
+                Text("Connecting to opencode • waiting for first token")
+                    .font(.caption2).foregroundColor(.secondary)
+                HStack(spacing: 4) {
+                    Circle().fill(Color.green).frame(width: 6, height: 6).opacity(0.9)
+                    Text("WS: streaming").font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
+                    Spacer()
+                    Text("Session will appear when opencode creates it").font(.system(size: 9)).foregroundColor(.secondary.opacity(0.7))
+                }
+            }
+            .padding(10)
+            .background(Color.orange.opacity(0.06))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.orange.opacity(0.2), lineWidth: 1))
+            .cornerRadius(8)
+        }
+        .padding(.vertical, 4)
+        .id("live-waiting")
+    }
+
+    private func observeLiveLifecycle() {
+        liveStartedObserver = NotificationCenter.default.addObserver(forName: SubworkerManager.subworkerStartedNotification, object: nil, queue: .main) { note in
+            guard let name = note.userInfo?["name"] as? String, name == self.subworkerName else { return }
+            self.liveRunning = true
+            self.liveStartedAt = Date()
+            self.liveTick = 0
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { self.fetchSessions() }
+        }
+        liveCompletedObserver = NotificationCenter.default.addObserver(forName: SubworkerManager.subworkerCompletedNotification, object: nil, queue: .main) { note in
+            guard let name = note.userInfo?["name"] as? String, name == self.subworkerName else { return }
+            self.liveRunning = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.fetchSessions() }
+        }
+    }
+
+    private func stopObservingLiveLifecycle() {
+        if let o = liveStartedObserver { NotificationCenter.default.removeObserver(o); liveStartedObserver = nil }
+        if let o = liveCompletedObserver { NotificationCenter.default.removeObserver(o); liveCompletedObserver = nil }
+    }
+
+    private func startLiveTick() {
+        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            if self.liveRunning { self.liveTick += 1 }
+        }
+    }
+
+    private func checkInitialRunningState() {
+        guard let url = URL(string: "\(baseURL)/status") else { return }
+        URLSession.shared.dataTask(with: EliaAuth.authorize(url)) { data, _, _ in
+            guard let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let arr = json["subworkers"] as? [[String: Any]] else { return }
+            DispatchQueue.main.async {
+                if let sw = arr.first(where: { ($0["name"] as? String) == self.subworkerName }),
+                   (sw["running"] as? Bool) == true {
+                    self.liveRunning = true
+                    if self.liveStartedAt == nil { self.liveStartedAt = Date() }
+                }
+            }
+        }.resume()
     }
 
     private func streamingSafeMarkdown(_ text: String) -> String {
@@ -985,6 +1092,10 @@ struct LogPopoverView: View {
     }
 
     private func appendLiveDelta(for name: String, field: String, delta: String) {
+        if name == subworkerName && !liveRunning {
+            liveRunning = true
+            if liveStartedAt == nil { liveStartedAt = Date() }
+        }
         if liveEntries[name] == nil { liveEntries[name] = [] }
         switch field {
         case "reasoning":
