@@ -66,7 +66,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Keeps App Nap from throttling our timers — status-bar apps are background by definition.
+    private var appNapActivity: NSObjectProtocol?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Prevent App Nap from freezing timers when the app is backgrounded for hours.
+        appNapActivity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleSystemSleepDisabled], reason: "EliaTopBar status-bar live updates")
+
         colimaManager = ColimaManager()
         subworkerManager = SubworkerManager()
 
@@ -78,6 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupStatusItem()
         setupMenu()
+        installWakeObservers()
 
         Publishers.MergeMany(
             colimaManager.$instances.map { _ in () }.eraseToAnyPublisher(),
@@ -102,9 +109,76 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Cloudflare tunnel status — keep the menu line fresh (30s cadence).
         refreshTunnelStatus()
-        tunnelPollTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+        let t = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
             self?.refreshTunnelStatus()
         }
+        RunLoop.main.add(t, forMode: .common)
+        tunnelPollTimer = t
+    }
+
+    // MARK: - Wake / Display / Network heal
+
+    private func installWakeObservers() {
+        // Fires after closing the lid / sleep, and after Wi-Fi roams.
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(handleSystemWake(_:)), name: NSWorkspace.screensDidWakeNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(handleSystemWake(_:)), name: NSWorkspace.screensDidSleepNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(handleSystemWake(_:)), name: NSWorkspace.didWakeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleBecomeActive(_:)), name: NSApplication.didBecomeActiveNotification, object: nil)
+        // Also heal when the system clock jumps (NSSystemClockDidChange is posted on wake).
+        DistributedNotificationCenter.default().addObserver(self, selector: #selector(handleSystemWake(_:)), name: .init("com.apple.system.clockChanged"), object: nil)
+    }
+
+    @objc private func handleSystemWake(_ note: Notification) {
+        AppLog.d("System wake/sleep event: \(note.name.rawValue) — healing status item + WS")
+        healAfterWake()
+    }
+
+    @objc private func handleBecomeActive(_ note: Notification) {
+        // didBecomeActive fires on every click-back — cheap to re-assert.
+        ensureStatusItemAlive()
+    }
+
+    private func healAfterWake() {
+        ensureStatusItemAlive()
+        // Timers scheduled on .default are coalesced over sleep — recreate the cadence.
+        rescheduleTunnelPoll()
+        // Force a WS reconnect — the old TCP is dead after sleep / Wi-Fi loss.
+        subworkerManager.forceReconnect()
+        // Fresh data for the next menu open.
+        refreshTunnelStatus()
+        colimaManager.refreshInstances()
+        setupMenu()
+        updateStatusIcon()
+    }
+
+    private func rescheduleTunnelPoll() {
+        tunnelPollTimer?.invalidate()
+        let t = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+            self?.refreshTunnelStatus()
+        }
+        RunLoop.main.add(t, forMode: .common)
+        tunnelPollTimer = t
+    }
+
+    /// Re-assert the NSStatusItem button target/action. macOS can invalidate the
+    /// button's window/action after display reconfiguration, sleep/wake, or a
+    /// status-bar rebuild — when that happens clicks are silently swallowed.
+    private func ensureStatusItemAlive() {
+        // If the button vanished (rare but real after sleep), rebuild the item.
+        if statusItem.button == nil {
+            AppLog.d("statusItem.button was nil — recreating status item")
+            statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        }
+        guard let button = statusItem.button else { return }
+        let needsReinstall = button.target !== self || button.action != #selector(mainItemClicked(_:))
+        if needsReinstall {
+            AppLog.d("Reinstalling statusItem button target/action (was target=\(String(describing: button.target)) action=\(String(describing: button.action)))")
+        }
+        button.target = self
+        button.action = #selector(mainItemClicked(_:))
+        button.sendAction(on: [.leftMouseUp])
+        // Re-apply icon in case the backing store was purged.
+        updateStatusIcon()
     }
 
     private func setupStatusItem() {
@@ -818,8 +892,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return composed
     }
 
-    /// Click zones: agent photo (left) → that agent's live log; banner (right) → main menu.
     @objc private func mainItemClicked(_ sender: NSStatusBarButton) {
+        AppLog.d("mainItemClicked — button click received")
+        ensureStatusItemAlive()
+        if mainMenu == nil || (mainMenu?.numberOfItems ?? 0) == 0 {
+            AppLog.d("mainMenu was nil/empty at click — rebuilding")
+            setupMenu()
+        }
         let mouse = NSApp.currentEvent?.locationInWindow ?? sender.bounds.origin
         let point = sender.convert(mouse, from: nil)
 
@@ -844,6 +923,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let menu = mainMenu {
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: sender)
+        } else {
+            AppLog.d("mainMenu still nil at popUp — nothing to show")
         }
     }
 

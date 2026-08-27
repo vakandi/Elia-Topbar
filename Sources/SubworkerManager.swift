@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Network
 
 // MARK: - Debug Logging
 
@@ -121,6 +122,10 @@ final class SubworkerManager: ObservableObject {
     private var pollInterval: TimeInterval = 5.0
     private var serverHealthTimer: Timer?
 
+    // Network path monitor — fires within ~1s of a Wi-Fi roam.
+    private var pathMonitor: NWPathMonitor?
+    private let pathMonitorQueue = DispatchQueue(label: "com.elia.topbar.pathMonitor")
+
     // Session
     private let session = URLSession(configuration: .default)
     private var baseURL = "http://localhost:5656"
@@ -135,12 +140,14 @@ final class SubworkerManager: ObservableObject {
         loadModelSelections()
         fetchMainAgent()
         fetchModels()
+        startPathMonitor()
         connectWebSocket()
         startServerHealthPolling()
     }
 
     func stop() {
         AppLog.d("Stopping SubworkerManager")
+        stopPathMonitor()
         wsTask?.cancel(with: .goingAway, reason: nil)
         wsTask = nil
         wsConnected = false
@@ -154,6 +161,53 @@ final class SubworkerManager: ObservableObject {
         serverHealthTimer = nil
         isLoading = true
         statusError = nil
+    }
+
+    func forceReconnect() {
+        AppLog.d("forceReconnect — tearing down WS + timers, fresh connect")
+        wsReconnectDelay = 1.0
+        wsTask?.cancel(with: .goingAway, reason: nil)
+        wsTask = nil
+        wsConnected = false
+        pingTimer?.invalidate()
+        pingTimer = nil
+        clearPongState()
+        wsReconnectTimer?.invalidate()
+        wsReconnectTimer = nil
+        connectWebSocket()
+        Task { await fetchStatus() }
+        Task { await fetchServerHealth() }
+    }
+
+    private func startPathMonitor() {
+        guard pathMonitor == nil else { return }
+        let m = NWPathMonitor()
+        m.pathUpdateHandler = { [weak self] path in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if path.status == .satisfied {
+                    if !self.wsConnected {
+                        AppLog.d("Network path satisfied — reconnecting WS")
+                        self.forceReconnect()
+                    }
+                } else {
+                    AppLog.d("Network path unsatisfied")
+                }
+            }
+        }
+        m.start(queue: pathMonitorQueue)
+        pathMonitor = m
+    }
+
+    private func stopPathMonitor() {
+        pathMonitor?.cancel()
+        pathMonitor = nil
+    }
+
+    private func scheduleTimer(interval: TimeInterval, repeats: Bool, block: @escaping (Timer) -> Void) -> Timer {
+        let t = Timer.scheduledTimer(withTimeInterval: interval, repeats: repeats, block: block)
+        RunLoop.main.add(t, forMode: .common)
+        return t
     }
 
     func updateBaseURL(_ url: String) {
@@ -178,6 +232,9 @@ final class SubworkerManager: ObservableObject {
             return
         }
 
+        wsTask?.cancel(with: .goingAway, reason: nil)
+        wsTask = nil
+
         AppLog.d("Connecting WS to \(wsURL)")
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
         let queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "token", value: EliaAuth.token)]
@@ -186,14 +243,12 @@ final class SubworkerManager: ObservableObject {
         wsTask = task
         task.resume()
 
-        // Check connection after a brief delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             guard let self else { return }
             if self.wsConnected {
                 AppLog.d("WS connected successfully")
                 return
             }
-            // If still not connected after 1s, treat as failure
             AppLog.d("WS connection timeout")
             self.handleDisconnect()
         }
@@ -259,6 +314,16 @@ final class SubworkerManager: ObservableObject {
                     userInfo: ["name": name, "text": delta, "field": json["field"] as? String ?? "text"]
                 )
             }
+        case "run_banner":
+            if let name = json["name"] as? String,
+               let banner = json["banner"] as? [String: Any] {
+                lastActivity[name] = Date()
+                NotificationCenter.default.post(
+                    name: SubworkerManager.runBannerNotification,
+                    object: nil,
+                    userInfo: ["name": name, "banner": banner]
+                )
+            }
         case "pong":
             AppLog.d("Received pong")
             clearPongState()
@@ -279,6 +344,7 @@ final class SubworkerManager: ObservableObject {
     }
 
     static let runLogNotification = Notification.Name("SubworkerRunLog")
+    static let runBannerNotification = Notification.Name("SubworkerRunBanner")
 
     /// Single source of truth for server state — WS events carry it so the
     /// icon and the menu can never disagree.
@@ -417,6 +483,8 @@ final class SubworkerManager: ObservableObject {
     private func handleDisconnect() {
         AppLog.d("WS disconnected")
         clearPongState()
+        wsTask?.cancel(with: .goingAway, reason: nil)
+        wsTask = nil
         wsConnected = false
         statusError = "WebSocket disconnected"
         if subworkers.isEmpty {
@@ -429,7 +497,7 @@ final class SubworkerManager: ObservableObject {
     private func scheduleReconnect() {
         AppLog.d("Scheduling reconnect in \(wsReconnectDelay)s")
         wsReconnectTimer?.invalidate()
-        wsReconnectTimer = Timer.scheduledTimer(withTimeInterval: wsReconnectDelay, repeats: false) { [weak self] _ in
+        wsReconnectTimer = scheduleTimer(interval: wsReconnectDelay, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.connectWebSocket()
@@ -440,7 +508,7 @@ final class SubworkerManager: ObservableObject {
 
     private func startPingTimer() {
         pingTimer?.invalidate()
-        pingTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+        pingTimer = scheduleTimer(interval: 30.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, let task = self.wsTask else { return }
                 if self.awaitingPong {
@@ -467,7 +535,7 @@ final class SubworkerManager: ObservableObject {
 
     private func startPongWatchdog() {
         pongWatchdog?.invalidate()
-        pongWatchdog = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: false) { [weak self] _ in
+        pongWatchdog = scheduleTimer(interval: 10.0, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, self.awaitingPong else { return }
                 AppLog.d("No pong within 10s — reconnecting WS")
@@ -488,12 +556,11 @@ final class SubworkerManager: ObservableObject {
         guard pollTimer == nil else { return }
         AppLog.d("Starting HTTP status polling (5s)")
         pollInterval = 5.0
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        pollTimer = scheduleTimer(interval: 5.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 await self?.fetchStatus()
             }
         }
-        // Immediate first fetch
         Task { await fetchStatus() }
     }
 
@@ -503,13 +570,12 @@ final class SubworkerManager: ObservableObject {
         pollTimer = nil
     }
 
-    /// Slow safety-net polling while WS is connected — catches missed events.
     private func setSlowPolling() {
         guard pollTimer == nil || pollInterval != 15.0 else { return }
         AppLog.d("HTTP status polling every 15s (WS backup)")
         pollInterval = 15.0
         pollTimer?.invalidate()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in
+        pollTimer = scheduleTimer(interval: 15.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 await self?.fetchStatus()
             }
@@ -518,18 +584,15 @@ final class SubworkerManager: ObservableObject {
 
     private func startServerHealthPolling() {
         serverHealthTimer?.invalidate()
-        serverHealthTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+        serverHealthTimer = scheduleTimer(interval: 30.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 await self?.fetchServerHealth()
-                // Retry until the catalog lands (first attempt may hit a
-                // restarting container).
                 if self?.availableModels.isEmpty == true {
                     self?.fetchModels()
                 }
                 self?.fetchMainAgent()
             }
         }
-        // Immediate first fetch
         Task { await fetchServerHealth() }
     }
 

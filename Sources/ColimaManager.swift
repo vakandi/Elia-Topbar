@@ -101,11 +101,13 @@ final class ColimaManager: ObservableObject {
 
     private func scheduleTimer() {
         statusCheckTimer?.invalidate()
-        statusCheckTimer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
+        let t = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.refreshIfIdle()
             }
         }
+        RunLoop.main.add(t, forMode: .common)
+        statusCheckTimer = t
     }
 
     private func refreshIfIdle() {
