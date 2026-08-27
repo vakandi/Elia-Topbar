@@ -209,7 +209,28 @@ struct RunPopupView: View {
             guard let name = note.userInfo?["name"] as? String,
                   name == agentName,
                   let delta = note.userInfo?["text"] as? String else { return }
-            liveText += delta
+            let field = note.userInfo?["field"] as? String ?? "text"
+            if field == "reasoning" { return }
+            if field == "tool" {
+                if let data = delta.data(using: .utf8),
+                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let t = obj["tool"] as? String {
+                    let line = "🔧 \(t)"
+                    if !self.liveText.hasSuffix(line) {
+                        self.liveText += (self.liveText.isEmpty ? "" : "\n") + line
+                    }
+                }
+                return
+            }
+            if delta.isEmpty { return }
+            if self.liveText.hasSuffix(delta) { return }
+            if delta.hasPrefix(self.liveText) {
+                self.liveText = delta
+            } else if self.liveText.contains(delta) && delta.count < 80 {
+                return
+            } else {
+                self.liveText += delta
+            }
             if liveText.count > 4000 { liveText = String(liveText.suffix(2500)) }
         }
     }

@@ -1,5 +1,16 @@
 import SwiftUI
 
+struct RunBanner: Identifiable, Equatable {
+    let id: String
+    let type: String
+    let attempt: Int
+    let maxAttempts: Int
+    let delaySeconds: Double
+    let error: String
+    let timestamp: Date?
+    let sessionId: String?
+}
+
 struct SessionLogEntry: Identifiable {
     let id: String
     let role: String
@@ -43,6 +54,23 @@ struct SessionItem: Identifiable {
     let timeCreated: TimeInterval?
 }
 
+enum DisplayItem: Identifiable {
+    case message(SessionLogEntry)
+    case banner(RunBanner)
+    var id: String {
+        switch self {
+        case .message(let m): return m.id
+        case .banner(let b): return b.id
+        }
+    }
+    var timestamp: Date? {
+        switch self {
+        case .message(let m): return m.timestamp
+        case .banner(let b): return b.timestamp
+        }
+    }
+}
+
 struct LogPopoverView: View {
     let subworkerName: String
     let baseURL: String
@@ -67,6 +95,16 @@ struct LogPopoverView: View {
     @State private var selectedSessionChanged = false
     @State private var lastMessagesFingerprint = 0
     private let maxMessages = 200
+
+    @State private var banners: [RunBanner] = []
+    @State private var bannerObserver: NSObjectProtocol?
+
+    private var displayItems: [DisplayItem] {
+        var items: [DisplayItem] = messages.map { .message($0) }
+        let relevant = banners.filter { $0.sessionId == nil || $0.sessionId == selectedSessionId || selectedSessionId == nil }
+        items.append(contentsOf: relevant.map { .banner($0) })
+        return items.sorted { ($0.timestamp ?? .distantPast) < ($1.timestamp ?? .distantPast) }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -100,9 +138,11 @@ struct LogPopoverView: View {
         .onAppear {
             fetchSessions()
             observeRunLogs()
+            observeRunBanners()
         }
         .onDisappear {
             stopObservingRunLogs()
+            stopObservingRunBanners()
         }
     }
 
@@ -233,18 +273,22 @@ struct LogPopoverView: View {
                         Text(err)
                             .foregroundColor(.red)
                             .padding()
-                    } else if messages.isEmpty {
+                    } else if displayItems.isEmpty {
                         Text(selectedSessionId == nil ? "Select a session" : "No messages in this session")
                             .foregroundColor(.secondary)
                             .padding()
                     } else {
-                        ForEach(messages) { msg in
-                            messageRow(msg)
+                        ForEach(displayItems) { item in
+                            switch item {
+                            case .message(let msg):
+                                messageRow(msg)
+                            case .banner(let b):
+                                systemBanner(b)
+                            }
                             Divider()
                         }
 
-                        // Live stream from WS run_log events (running agent).
-                        if !liveText(for: subworkerName, field: "text").isEmpty || !liveText(for: subworkerName, field: "reasoning").isEmpty {
+                        if hasLiveContent(for: subworkerName) {
                             liveStreamPanel
                         }
                     }
@@ -252,19 +296,23 @@ struct LogPopoverView: View {
                 .padding(8)
             }
             .onChange(of: messages.count) { _ in
-                if let last = messages.last {
+                if let last = displayItems.last {
                     proxy.scrollTo(last.id, anchor: .bottom)
                 }
             }
-            .onChange(of: liveBuffers) { _ in
+            .onChange(of: banners) { _ in
+                if let last = displayItems.last {
+                    proxy.scrollTo(last.id, anchor: .bottom)
+                }
+            }
+            .onChange(of: liveEntries) { _ in
                 proxy.scrollTo("live-stream", anchor: .bottom)
             }
             .onChange(of: selectedSessionChanged) { changed in
                 guard changed else { return }
                 selectedSessionChanged = false
-                // Single delayed scroll — enough for LazyVStack to materialize
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    if let last = messages.last {
+                    if let last = displayItems.last {
                         proxy.scrollTo(last.id, anchor: .bottom)
                     }
                 }
@@ -329,9 +377,63 @@ struct LogPopoverView: View {
         }
     }
 
+    private func systemBanner(_ b: RunBanner) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                Text("ELIA SYSTEM")
+                    .font(.system(.caption, design: .monospaced))
+                    .fontWeight(.bold)
+                    .foregroundColor(.orange)
+                if b.attempt > 0 {
+                    Text("Reinjection \(b.attempt)/\(b.maxAttempts)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.15))
+                        .cornerRadius(4)
+                } else {
+                    Text("Reinjection")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.15))
+                        .cornerRadius(4)
+                }
+                Spacer()
+                if let ts = b.timestamp {
+                    Text(ts, style: .time)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            Text("Agent didn't finish — provider returned an error. System re-injected \"\(b.error.isEmpty ? "continue the tasks" : b.error)\" \(b.delaySeconds > 0 ? "after \(String(format: "%.0f", b.delaySeconds))s" : "to keep the run alive").")
+                .font(.caption)
+                .foregroundColor(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            if !b.error.isEmpty && b.error != "Agent didn't finish — system reinjected" {
+                Text(b.error)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .lineLimit(3)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(10)
+        .background(Color.orange.opacity(0.08))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.orange.opacity(0.3), lineWidth: 1))
+        .cornerRadius(8)
+        .id(b.id)
+    }
+
     @ViewBuilder
     private var liveStreamPanel: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        let entries = liveEntries[subworkerName] ?? []
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("LIVE")
                     .font(.system(.caption, design: .monospaced))
@@ -348,20 +450,49 @@ struct LogPopoverView: View {
                     .fill(Color.orange)
                     .frame(width: 6, height: 6)
             }
-            let reasoning = liveText(for: subworkerName, field: "reasoning")
-            if !reasoning.isEmpty {
-                MarkdownView(text: reasoning, baseColor: .secondary)
-                    .font(.system(.caption2, design: .monospaced))
-            }
-            let text = liveText(for: subworkerName, field: "text")
-            if !text.isEmpty {
-                MarkdownView(text: text, baseColor: .primary)
-                    .textSelection(.enabled)
+            ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+                switch entry {
+                case .liveReasoning(let text):
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("THINKING")
+                            .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.secondary.opacity(0.7))
+                            .tracking(0.6)
+                        HStack(alignment: .top, spacing: 6) {
+                            Rectangle()
+                                .fill(Color.gray.opacity(0.35))
+                                .frame(width: 2)
+                            MarkdownView(text: text, baseColor: .secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                case .liveText(let text):
+                    MarkdownView(text: streamingSafeMarkdown(text), baseColor: .primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                case .liveTool(let name, let input, let output):
+                    toolBanner(
+                        icon: toolIcon(name),
+                        title: toolDisplayName(name),
+                        color: toolColor(name),
+                        content: formatToolContent(name: name, input: input, output: output)
+                    )
+                }
             }
         }
         .padding(.vertical, 4)
         .id("live-stream")
         Divider()
+    }
+
+    private func streamingSafeMarkdown(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return text }
+        let fenceCount = text.components(separatedBy: "```").count - 1
+        if fenceCount % 2 == 1 {
+            return text + "\n```"
+        }
+        return text
     }
 
     // MARK: - Tool Banner Rendering
@@ -651,13 +782,84 @@ struct LogPopoverView: View {
 
     // MARK: - Live log streaming (WS run_log events)
 
-    /// Per-agent buffers — keyed by agent so concurrent runs never wipe each other.
-    @State private var liveBuffers: [String: [String: String]] = [:]
+    enum LiveEntry: Equatable {
+        case liveReasoning(String)
+        case liveText(String)
+        case liveTool(name: String, input: String?, output: String?)
+    }
+
+    @State private var liveEntries: [String: [LiveEntry]] = [:]
     @State private var liveAgent: String?
     @State private var runLogObserver: NSObjectProtocol?
 
-    private func liveText(for name: String, field: String) -> String {
-        liveBuffers[name]?[field] ?? ""
+    private func hasLiveContent(for name: String) -> Bool {
+        guard let entries = liveEntries[name] else { return false }
+        return !entries.isEmpty
+    }
+
+    private func liveCoalescedText(for name: String) -> String {
+        (liveEntries[name] ?? []).compactMap { if case .liveText(let t) = $0 { return t } else { return nil } }.joined()
+    }
+
+    private func liveCoalescedReasoning(for name: String) -> String {
+        (liveEntries[name] ?? []).compactMap { if case .liveReasoning(let t) = $0 { return t } else { return nil } }.joined()
+    }
+
+    private func appendLiveDelta(for name: String, field: String, delta: String) {
+        if liveEntries[name] == nil { liveEntries[name] = [] }
+        switch field {
+        case "reasoning":
+            if let last = liveEntries[name]?.last, case .liveReasoning(let cur) = last {
+                if delta == cur || cur.hasSuffix(delta) || (cur.contains(delta) && delta.count < 40) {
+                    return
+                }
+                var next: String
+                if delta.hasPrefix(cur) { next = delta }
+                else if cur.isEmpty { next = delta }
+                else if delta.count > 1 && cur.hasSuffix(String(delta.prefix(1))) {
+                    next = cur + delta
+                } else {
+                    if delta.count < cur.count && cur.contains(delta) { return }
+                    next = cur + delta
+                }
+                if next.count > 12000 { next = String(next.suffix(8000)) }
+                liveEntries[name]?[liveEntries[name]!.count - 1] = .liveReasoning(next)
+            } else {
+                let capped = delta.count > 12000 ? String(delta.suffix(8000)) : delta
+                liveEntries[name]?.append(.liveReasoning(capped))
+            }
+        case "tool":
+            let parsed: (String, String?, String?) = {
+                if let data = delta.data(using: .utf8),
+                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    return (obj["tool"] as? String ?? "tool", obj["input"] as? String, obj["output"] as? String)
+                }
+                return (delta.isEmpty ? "tool" : delta, nil, nil)
+            }()
+            if let last = liveEntries[name]?.last, case .liveTool(let ln, let li, let lo) = last,
+               ln == parsed.0 && li == parsed.1 && lo == parsed.2 {
+                return
+            }
+            liveEntries[name]?.append(.liveTool(name: parsed.0, input: parsed.1, output: parsed.2))
+            if (liveEntries[name]?.count ?? 0) > 40 {
+                liveEntries[name] = Array(liveEntries[name]!.suffix(40))
+            }
+        default:
+            if let last = liveEntries[name]?.last, case .liveText(let cur) = last {
+                if delta == cur { return }
+                if delta.count < 80 && cur.contains(delta) { return }
+                var next: String
+                if delta.hasPrefix(cur) { next = delta }
+                else if cur.hasSuffix(delta) { return }
+                else { next = cur + delta }
+                if next.count > 12000 { next = String(next.suffix(8000)) }
+                liveEntries[name]?[liveEntries[name]!.count - 1] = .liveText(next)
+            } else {
+                let capped = delta.count > 12000 ? String(delta.suffix(8000)) : delta
+                liveEntries[name]?.append(.liveText(capped))
+            }
+        }
+        if name != liveAgent { liveAgent = name }
     }
 
     private func observeRunLogs() {
@@ -669,17 +871,12 @@ struct LogPopoverView: View {
             guard let name = note.userInfo?["name"] as? String,
                   let delta = note.userInfo?["text"] as? String else { return }
             let field = note.userInfo?["field"] as? String ?? "text"
-            if liveBuffers[name] == nil { liveBuffers[name] = [:] }
-            liveBuffers[name]?[field, default: ""] += delta
-            for (k, v) in liveBuffers[name] ?? [:] where liveBuffers[name]?[k]?.count ?? 0 > 12000 {
-                liveBuffers[name]?[k] = String(v.suffix(8000))
-            }
-            if name != liveAgent { liveAgent = name }
+            self.appendLiveDelta(for: name, field: field, delta: delta)
         }
     }
 
     private func resetLiveBuffer(for name: String) {
-        liveBuffers[name] = nil
+        liveEntries[name] = nil
     }
 
     private func stopObservingRunLogs() {
@@ -687,6 +884,41 @@ struct LogPopoverView: View {
             NotificationCenter.default.removeObserver(obs)
             runLogObserver = nil
         }
+    }
+
+    private func observeRunBanners() {
+        bannerObserver = NotificationCenter.default.addObserver(
+            forName: SubworkerManager.runBannerNotification,
+            object: nil,
+            queue: .main
+        ) { note in
+            guard let name = note.userInfo?["name"] as? String,
+                  name == self.subworkerName,
+                  let dict = note.userInfo?["banner"] as? [String: Any] else { return }
+            let b = RunBanner(
+                id: UUID().uuidString,
+                type: dict["type"] as? String ?? "reinjection",
+                attempt: dict["attempt"] as? Int ?? 1,
+                maxAttempts: dict["max_attempts"] as? Int ?? 3,
+                delaySeconds: dict["delay_seconds"] as? Double ?? 0,
+                error: dict["error"] as? String ?? "",
+                timestamp: (dict["timestamp"] as? Double).map { Date(timeIntervalSince1970: $0/1000) } ?? Date(),
+                sessionId: dict["session_id"] as? String
+            )
+            self.banners.append(b)
+            if self.banners.count > 20 { self.banners = Array(self.banners.suffix(20)) }
+        }
+    }
+
+    private func stopObservingRunBanners() {
+        if let obs = bannerObserver {
+            NotificationCenter.default.removeObserver(obs)
+            bannerObserver = nil
+        }
+    }
+
+    private func bannerFromContinueMessage(id: String, ts: Date?) -> RunBanner {
+        RunBanner(id: id, type: "reinjection", attempt: 0, maxAttempts: 3, delaySeconds: 0, error: "Agent didn't finish — system reinjected", timestamp: ts, sessionId: nil)
     }
 
     // MARK: - Fetch Messages
@@ -712,10 +944,38 @@ struct LogPopoverView: View {
                 }
                 lastMessagesFingerprint = fingerprint
 
-                let allParsed = rawMessages.enumerated().compactMap { idx, raw in
-                    parseMessage(raw, id: "\(sessionId)-\(idx)")
+                var derivedBanners: [RunBanner] = []
+                var filtered: [SessionLogEntry] = []
+                for (idx, raw) in rawMessages.enumerated() {
+                    if let info = raw["info"] as? [String: Any],
+                       let parts = raw["parts"] as? [[String: Any]],
+                       parts.count == 1, let t = parts.first?["text"] as? String, t == "continue the tasks",
+                       (info["role"] as? String) == "user" {
+                        let ts: Date? = (info["time"] as? [String: Any])?["created"] as? Double == nil ? nil : {
+                            if let c = (info["time"] as? [String: Any])?["created"] as? Double { return Date(timeIntervalSince1970: c/1000) } ; return nil
+                        }()
+                        let errFromPrev: String = {
+                            if idx > 0, let prev = rawMessages[idx-1]["info"] as? [String: Any], let err = prev["error"] as? [String: Any], let d = err["data"] as? [String: Any], let m = d["message"] as? String { return m }
+                            return "Agent didn't finish — system reinjected"
+                        }()
+                        derivedBanners.append(RunBanner(id: "\(sessionId)-banner-\(idx)", type: "reinjection", attempt: 0, maxAttempts: 3, delaySeconds: 0, error: errFromPrev, timestamp: ts, sessionId: sessionId))
+                        continue
+                    }
+                    if let entry = parseMessage(raw, id: "\(sessionId)-\(idx)") {
+                        filtered.append(entry)
+                    }
                 }
+                let allParsed = filtered
                 messages = allParsed.count > maxMessages ? Array(allParsed.suffix(maxMessages)) : allParsed
+                var merged = derivedBanners
+                let liveForSession = self.banners.filter { $0.sessionId == sessionId || $0.sessionId == nil }
+                for b in liveForSession where !merged.contains(where: { $0.id == b.id }) {
+                    merged.append(b)
+                }
+                for b in self.banners where b.sessionId != nil && b.sessionId != sessionId {
+                    if !merged.contains(where: { $0.id == b.id }) { merged.append(b) }
+                }
+                banners = merged.sorted { ($0.timestamp ?? .distantPast) < ($1.timestamp ?? .distantPast) }
                 messagesError = nil
 
                 selectedSessionChanged = true
