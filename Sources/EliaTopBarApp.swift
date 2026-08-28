@@ -49,6 +49,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var tunnelPollTimer: Timer?
     private var previousRunningNames: Set<String> = []
     private var seenFirstSubworkerSnapshot = false
+    private var menuRebuildThrottleWorkItem: DispatchWorkItem?
+    private var statusItemWatchdog: Timer?
 
     private func detectNewlyRunningAgents() {
         let running = Set(subworkerManager.subworkers.filter(\.running).map(\.name))
@@ -102,7 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         .sink { [weak self] _ in
             guard let self else { return }
             self.updateStatusIcon()
-            self.setupMenu()
+            self.throttledSetupMenu()
             self.reconcileSubworkerStatusItems()
         }
         .store(in: &cancellables)
@@ -114,18 +116,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         RunLoop.main.add(t, forMode: .common)
         tunnelPollTimer = t
+        startStatusItemWatchdog()
     }
 
     // MARK: - Wake / Display / Network heal
 
     private func installWakeObservers() {
-        // Fires after closing the lid / sleep, and after Wi-Fi roams.
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(handleSystemWake(_:)), name: NSWorkspace.screensDidWakeNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(handleSystemWake(_:)), name: NSWorkspace.screensDidSleepNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(handleSystemWake(_:)), name: NSWorkspace.didWakeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleBecomeActive(_:)), name: NSApplication.didBecomeActiveNotification, object: nil)
-        // Also heal when the system clock jumps (NSSystemClockDidChange is posted on wake).
+        NotificationCenter.default.addObserver(self, selector: #selector(handleDisplayChange(_:)), name: NSApplication.didChangeScreenParametersNotification, object: nil)
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(handleSystemWake(_:)), name: .init("com.apple.system.clockChanged"), object: nil)
+    }
+
+    @objc private func handleDisplayChange(_ note: Notification) {
+        AppLog.d("Display change: \(note.name.rawValue) — re-asserting statusItem")
+        ensureStatusItemAlive()
+        throttledSetupMenu()
+        updateStatusIcon()
     }
 
     @objc private func handleSystemWake(_ note: Notification) {
@@ -160,13 +169,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tunnelPollTimer = t
     }
 
+    private func throttledSetupMenu() {
+        menuRebuildThrottleWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.setupMenu() }
+        menuRebuildThrottleWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+    }
+
+    private func startStatusItemWatchdog() {
+        statusItemWatchdog?.invalidate()
+        statusItemWatchdog = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in self?.watchdogCheck() }
+        RunLoop.main.add(statusItemWatchdog!, forMode: .common)
+    }
+
+    private func watchdogCheck() {
+        if statusItem.button == nil || statusItem.button?.window == nil {
+            AppLog.d("watchdog: statusItem invalid, healing")
+            ensureStatusItemAlive()
+            setupMenu()
+        } else if mainMenu == nil || (mainMenu?.numberOfItems ?? 0) == 0 {
+            AppLog.d("watchdog: menu nil/empty, rebuilding")
+            setupMenu()
+        }
+    }
+
     /// Re-assert the NSStatusItem button target/action. macOS can invalidate the
     /// button's window/action after display reconfiguration, sleep/wake, or a
     /// status-bar rebuild — when that happens clicks are silently swallowed.
     private func ensureStatusItemAlive() {
-        // If the button vanished (rare but real after sleep), rebuild the item.
-        if statusItem.button == nil {
-            AppLog.d("statusItem.button was nil — recreating status item")
+        let buttonWasNil = statusItem.button == nil
+        let windowWasNil = statusItem.button?.window == nil
+        if buttonWasNil || windowWasNil {
+            AppLog.d("statusItem invalid — button nil=\(buttonWasNil) window nil=\(windowWasNil) — recreating")
+            NSStatusBar.system.removeStatusItem(statusItem)
             statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         }
         guard let button = statusItem.button else { return }
@@ -333,6 +368,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Menu Construction
 
     private func setupMenu() {
+        if statusItem.button == nil {
+            AppLog.d("setupMenu: button nil, healing before build")
+            ensureStatusItemAlive()
+        }
         let menu = NSMenu()
 
         if let actionError = colimaManager.actionError {
@@ -483,7 +522,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             header.isEnabled = false
             menu.addItem(header)
             menu.addItem(errorMenuItem(text: "Error: \(statusError)"))
-            return
+            if subworkerManager.subworkers.isEmpty { return }
         }
         guard !subworkerManager.subworkers.isEmpty else {
             let header = NSMenuItem(title: "", action: nil, keyEquivalent: "")
