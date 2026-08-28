@@ -206,3 +206,17 @@ RunPopup: mirror the field filter there or extract a shared observer so reasonin
 
 **Verification**: `swift build` ✅, `py_compile` ✅, synthetic dedup unit checks ✅. Live SSE capture not yet run (server at 127.0.0.1:5655 unreachable in this env); tool SSE shape assumed from `message.part.created|updated` — confirm with a real `GET /event?directory=/tmp/<name>` trace on next live trigger and adjust `ptype` key if opencode uses a different field name.
 
+---
+
+## 10. TodoList Live Tracker — `todowrite` dots module (2026-08-27)
+
+**Goal:** when the agent drives its work via `todowrite`, surface the todo list as a live, glanceable tracker inside the LogViewer without stealing messagesPanel space.
+
+**Source of truth:** `tool == "todowrite"` (case-insensitive) in both historical `messages[].parts[]` and live `liveEntries` (`field == "tool"`). Payload is `input: { todos: [{ content: String, status: "pending"|"in_progress"|"completed"|"cancelled", priority: "high"|"medium"|"low" }] }` — verified against `refund-hunter` `ses_fbb6817…` (6 todowrite calls, 7 todos, status evolves `pending → in_progress → completed`). Output echoes the same array as a stringified JSON; we parse `input.todos` and keep the *last* todowrite per session as current state. Also handles `TodoWrite` casing and `output` fallback.
+
+**UI:** vertical dots module **stuck to the left border of `messagesPanel`, centered vertically** (overlay, not pushing content). Collapsed: thin strip ~14pt wide, one dot per todo (fixed 10pt height, `max 10` visible → scrollable), colors `pending=gray`, `in_progress=blue pulsing`, `completed=green`, `cancelled=red/0.4`. Hover: expands horizontally to fit todo texts (`dot + content` rows, priority as subtle suffix), **clamped to `760 - sidebar 210 ≈ 550` so it never overflows the popover**, animated `.easeOut`, collapses on exit. Hidden when session has no todowrite.
+
+**State & live sync:** derived from `displayItems` + `liveEntries` for the selected session; rebuilds on session switch (clears on `selectedSessionId` change) and on every live `tool` delta. Respects the same session-race guard (`lastMessagesFingerprint` per `sessionId`) and bottom-anchor pin logic, so it doesn't fight scroll.
+
+**Files:** `Sources/LogPopoverView.swift` (new `TodoState` + overlay), `Sources/SubworkerManager.swift` (no change, reuses `run_log` `field=tool` path), verification via `curl /sessions/{name}?session_id=` + `sqlite3 /root/.local/share/opencode/opencode.db` `SELECT data FROM part WHERE data LIKE '%todowrite%'`.
+

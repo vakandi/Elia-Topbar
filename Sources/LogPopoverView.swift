@@ -54,6 +54,14 @@ struct SessionItem: Identifiable {
     let timeCreated: TimeInterval?
 }
 
+/// Reports the bottom edge (maxY) of the scroll content's true-end marker,
+/// in the scroll view's own coordinate space, so we can tell whether the
+/// user is currently at/near the bottom without any macOS 14+ scroll APIs.
+private struct BottomAnchorPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
 enum DisplayItem: Identifiable {
     case message(SessionLogEntry)
     case banner(RunBanner)
@@ -93,7 +101,15 @@ struct LogPopoverView: View {
     // Auto-scroll trigger
     @State private var scrollTarget: UUID?
     @State private var selectedSessionChanged = false
-    @State private var lastMessagesFingerprint = 0
+    // Keyed by sessionId so two sessions returning identical JSON (e.g. both
+    // empty) can't dedupe-block each other's legitimate updates.
+    @State private var lastMessagesFingerprint: [String: Int] = [:]
+    // Prevents overlapping /list requests (onAppear can fire more than once
+    // inside an NSHostingController-hosted NSPopover) from racing each other.
+    @State private var sessionsFetchInFlight = false
+    // Pin-to-bottom scroll state — true unless the user has manually scrolled up.
+    @State private var isPinnedToBottom = true
+    @State private var pendingScrollWork: DispatchWorkItem?
     private let maxMessages = 200
 
     @State private var banners: [RunBanner] = []
@@ -239,8 +255,17 @@ struct LogPopoverView: View {
     private func sessionRow(_ session: SessionItem) -> some View {
         let isSelected = session.id == selectedSessionId
         return Button(action: {
+            guard session.id != selectedSessionId else {
+                // Re-selecting the same session should still refresh —
+                // this was previously the "click again to unstick" workaround.
+                fetchMessages(sessionId: session.id)
+                return
+            }
             selectedSessionId = session.id
             selectedSessionChanged = true
+            isPinnedToBottom = true
+            messages = []
+            messagesError = nil
             resetLiveBuffer(for: subworkerName)
             fetchMessages(sessionId: session.id)
         }) {
@@ -267,79 +292,137 @@ struct LogPopoverView: View {
     // MARK: - Messages Panel (auto-scroll + tool banners)
 
     private var messagesPanel: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 6) {
-                    if messagesLoading {
-                        HStack(spacing: 8) {
-                            ProgressView().controlSize(.small)
-                            Text("Loading messages…")
-                                .foregroundColor(.secondary)
-                        }
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                    } else if let err = messagesError {
-                        Text(err)
-                            .foregroundColor(.red)
+        GeometryReader { outerGeo in
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        if messagesLoading {
+                            HStack(spacing: 8) {
+                                ProgressView().controlSize(.small)
+                                Text("Loading messages…")
+                                    .foregroundColor(.secondary)
+                            }
                             .padding()
-                    } else {
-                        if !displayItems.isEmpty {
-                            ForEach(displayItems) { item in
-                                switch item {
-                                case .message(let msg):
-                                    messageRow(msg)
-                                case .banner(let b):
-                                    systemBanner(b)
+                            .frame(maxWidth: .infinity)
+                        } else if let err = messagesError {
+                            Text(err)
+                                .foregroundColor(.red)
+                                .padding()
+                        } else {
+                            if !displayItems.isEmpty {
+                                ForEach(displayItems) { item in
+                                    switch item {
+                                    case .message(let msg):
+                                        messageRow(msg)
+                                    case .banner(let b):
+                                        systemBanner(b)
+                                    }
+                                    Divider()
                                 }
-                                Divider()
+                            }
+                            if hasLiveContent(for: subworkerName) {
+                                liveStreamPanel
+                            } else if liveRunning {
+                                liveWaitingView
+                            } else if displayItems.isEmpty {
+                                if selectedSessionId == nil {
+                                    Text("Select a session")
+                                        .foregroundColor(.secondary)
+                                        .padding()
+                                } else {
+                                    VStack(spacing: 8) {
+                                        Text("No messages in this session")
+                                            .foregroundColor(.secondary)
+                                        Text("Trigger the agent or wait for it to write its first message.")
+                                            .font(.caption2).foregroundColor(.secondary.opacity(0.7))
+                                    }
+                                    .padding()
+                                }
                             }
                         }
-                        if hasLiveContent(for: subworkerName) {
-                            liveStreamPanel
-                        } else if liveRunning {
-                            liveWaitingView
-                        } else if displayItems.isEmpty {
-                            if selectedSessionId == nil {
-                                Text("Select a session")
-                                    .foregroundColor(.secondary)
-                                    .padding()
-                            } else {
-                                VStack(spacing: 8) {
-                                    Text("No messages in this session")
-                                        .foregroundColor(.secondary)
-                                    Text("Trigger the agent or wait for it to write its first message.")
-                                        .font(.caption2).foregroundColor(.secondary.opacity(0.7))
+
+                        // Single unambiguous "end of everything" marker — historical
+                        // messages, banners, AND the live stream/waiting view all sit
+                        // above this, so scrolling here always means scrolling to the
+                        // true tail regardless of which branch above is active.
+                        Color.clear
+                            .frame(height: 1)
+                            .id(Self.bottomAnchorId)
+                            .background(
+                                GeometryReader { anchorGeo in
+                                    Color.clear.preference(
+                                        key: BottomAnchorPreferenceKey.self,
+                                        value: anchorGeo.frame(in: .named(Self.scrollCoordinateSpace)).maxY
+                                    )
                                 }
-                                .padding()
+                            )
+                    }
+                    .padding(8)
+                }
+                .coordinateSpace(name: Self.scrollCoordinateSpace)
+                .onPreferenceChange(BottomAnchorPreferenceKey.self) { anchorMaxY in
+                    // Anchor's maxY relative to the scroll container: near/inside the
+                    // visible height means we're at the bottom; far past it means the
+                    // user has scrolled up to read history.
+                    let atBottom = anchorMaxY <= outerGeo.size.height + 48
+                    if atBottom != isPinnedToBottom {
+                        isPinnedToBottom = atBottom
+                    }
+                }
+                .onChange(of: messages.count) { _ in
+                    requestScroll(proxy: proxy)
+                }
+                .onChange(of: banners) { _ in
+                    requestScroll(proxy: proxy)
+                }
+                .onChange(of: liveEntries) { _ in
+                    requestScroll(proxy: proxy)
+                }
+                .onChange(of: selectedSessionChanged) { changed in
+                    guard changed else { return }
+                    selectedSessionChanged = false
+                    isPinnedToBottom = true
+                    for delay in [0.05, 0.2, 0.45, 0.8, 1.2] {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                            withAnimation(.easeOut(duration: 0.15)) {
+                                proxy.scrollTo(Self.bottomAnchorId, anchor: .bottom)
                             }
                         }
                     }
                 }
-                .padding(8)
-            }
-            .onChange(of: messages.count) { _ in
-                if let last = displayItems.last {
-                    proxy.scrollTo(last.id, anchor: .bottom)
-                }
-            }
-            .onChange(of: banners) { _ in
-                if let last = displayItems.last {
-                    proxy.scrollTo(last.id, anchor: .bottom)
-                }
-            }
-            .onChange(of: liveEntries) { _ in
-                proxy.scrollTo("live-stream", anchor: .bottom)
-            }
-            .onChange(of: selectedSessionChanged) { changed in
-                guard changed else { return }
-                selectedSessionChanged = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    if let last = displayItems.last {
-                        proxy.scrollTo(last.id, anchor: .bottom)
+                .onChange(of: messagesLoading) { isLoading in
+                    if !isLoading && !messages.isEmpty {
+                        isPinnedToBottom = true
+                        for delay in [0.05, 0.2, 0.45, 0.8, 1.2] {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                                withAnimation(.easeOut(duration: 0.15)) {
+                                    proxy.scrollTo(Self.bottomAnchorId, anchor: .bottom)
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+
+    private static let bottomAnchorId = "log-scroll-bottom-anchor"
+    private static let scrollCoordinateSpace = "log-scroll-area"
+
+    /// Coalesces rapid-fire updates (WS delta bursts can arrive many times a
+    /// second) into a single throttled scroll, and only auto-scrolls while the
+    /// user hasn't deliberately scrolled away from the bottom — unless `force`
+    /// is set (session switch / explicit jump-to-latest).
+    private func requestScroll(proxy: ScrollViewProxy, force: Bool = false, delay: TimeInterval = 0.05) {
+        guard force || isPinnedToBottom else { return }
+        pendingScrollWork?.cancel()
+        let work = DispatchWorkItem {
+            withAnimation(.easeOut(duration: 0.15)) {
+                proxy.scrollTo(Self.bottomAnchorId, anchor: .bottom)
+            }
+        }
+        pendingScrollWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     private func messageRow(_ msg: SessionLogEntry) -> some View {
@@ -388,7 +471,9 @@ struct LogPopoverView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         case .tool(let name, let input, let output):
-            if name.lowercased() == "edit", let input, !input.isEmpty,
+            if name.lowercased() == "todowrite", let todos = parseTodoWritePayload(input, output: output) {
+                todoWriteBanner(todos: todos)
+            } else if name.lowercased() == "edit", let input, !input.isEmpty,
                let diff = parseEditPayload(input) {
                 editDiffBanner(filePath: diff.path, oldString: diff.old, newString: diff.new)
             } else if name.lowercased() == "write", let input, !input.isEmpty,
@@ -434,6 +519,80 @@ struct LogPopoverView: View {
         guard !path.isEmpty else { return nil }
         let content = obj["content"] as? String ?? ""
         return WritePayload(path: hostPath(path), preview: String(content.prefix(500)))
+    }
+
+    private struct TodoItem { let content: String; let status: String; let priority: String }
+    private func parseTodoWritePayload(_ input: String?, output: String?) -> [TodoItem]? {
+        let raw = (input?.isEmpty == false ? input : output) ?? ""
+        guard !raw.isEmpty, let data = raw.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let arr = obj["todos"] as? [[String: Any]], !arr.isEmpty else { return nil }
+        return arr.compactMap { d in
+            guard let c = d["content"] as? String, !c.isEmpty else { return nil }
+            return TodoItem(content: c, status: (d["status"] as? String ?? "pending").lowercased(), priority: (d["priority"] as? String ?? "medium").lowercased())
+        }
+    }
+    private func todoDotColor(_ status: String) -> Color {
+        switch status {
+        case "completed": return .green
+        case "in_progress": return .blue
+        case "cancelled": return .red
+        default: return .gray
+        }
+    }
+    private func todoPriorityColor(_ p: String) -> Color {
+        switch p {
+        case "high": return .red.opacity(0.7)
+        case "medium": return .orange.opacity(0.7)
+        default: return .secondary
+        }
+    }
+    private func todoWriteBanner(todos: [TodoItem]) -> some View {
+        let completed = todos.filter { $0.status == "completed" }.count
+        let inProgress = todos.filter { $0.status == "in_progress" }.count
+        let pending = todos.filter { $0.status == "pending" }.count
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "checklist").font(.caption2).foregroundColor(.purple)
+                Text("Todo List").font(.system(.caption, design: .monospaced)).fontWeight(.semibold).foregroundColor(.purple)
+                Text("\(completed)/\(todos.count)").font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundColor(.secondary).padding(.horizontal, 6).padding(.vertical, 2).background(Color.purple.opacity(0.12)).cornerRadius(4)
+                if inProgress > 0 { Text("\(inProgress) running").font(.caption2).foregroundColor(.blue) }
+                if pending > 0 { Text("\(pending) pending").font(.caption2).foregroundColor(.secondary) }
+                Spacer()
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6).background(Color.purple.opacity(0.08)).clipShape(RoundedCorner(radius: 6, corners: [.topLeft, .topRight]))
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(todos.prefix(10).enumerated()), id: \.offset) { _, t in
+                    HStack(spacing: 8) {
+                        todoDotView(status: t.status)
+                        Text(t.content).font(.system(size: 11)).foregroundColor(t.status == "completed" ? .secondary : .primary).lineLimit(2).truncationMode(.tail)
+                        Spacer()
+                        Text(t.priority).font(.system(size: 9, weight: .medium)).foregroundColor(todoPriorityColor(t.priority)).padding(.horizontal, 4).padding(.vertical, 1).background(Color.secondary.opacity(0.08)).cornerRadius(3)
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 5).background(todoRowBackground(status: t.status))
+                    if t.content != todos.prefix(10).last?.content { Divider().opacity(0.3) }
+                }
+                if todos.count > 10 { Text("… \(todos.count - 10) more").font(.caption2).foregroundColor(.secondary).padding(6) }
+            }
+            .background(Color(nsColor: .controlBackgroundColor))
+            .frame(maxHeight: todos.count > 6 ? 220 : nil)
+            .clipShape(RoundedCorner(radius: 6, corners: [.bottomLeft, .bottomRight]))
+        }
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.purple.opacity(0.25), lineWidth: 1))
+    }
+    private func todoDotView(status: String) -> some View {
+        let color = todoDotColor(status)
+        return ZStack {
+            Circle().fill(color).frame(width: 8, height: 8)
+            if status == "in_progress" { Circle().stroke(Color.blue.opacity(0.4), lineWidth: 2).frame(width: 11, height: 11) }
+        }.frame(width: 11, height: 11)
+    }
+    private func todoRowBackground(status: String) -> Color {
+        switch status {
+        case "in_progress": return Color.blue.opacity(0.06)
+        case "completed": return Color.green.opacity(0.04)
+        default: return Color.clear
+        }
     }
 
     private func systemBanner(_ b: RunBanner) -> some View {
@@ -531,7 +690,9 @@ struct LogPopoverView: View {
                         .textSelection(.enabled)
                 case .liveTool(let name, let input, let output):
                     let lname = name.lowercased()
-                    if lname == "edit", let input, let diff = parseEditLivePayload(input, output: output) {
+                    if lname == "todowrite", let todos = parseTodoWritePayload(input, output: output) {
+                        todoWriteBanner(todos: todos)
+                    } else if lname == "edit", let input, let diff = parseEditLivePayload(input, output: output) {
                         editDiffBanner(filePath: diff.path, oldString: diff.old, newString: diff.new)
                     } else if lname == "write", let input, let wp = parseWriteLivePayload(input) {
                         writeFileBanner(filePath: wp.path, contentPreview: wp.preview, output: output)
@@ -615,9 +776,14 @@ struct LogPopoverView: View {
     }
 
     private func startLiveTick() {
-        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+        let timer = Timer(timeInterval: 1.0, repeats: true) { _ in
             if self.liveRunning { self.liveTick += 1 }
         }
+        // Timer.scheduledTimer defaults to .default run loop mode, which is
+        // suspended while AppKit is in event-tracking (e.g. this popover's
+        // own show/scroll interactions) — same class of stall SubworkerManager
+        // already works around via its scheduleTimer(..., forMode: .common).
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func checkInitialRunningState() {
@@ -971,11 +1137,17 @@ struct LogPopoverView: View {
 
     private func fetchSessions() {
         guard let url = URL(string: "\(baseURL)/sessions/\(subworkerName)/list") else { return }
+        // onAppear can fire more than once for a SwiftUI view hosted inside an
+        // NSHostingController-backed NSPopover; without this guard two
+        // concurrent /list requests race and stomp each other's state.
+        guard !sessionsFetchInFlight else { return }
+        sessionsFetchInFlight = true
         sessionsLoading = true
         sessionsError = nil
 
         URLSession.shared.dataTask(with: EliaAuth.authorize(url)) { data, _, _ in
             DispatchQueue.main.async {
+                defer { sessionsFetchInFlight = false }
                 guard let data = data,
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let rawSessions = json["sessions"] as? [[String: Any]] else {
@@ -1021,6 +1193,7 @@ struct LogPopoverView: View {
 
         if selectedSessionId == nil, let first = sessions.first {
             selectedSessionId = first.id
+            isPinnedToBottom = true
             fetchMessages(sessionId: first.id)
         }
     }
@@ -1224,6 +1397,14 @@ struct LogPopoverView: View {
         URLSession.shared.dataTask(with: EliaAuth.authorize(url)) { data, _, _ in
             DispatchQueue.main.async {
                 defer { messagesLoading = false }
+                // The user may have already navigated to a different session
+                // by the time this response lands — applying it now would
+                // silently overwrite the correct session's content with a
+                // stale one. This was the main cause of the "empty panel /
+                // must click 2-3x" symptom: whichever of two in-flight
+                // requests happened to finish last used to win unconditionally.
+                guard sessionId == self.selectedSessionId else { return }
+
                 guard let data = data,
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let rawMessages = json["messages"] as? [[String: Any]] else {
@@ -1232,11 +1413,16 @@ struct LogPopoverView: View {
                 }
 
                 // Identical payload → keep current views untouched (5s polling).
+                // Keyed per-session: two different sessions can legitimately
+                // return byte-identical JSON (e.g. both "no messages yet"),
+                // and a global fingerprint would wrongly swallow that update,
+                // leaving stale content on screen until the fingerprint
+                // happened to change via some other session.
                 let fingerprint = String(data: data, encoding: .utf8)?.hashValue ?? 0
-                if fingerprint == lastMessagesFingerprint && !messages.isEmpty {
+                if fingerprint == lastMessagesFingerprint[sessionId] && !messages.isEmpty {
                     return
                 }
-                lastMessagesFingerprint = fingerprint
+                lastMessagesFingerprint[sessionId] = fingerprint
 
                 var derivedBanners: [RunBanner] = []
                 var filtered: [SessionLogEntry] = []
