@@ -51,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var seenFirstSubworkerSnapshot = false
     private var menuRebuildThrottleWorkItem: DispatchWorkItem?
     private var statusItemWatchdog: Timer?
+    private var lastMenuHash: Int = 0
 
     private func detectNewlyRunningAgents() {
         let running = Set(subworkerManager.subworkers.filter(\.running).map(\.name))
@@ -170,6 +171,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func throttledSetupMenu() {
+        if logPopover?.isShown == true || subworkerLogPopover?.isShown == true { return }
+        let currentHash = subworkerManager.subworkers.map { "\($0.name):\($0.enabled):\($0.running):\($0.nextRun ?? "")" }.joined().hashValue ^ colimaManager.instances.count
+        if currentHash == lastMenuHash && mainMenu != nil && (mainMenu?.numberOfItems ?? 0) > 0 { return }
+        lastMenuHash = currentHash
         menuRebuildThrottleWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.setupMenu() }
         menuRebuildThrottleWorkItem = work
@@ -183,12 +188,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func watchdogCheck() {
-        if statusItem.button == nil || statusItem.button?.window == nil {
-            AppLog.d("watchdog: statusItem invalid, healing")
+        let buttonNil = statusItem.button == nil
+        let windowNil = statusItem.button?.window == nil
+        let menuEmpty = mainMenu == nil || (mainMenu?.numberOfItems ?? 0) == 0
+        if buttonNil || windowNil || menuEmpty {
+            AppLog.d("watchdog: heal buttonNil=\(buttonNil) windowNil=\(windowNil) menuEmpty=\(menuEmpty)")
+            if UserDefaults.standard.bool(forKey: "topbarHealthLog") {
+                let path = NSString(string: "~/Library/Logs/EliaTopBar/health.log").expandingTildeInPath
+                try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+                if let handle = FileHandle(forWritingAtPath: path) {
+                    handle.seekToEndOfFile()
+                    handle.write(Data("\(Date()): watchdog heal buttonNil=\(buttonNil) windowNil=\(windowNil) menuEmpty=\(menuEmpty)\n".utf8))
+                    handle.closeFile()
+                } else {
+                    try? "\(Date()): watchdog heal buttonNil=\(buttonNil) windowNil=\(windowNil) menuEmpty=\(menuEmpty)\n".write(toFile: path, atomically: true, encoding: .utf8)
+                }
+            }
             ensureStatusItemAlive()
-            setupMenu()
-        } else if mainMenu == nil || (mainMenu?.numberOfItems ?? 0) == 0 {
-            AppLog.d("watchdog: menu nil/empty, rebuilding")
             setupMenu()
         }
     }
@@ -368,10 +384,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Menu Construction
 
     private func setupMenu() {
-        if statusItem.button == nil {
-            AppLog.d("setupMenu: button nil, healing before build")
-            ensureStatusItemAlive()
-        }
+        AppLog.d("setupMenu: button nil=\(statusItem.button == nil) window nil=\(statusItem.button?.window == nil) menuItems=\(mainMenu?.numberOfItems ?? -1) ws=\(subworkerManager.wsConnected) subs=\(subworkerManager.subworkers.count)")
+        ensureStatusItemAlive()
+        statusItem.menu = nil
         let menu = NSMenu()
 
         if let actionError = colimaManager.actionError {

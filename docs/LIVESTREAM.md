@@ -220,3 +220,38 @@ RunPopup: mirror the field filter there or extract a shared observer so reasonin
 
 **Files:** `Sources/LogPopoverView.swift` (new `TodoState` + overlay), `Sources/SubworkerManager.swift` (no change, reuses `run_log` `field=tool` path), verification via `curl /sessions/{name}?session_id=` + `sqlite3 /root/.local/share/opencode/opencode.db` `SELECT data FROM part WHERE data LIKE '%todowrite%'`.
 
+---
+
+## 11. Real-Time TodoList Component — How the UI Tracks `todowrite` Live (2026-08-28)
+
+**What it does:** every time the AI agent calls `todowrite`, the LogViewer instantly reflects the new todo list without a full reload — the same way `text`/`reasoning` stream, but for structured state. The user sees at a glance which tasks are `pending` (gray), `in_progress` (blue pulsing), `completed` (green) or `cancelled` (red), both as a **compact vertical strip** (always visible, left edge, centered) and as a **full banner** where the tool was called.
+
+**Two surfaces, one source:**
+- **Vertical strip** — `verticalTodoStrip` overlay on `messagesPanel` (`GeometryReader` → `.overlay(alignment: .leading)`). Collapsed: `18pt` wide, `VStack(spacing:7)` of dots (`8pt` + `11pt` hit target, `in_progress` has outer `stroke` pulse), `max 10` then `…` (scrollable). Hover → expands to `220pt` (capped at `260`, never exceeds `760-210≈550`), shows `dot + content` rows with priority pill, `0.2s easeOut`, centered via `.frame(maxHeight: .infinity, alignment: .center)`. Hidden when `verticalTodos.isEmpty`.
+- **Inline banner** — `todoWriteBanner(todos:)` rendered in place of the generic `toolBanner` for `tool=="todowrite"` in both `messageEntry` (historical) and `liveStreamPanel` (live). Header `Todo List 3/7` + `running`/`pending` counts, then rows with `todoDotView` + text + priority, max 10, `220pt` max height, `Divider` between rows, purple `0.25` stroke.
+
+**How it stays real-time:**
+1. **Historical path:** `fetchMessages(sessionId:)` after `JSONSerialization` finds the **last** `todowrite` in `rawMessages.reversed()` — it checks `part["input"]` as `dict` (`input["todos"]`) or as `String` JSON, falls back to `output`, parses via `parseTodoWritePayload` (`todos[{content,status,priority}]`), and sets `verticalTodos = latestTodos ?? []` on the main thread. Also clears `verticalTodos = []` on `sessionRow` click before the fetch so stale todos don’t linger.
+2. **Live path:** `appendLiveDelta(for:field:delta:)` for `field=="tool"` parses the delta JSON (`tool`, `input`, `output`), appends a `liveTool` entry, **and if `tool.lowercased()=="todowrite"` and `name == subworkerName`** immediately does `verticalTodos = parseTodoWritePayload(input, output:)`. No view-builder mutation — the state is updated in the `NotificationCenter` observer (`queue: .main`), so the overlay re-renders on the next SwiftUI pass, coalesced with the same `liveEntries` throttling.
+3. **Session switch:** `selectedSessionId` change clears `verticalTodos`, `messages`, and `live buffer`; the next `fetchMessages` repopulates it from that session’s last todowrite, so switching between `refund-hunter` sessions never shows the wrong list.
+
+**Parsing robustness (verified on 2026-08-27 19:00 `refund-hunter` run):**
+- Tool name case-insensitive (`todowrite`/`TodoWrite`), input may be `[String:Any]` or JSON `String`, output is stringified JSON echo — we try `inputDict["todos"]` first, then `parseTodoWritePayload(inputStr, outputStr)`.
+- Status values are `lowercased()` before comparison, so `In_Progress` etc. still maps; unknown statuses fall back to gray.
+- Max 10 is enforced at render (`prefix(10)`), not at parse, so the full list is still available for the banner.
+
+**Why it feels instant:** the strip is an `overlay` (not part of `LazyVStack`), so it doesn’t affect `bottomAnchor` pinning or `isPinnedToBottom` logic; it’s `allowsHitTesting` only when non-empty, and its `onHover` expansion is independent of the scroll’s `withAnimation`. Live and historical share the same `TodoItem` + `todoDotColor`/`todoPriorityColor` helpers, so colors and counts stay consistent.
+
+---
+
+## 12. Historical Pagination — Latest 20 Only, Scroll Up to Load More (2026-08-28)
+
+**Problem:** opening a session with 200+ messages scrolled from the very top (oldest) to the very bottom (latest) — way too long, and the user always wants the latest 20 anyway. Now the LogViewer loads **only the latest 20 messages/tools/reasoning** on first open, so the initial scroll is short and lands directly on the latest data. Older messages are not loaded until the user scrolls up.
+
+**How it works (no impact on livestream):**
+- **Historical is paginated, live is not.** `fetchMessages` now uses `messageFetchLimit = 20` (was `50`) in `GET /sessions/{name}?session_id=&limit=`. `hasMoreMessages = rawMessages.count >= messageFetchLimit` and `isLoadingMoreMessages` track whether older history exists. The top of `LazyVStack` shows a `ProgressView` (“Older messages — scroll up to load”) that `onAppear` calls `loadMoreMessages()` → `messageFetchLimit += 20` → `fetchMessages(..., showSpinner:false)`.
+- **Scroll preservation:** when loading older history, `isPinnedToBottom` is `false` (user is at the top), so `requestScroll`’s guard `force || isPinned` prevents an auto-jump to the bottom — the viewport stays where the user was, and older rows are prepended above. Only the initial load (after `selectedSessionId` change or `messagesLoading` → false) does a forced progressive pin (`0.05/0.2/0.45/0.8/1.2s`).
+- **Livestream is untouched:** `liveEntries` (WebSocket `run_log` deltas) are appended **below** the historical `displayItems` and always render at the tail (`liveStreamPanel` + `bottomAnchor`). Pagination only changes the `limit` for the REST `GET /session/{id}/message` call; it never filters `field=="tool"`/`text`/`reasoning` and never caps `liveEntries` (still `40` live entries, `200` historical max). `verticalTodos` and `todoWriteBanner` keep working because they derive from the *last* `todowrite` in the fetched window — if the true last `todowrite` is older than 20 messages, scrolling up will eventually load it and the strip will update.
+
+**Files:** `Sources/LogPopoverView.swift` (`messageFetchLimit`, `hasMoreMessages`, `isLoadingMoreMessages`, `loadMoreMessages()`, top loader in `messagesPanel`, `fetchMessages` limit param, `hasMore` logic), no server change (uses existing `?limit=`), no `ChatLive`/`SubworkerManager` change.
+

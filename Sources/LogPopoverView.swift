@@ -121,6 +121,9 @@ struct LogPopoverView: View {
     @State private var liveTick = 0
     @State private var verticalTodos: [TodoItem] = []
     @State private var isHoveringTodoModule = false
+    @State private var messageFetchLimit = 20
+    @State private var hasMoreMessages = true
+    @State private var isLoadingMoreMessages = false
 
     private var displayItems: [DisplayItem] {
         var items: [DisplayItem] = messages.map { .message($0) }
@@ -269,6 +272,9 @@ struct LogPopoverView: View {
             messages = []
             messagesError = nil
             verticalTodos = []
+            messageFetchLimit = 20
+            hasMoreMessages = true
+            isLoadingMoreMessages = false
             resetLiveBuffer(for: subworkerName)
             fetchMessages(sessionId: session.id)
         }) {
@@ -313,6 +319,13 @@ struct LogPopoverView: View {
                                 .padding()
                         } else {
                             if !displayItems.isEmpty {
+                                if hasMoreMessages && !isLoadingMoreMessages {
+                                    HStack(spacing: 6) {
+                                        ProgressView().controlSize(.mini)
+                                        Text("Older messages — scroll up to load").font(.caption2).foregroundColor(.secondary)
+                                    }.frame(maxWidth: .infinity).padding(.vertical, 4).onAppear { loadMoreMessages() }
+                                    Divider()
+                                }
                                 ForEach(displayItems) { item in
                                     switch item {
                                     case .message(let msg):
@@ -1233,6 +1246,9 @@ struct LogPopoverView: View {
         if selectedSessionId == nil, let first = sessions.first {
             selectedSessionId = first.id
             isPinnedToBottom = true
+            messageFetchLimit = 20
+            hasMoreMessages = true
+            isLoadingMoreMessages = false
             fetchMessages(sessionId: first.id)
         }
     }
@@ -1433,12 +1449,12 @@ struct LogPopoverView: View {
     // MARK: - Fetch Messages
 
     private func fetchMessages(sessionId: String, showSpinner: Bool = true) {
-        guard let url = URL(string: "\(baseURL)/sessions/\(subworkerName)?session_id=\(sessionId)&limit=50") else { return }
+        guard let url = URL(string: "\(baseURL)/sessions/\(subworkerName)?session_id=\(sessionId)&limit=\(messageFetchLimit)") else { return }
         if showSpinner { messagesLoading = true }
 
         URLSession.shared.dataTask(with: EliaAuth.authorize(url)) { data, _, _ in
             DispatchQueue.main.async {
-                defer { messagesLoading = false }
+                defer { messagesLoading = false; isLoadingMoreMessages = false }
                 // The user may have already navigated to a different session
                 // by the time this response lands — applying it now would
                 // silently overwrite the correct session's content with a
@@ -1520,10 +1536,19 @@ struct LogPopoverView: View {
                     if latestTodos != nil { break }
                 }
                 verticalTodos = latestTodos ?? []
+                hasMoreMessages = rawMessages.count >= messageFetchLimit
+                isLoadingMoreMessages = false
 
                 selectedSessionChanged = true
             }
         }.resume()
+    }
+
+    private func loadMoreMessages() {
+        guard !isLoadingMoreMessages, hasMoreMessages, let sid = selectedSessionId else { return }
+        isLoadingMoreMessages = true
+        messageFetchLimit += 20
+        fetchMessages(sessionId: sid, showSpinner: false)
     }
 
     private func parseMessage(_ raw: [String: Any], id: String) -> SessionLogEntry? {
