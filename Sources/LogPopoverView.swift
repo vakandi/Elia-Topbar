@@ -119,6 +119,8 @@ struct LogPopoverView: View {
     @State private var liveStartedObserver: NSObjectProtocol?
     @State private var liveCompletedObserver: NSObjectProtocol?
     @State private var liveTick = 0
+    @State private var verticalTodos: [TodoItem] = []
+    @State private var isHoveringTodoModule = false
 
     private var displayItems: [DisplayItem] {
         var items: [DisplayItem] = messages.map { .message($0) }
@@ -266,6 +268,7 @@ struct LogPopoverView: View {
             isPinnedToBottom = true
             messages = []
             messagesError = nil
+            verticalTodos = []
             resetLiveBuffer(for: subworkerName)
             fetchMessages(sessionId: session.id)
         }) {
@@ -402,6 +405,15 @@ struct LogPopoverView: View {
                         }
                     }
                 }
+            }
+            .overlay(alignment: .leading) {
+                HStack(spacing: 0) {
+                    verticalTodoStrip
+                    Spacer()
+                }
+                .frame(maxHeight: .infinity, alignment: .center)
+                .padding(.leading, 3)
+                .allowsHitTesting(!verticalTodos.isEmpty)
             }
         }
     }
@@ -592,6 +604,33 @@ struct LogPopoverView: View {
         case "in_progress": return Color.blue.opacity(0.06)
         case "completed": return Color.green.opacity(0.04)
         default: return Color.clear
+        }
+    }
+    private var verticalTodoStrip: some View {
+        Group {
+            if !verticalTodos.isEmpty {
+                VStack(spacing: 7) {
+                    ForEach(Array(verticalTodos.prefix(10).enumerated()), id: \.offset) { _, t in
+                        HStack(spacing: 6) {
+                            todoDotView(status: t.status)
+                            if isHoveringTodoModule {
+                                Text(t.content).font(.system(size: 10)).foregroundColor(t.status == "completed" ? .secondary : .primary).lineLimit(1).truncationMode(.tail)
+                                Spacer(minLength: 0)
+                            }
+                        }
+                    }
+                    if verticalTodos.count > 10 {
+                        Text("…\(verticalTodos.count - 10)").font(.caption2).foregroundColor(.secondary)
+                    }
+                }
+                .padding(.vertical, 8).padding(.horizontal, isHoveringTodoModule ? 8 : 4)
+                .background(Color(nsColor: .controlBackgroundColor).opacity(0.96))
+                .cornerRadius(8)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.purple.opacity(0.28), lineWidth: 1))
+                .shadow(color: .black.opacity(0.08), radius: 4, x: 1, y: 2)
+                .frame(width: isHoveringTodoModule ? min(260, 520) : 18)
+                .onHover { hovering in withAnimation(.easeOut(duration: 0.2)) { isHoveringTodoModule = hovering } }
+            }
         }
     }
 
@@ -1311,6 +1350,9 @@ struct LogPopoverView: View {
             if (liveEntries[name]?.count ?? 0) > 40 {
                 liveEntries[name] = Array(liveEntries[name]!.suffix(40))
             }
+            if parsed.0.lowercased() == "todowrite", name == subworkerName, let todos = parseTodoWritePayload(parsed.1, output: parsed.2) {
+                verticalTodos = todos
+            }
         default:
             if let last = liveEntries[name]?.last, case .liveText(let cur) = last {
                 if delta == cur { return }
@@ -1457,6 +1499,27 @@ struct LogPopoverView: View {
                 }
                 banners = merged.sorted { ($0.timestamp ?? .distantPast) < ($1.timestamp ?? .distantPast) }
                 messagesError = nil
+                var latestTodos: [TodoItem]? = nil
+                for raw in rawMessages.reversed() {
+                    for part in (raw["parts"] as? [[String: Any]] ?? []) {
+                        if (part["tool"] as? String)?.lowercased() == "todowrite" {
+                            var todos: [TodoItem]? = nil
+                            if let inputDict = part["input"] as? [String: Any], let arr = inputDict["todos"] as? [[String: Any]] {
+                                todos = arr.compactMap { d in guard let c = d["content"] as? String, !c.isEmpty else { return nil }; return TodoItem(content: c, status: (d["status"] as? String ?? "pending").lowercased(), priority: (d["priority"] as? String ?? "medium").lowercased()) }
+                            } else {
+                                let inputStr: String? = {
+                                    if let s = part["input"] as? String { return s }
+                                    if let obj = part["input"] as? [String: Any], let data = try? JSONSerialization.data(withJSONObject: obj) { return String(data: data, encoding: .utf8) }
+                                    return nil
+                                }()
+                                todos = parseTodoWritePayload(inputStr, output: part["output"] as? String)
+                            }
+                            if let t = todos, !t.isEmpty { latestTodos = t; break }
+                        }
+                    }
+                    if latestTodos != nil { break }
+                }
+                verticalTodos = latestTodos ?? []
 
                 selectedSessionChanged = true
             }

@@ -854,7 +854,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let popover = NSPopover()
         popover.contentSize = NSSize(width: 500, height: 400)
-        popover.behavior = .transient
+        popover.behavior = .semitransient
 
         let logView = LogPopoverView(subworkerName: name, baseURL: subworkerManager.currentBaseURL)
         popover.contentViewController = NSHostingController(rootView: logView)
@@ -933,6 +933,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func mainItemClicked(_ sender: NSStatusBarButton) {
         AppLog.d("mainItemClicked — button click received")
+        if let popover = logPopover, popover.isShown {
+            popover.performClose(nil)
+            logPopover = nil
+        }
         ensureStatusItemAlive()
         if mainMenu == nil || (mainMenu?.numberOfItems ?? 0) == 0 {
             AppLog.d("mainMenu was nil/empty at click — rebuilding")
@@ -1065,14 +1069,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let popover = NSPopover()
         popover.contentSize = NSSize(width: 520, height: 400)
-        popover.behavior = .transient
+        popover.behavior = .semitransient
         popover.contentViewController = NSHostingController(
             rootView: LogPopoverView(subworkerName: name, baseURL: subworkerManager.currentBaseURL)
         )
         subworkerLogPopover = popover
         subworkerLogPopoverName = name
-        // A transient popover shown while another app is frontmost closes
-        // immediately — activate our app first.
         NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         clampPopoverInsideScreen(popover)
