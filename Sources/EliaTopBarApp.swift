@@ -52,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuRebuildThrottleWorkItem: DispatchWorkItem?
     private var statusItemWatchdog: Timer?
     private var lastMenuHash: Int = 0
+    private var isMenuOpen = false
 
     private func detectNewlyRunningAgents() {
         let running = Set(subworkerManager.subworkers.filter(\.running).map(\.name))
@@ -171,7 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func throttledSetupMenu() {
-        if logPopover?.isShown == true || subworkerLogPopover?.isShown == true { return }
+        if isMenuOpen || logPopover?.isShown == true || subworkerLogPopover?.isShown == true { return }
         let currentHash = subworkerManager.subworkers.map { "\($0.name):\($0.enabled):\($0.running):\($0.nextRun ?? "")" }.joined().hashValue ^ colimaManager.instances.count
         if currentHash == lastMenuHash && mainMenu != nil && (mainMenu?.numberOfItems ?? 0) > 0 { return }
         lastMenuHash = currentHash
@@ -179,6 +180,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let work = DispatchWorkItem { [weak self] in self?.setupMenu() }
         menuRebuildThrottleWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        isMenuOpen = false
+        throttledSetupMenu()
     }
 
     private func startStatusItemWatchdog() {
@@ -391,6 +397,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ensureStatusItemAlive()
         statusItem.menu = nil
         let menu = NSMenu()
+        menu.delegate = self
 
         if let actionError = colimaManager.actionError {
             let errorItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -957,7 +964,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         ensureStatusItemAlive()
         if mainMenu == nil || (mainMenu?.numberOfItems ?? 0) == 0 {
-            AppLog.d("mainMenu was nil/empty at click — rebuilding")
+            AppLog.d("mainMenu was nil/empty at click — rebuilding synchronously")
             setupMenu()
         }
         let mouse = NSApp.currentEvent?.locationInWindow ?? sender.bounds.origin
@@ -983,7 +990,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if let menu = mainMenu {
+            isMenuOpen = true
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: sender)
+            isMenuOpen = false
+            throttledSetupMenu()
         } else {
             AppLog.d("mainMenu still nil at popUp — nothing to show")
         }
