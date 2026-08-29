@@ -124,6 +124,7 @@ struct LogPopoverView: View {
     @State private var messageFetchLimit = 20
     @State private var hasMoreMessages = true
     @State private var isLoadingMoreMessages = false
+    @State private var continuingIds: Set<String> = []
 
     private var displayItems: [DisplayItem] {
         var items: [DisplayItem] = messages.map { .message($0) }
@@ -259,10 +260,9 @@ struct LogPopoverView: View {
 
     private func sessionRow(_ session: SessionItem) -> some View {
         let isSelected = session.id == selectedSessionId
+        let isContinuing = continuingIds.contains(session.id)
         return Button(action: {
             guard session.id != selectedSessionId else {
-                // Re-selecting the same session should still refresh —
-                // this was previously the "click again to unstick" workaround.
                 fetchMessages(sessionId: session.id)
                 return
             }
@@ -283,10 +283,37 @@ struct LogPopoverView: View {
                     .font(.caption)
                     .foregroundColor(isSelected ? .white : .primary)
                     .lineLimit(1)
-                if let ts = session.timeCreated {
-                    Text(sessionDate(ts))
-                        .font(.caption2)
-                        .foregroundColor(isSelected ? .white.opacity(0.7) : .secondary)
+                HStack(spacing: 6) {
+                    if let ts = session.timeCreated {
+                        Text(sessionDate(ts))
+                            .font(.caption2)
+                            .foregroundColor(isSelected ? .white.opacity(0.7) : .secondary)
+                    } else {
+                        Text(String(session.id.prefix(8)) + "…")
+                            .font(.caption2)
+                            .foregroundColor(isSelected ? .white.opacity(0.7) : .secondary)
+                    }
+                    Spacer()
+                    Button(action: {
+                        continueSession(sessionId: session.id)
+                    }) {
+                        HStack(spacing: 3) {
+                            if isContinuing {
+                                ProgressView().controlSize(.mini).scaleEffect(0.6)
+                            }
+                            Text(isContinuing ? "Sending…" : "Continue")
+                                .font(.system(size: 9, weight: .semibold))
+                        }
+                        .foregroundColor(isSelected ? .white : .accentColor)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(isSelected ? Color.white.opacity(0.2) : Color.accentColor.opacity(0.14))
+                        .cornerRadius(4)
+                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(isSelected ? Color.white.opacity(0.3) : Color.accentColor.opacity(0.3), lineWidth: 0.5))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isContinuing)
+                    .help("Send 'continue the tasks' to this session")
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -296,6 +323,25 @@ struct LogPopoverView: View {
             .cornerRadius(4)
         }
         .buttonStyle(.plain)
+    }
+
+    private func continueSession(sessionId: String) {
+        guard let url = URL(string: "\(baseURL)/sessions/\(subworkerName)/\(sessionId)/continue") else { return }
+        continuingIds.insert(sessionId)
+        var request = EliaAuth.authorize(url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["message": "continue the tasks"])
+        URLSession.shared.dataTask(with: request) { _, response, _ in
+            DispatchQueue.main.async {
+                continuingIds.remove(sessionId)
+                if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                    selectedSessionId = sessionId
+                    fetchMessages(sessionId: sessionId, showSpinner: false)
+                    fetchSessions()
+                }
+            }
+        }.resume()
     }
 
     // MARK: - Messages Panel (auto-scroll + tool banners)

@@ -191,17 +191,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let buttonNil = statusItem.button == nil
         let windowNil = statusItem.button?.window == nil
         let menuEmpty = mainMenu == nil || (mainMenu?.numberOfItems ?? 0) == 0
-        if buttonNil || windowNil || menuEmpty {
-            AppLog.d("watchdog: heal buttonNil=\(buttonNil) windowNil=\(windowNil) menuEmpty=\(menuEmpty)")
+        let targetWrong = statusItem.button?.target !== self
+        let actionWrong = statusItem.button?.action != #selector(mainItemClicked(_:))
+        if buttonNil || windowNil || menuEmpty || targetWrong || actionWrong {
+            AppLog.d("watchdog: heal buttonNil=\(buttonNil) windowNil=\(windowNil) menuEmpty=\(menuEmpty) targetWrong=\(targetWrong) actionWrong=\(actionWrong)")
             if UserDefaults.standard.bool(forKey: "topbarHealthLog") {
                 let path = NSString(string: "~/Library/Logs/EliaTopBar/health.log").expandingTildeInPath
                 try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+                let line = "\(Date()): watchdog heal buttonNil=\(buttonNil) windowNil=\(windowNil) menuEmpty=\(menuEmpty) targetWrong=\(targetWrong) actionWrong=\(actionWrong) ws=\(subworkerManager.wsConnected) subs=\(subworkerManager.subworkers.count)\n"
                 if let handle = FileHandle(forWritingAtPath: path) {
                     handle.seekToEndOfFile()
-                    handle.write(Data("\(Date()): watchdog heal buttonNil=\(buttonNil) windowNil=\(windowNil) menuEmpty=\(menuEmpty)\n".utf8))
+                    handle.write(Data(line.utf8))
                     handle.closeFile()
                 } else {
-                    try? "\(Date()): watchdog heal buttonNil=\(buttonNil) windowNil=\(windowNil) menuEmpty=\(menuEmpty)\n".write(toFile: path, atomically: true, encoding: .utf8)
+                    try? line.write(toFile: path, atomically: true, encoding: .utf8)
                 }
             }
             ensureStatusItemAlive()
