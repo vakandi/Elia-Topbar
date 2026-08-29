@@ -909,24 +909,61 @@ final class SubworkerManager: ObservableObject {
         return isoParser.date(from: string)
     }
 
-    /// Server-provided next run, or computed from the interval schedule
-    /// (next slot among `scheduleHours` at `scheduleMinute`, rolling to tomorrow).
     func nextRunDate(for sw: SubworkerInfo, now: Date = Date()) -> Date? {
-        // Server snapshots can lag behind a fired/running job — only trust future dates.
         if let date = Self.parseNextRun(sw.nextRun), date > now { return date }
-        guard sw.enabled,
-              sw.scheduleType == "interval",
-              let hours = sw.scheduleHours, !hours.isEmpty else { return nil }
-        let minute = sw.scheduleMinute ?? 0
+        guard sw.enabled else { return nil }
         let calendar = Calendar.current
-        for hour in hours.sorted() {
-            if let candidate = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: now),
-               candidate > now {
-                return candidate
+        if sw.scheduleType == "interval", let hours = sw.scheduleHours, !hours.isEmpty {
+            let minute = sw.scheduleMinute ?? 0
+            for hour in hours.sorted() {
+                if let candidate = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: now), candidate > now {
+                    if let days = sw.scheduleDays, !days.isEmpty {
+                        let w = calendar.component(.weekday, from: candidate) - 1
+                        if !days.contains(w) { continue }
+                    }
+                    return candidate
+                }
             }
+            var dayOffset = 1
+            while dayOffset < 8 {
+                guard let day = calendar.date(byAdding: .day, value: dayOffset, to: now) else { break }
+                if let days = sw.scheduleDays, !days.isEmpty {
+                    let w = calendar.component(.weekday, from: day) - 1
+                    if !days.contains(w) { dayOffset += 1; continue }
+                }
+                if let h = hours.sorted().first, let cand = calendar.date(bySettingHour: h, minute: minute, second: 0, of: day) { return cand }
+                dayOffset += 1
+            }
+            return nil
         }
-        let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
-        return calendar.date(bySettingHour: hours.min()!, minute: minute, second: 0, of: tomorrow)
+        if sw.scheduleType == "every", let every = sw.scheduleEvery, every > 0 {
+            let hours = sw.scheduleHours
+            let minuteCandidates: [Int] = {
+                if every >= 60 && every % 60 == 0 { return [0] }
+                if 60 % every == 0 {
+                    return stride(from: 0, to: 60, by: every).map { Int($0) }
+                }
+                var r: [Int] = []; var m = 0; while m < 60 { r.append(m); m += every }; return r
+            }()
+            var cursor = now.addingTimeInterval(60)
+            for _ in 0..<(48*60) {
+                let comps = calendar.dateComponents([.hour, .minute], from: cursor)
+                guard let h = comps.hour, let m = comps.minute else { break }
+                let minuteMatch = minuteCandidates.contains(m)
+                let hourMatch = hours == nil || hours!.isEmpty || hours!.contains(h)
+                let dayMatch: Bool = {
+                    guard let days = sw.scheduleDays, !days.isEmpty else { return true }
+                    let w = calendar.component(.weekday, from: cursor) - 1
+                    return days.contains(w)
+                }()
+                if minuteMatch && hourMatch && dayMatch {
+                    if let cand = calendar.date(bySettingHour: h, minute: m, second: 0, of: cursor), cand > now { return cand }
+                }
+                cursor = cursor.addingTimeInterval(60)
+            }
+            return nil
+        }
+        return nil
     }
 
     /// Minutes under 2h ("45m"), hours beyond ("3h"), "due" when overdue.
