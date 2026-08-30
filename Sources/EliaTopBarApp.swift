@@ -1425,26 +1425,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "Cancel")
         let domainField = NSTextField(string: UserDefaults.standard.string(forKey: "tunnelDomain") ?? "")
         domainField.placeholderString = "elia.surfai.tech"
-        domainField.frame = NSRect(x: 0, y: 24, width: 320, height: 24)
+        domainField.frame = NSRect(x: 0, y: 48, width: 320, height: 24)
         let tokenField = NSTextField(string: UserDefaults.standard.string(forKey: "cfApiToken") ?? "")
-        tokenField.placeholderString = "Cloudflare API Token"
-        tokenField.frame = NSRect(x: 0, y: 0, width: 320, height: 24)
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 56))
+        tokenField.placeholderString = "Cloudflare API Token (or Global API Key cfk_...)"
+        tokenField.frame = NSRect(x: 0, y: 24, width: 320, height: 24)
+        let emailField = NSTextField(string: UserDefaults.standard.string(forKey: "cfEmail") ?? "wael.bousfira@gmail.com")
+        emailField.placeholderString = "Cloudflare Email (only for Global API Key)"
+        emailField.frame = NSRect(x: 0, y: 0, width: 320, height: 24)
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 80))
         container.addSubview(domainField)
         container.addSubview(tokenField)
+        container.addSubview(emailField)
         alert.accessoryView = container
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         let domain = domainField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let token = tokenField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let email = emailField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !domain.isEmpty, !token.isEmpty else { return }
         UserDefaults.standard.set(domain, forKey: "tunnelDomain")
         UserDefaults.standard.set(token, forKey: "cfApiToken")
+        if !email.isEmpty { UserDefaults.standard.set(email, forKey: "cfEmail") }
         let baseURL = UserDefaults.standard.string(forKey: "subworkerServerURL") ?? "http://localhost:5656"
         guard let url = URL(string: "\(baseURL)/tunnel/setup") else { return }
         var req = EliaAuth.authorize(url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: ["domain": domain, "api_token": token])
+        // Auto-detect Global API Key (cfk_ or 37 hex) vs Bearer token
+        let isGlobal = token.hasPrefix("cfk_") || token.count == 37
+        if isGlobal && !email.isEmpty {
+            req.httpBody = try? JSONSerialization.data(withJSONObject: ["domain": domain, "global_key": token, "email": email])
+        } else {
+            req.httpBody = try? JSONSerialization.data(withJSONObject: ["domain": domain, "api_token": token])
+        }
         URLSession.shared.dataTask(with: req) { [weak self] data, response, error in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -2094,7 +2106,13 @@ final class TunnelProgressPanelController: NSObject, NSWindowDelegate {
         var request = EliaAuth.authorize(url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["domain": domain, "api_token": token])
+        let email = UserDefaults.standard.string(forKey: "cfEmail") ?? ""
+        let isGlobal = token.hasPrefix("cfk_") || token.count == 37
+        if isGlobal && !email.isEmpty {
+            request.httpBody = try? JSONSerialization.data(withJSONObject: ["domain": domain, "global_key": token, "email": email])
+        } else {
+            request.httpBody = try? JSONSerialization.data(withJSONObject: ["domain": domain, "api_token": token])
+        }
         pollSession.dataTask(with: request) { [weak self] data, _, _ in
             DispatchQueue.main.async {
                 guard let self else { return }
