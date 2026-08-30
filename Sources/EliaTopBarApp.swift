@@ -1420,11 +1420,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "Remote Domain (Cloudflare Tunnel)"
-        alert.informativeText = "Enter your domain (e.g. elia.surfai.tech) and your Cloudflare API Token (Zone:DNS Edit + Account:Tunnel Edit). The server will create the tunnel on your Mac (local network required)."
+        alert.informativeText = "Enter your domain (e.g. your-domain.com) and your Cloudflare API Token (Zone:DNS Edit + Account:Tunnel Edit). The server will create the tunnel on your Mac (local network required)."
         alert.addButton(withTitle: "Setup Tunnel")
         alert.addButton(withTitle: "Cancel")
         let domainField = NSTextField(string: UserDefaults.standard.string(forKey: "tunnelDomain") ?? "")
-        domainField.placeholderString = "elia.surfai.tech"
+        domainField.placeholderString = "your-domain.com"
         domainField.frame = NSRect(x: 0, y: 48, width: 320, height: 24)
         let tokenField = NSTextField(string: UserDefaults.standard.string(forKey: "cfApiToken") ?? "")
         tokenField.placeholderString = "Cloudflare API Token (or Global API Key cfk_...)"
