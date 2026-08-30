@@ -163,7 +163,7 @@ struct LogPopoverView: View {
         }
         .frame(width: 760, height: 560)
         .onAppear {
-            fetchSessions()
+            warmupAndFetchSessions()
             observeRunLogs()
             observeRunBanners()
             observeLiveLifecycle()
@@ -1229,6 +1229,34 @@ struct LogPopoverView: View {
 
     private func sessionDate(_ ts: TimeInterval) -> String {
         Self.sessionDateFormatter.string(from: Date(timeIntervalSince1970: ts / 1000))
+    }
+
+    // MARK: - Warmup (prevent 1-session-0-msg cold start)
+    private func warmupAndFetchSessions() {
+        guard let warmURL = URL(string: "\(baseURL)/health") else { fetchSessions(); return }
+        // Fire a lightweight health check to wake Docker + warm SQLite cache before the heavier /list
+        URLSession.shared.dataTask(with: EliaAuth.authorize(warmURL)) { _, _, _ in
+            DispatchQueue.main.async {
+                // Also warm the opencode DB via a cheap list with limit, then fetch real sessions
+                self.warmSessionsDBAndFetch()
+            }
+        }.resume()
+    }
+
+    private func warmSessionsDBAndFetch() {
+        // Warm the opencode DB cache so the subsequent /list returns all sessions, not fallback 1
+        guard let warmListURL = URL(string: "\(baseURL)/sessions/\(subworkerName)/list") else { fetchSessions(); return }
+        var warmReq = EliaAuth.authorize(warmListURL)
+        warmReq.timeoutInterval = 12
+        URLSession.shared.dataTask(with: warmReq) { _, _, _ in
+            DispatchQueue.main.async { self.fetchSessions() }
+        }.resume()
+        // Fallback: if warm takes >1.2s, still fetchSessions so UI doesn't stall
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            if self.sessionsLoading && self.sessions.isEmpty {
+                self.fetchSessions()
+            }
+        }
     }
 
     // MARK: - Batch Loading
