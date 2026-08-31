@@ -121,6 +121,7 @@ struct LogPopoverView: View {
     @State private var liveTick = 0
     @State private var verticalTodos: [TodoItem] = []
     @State private var isHoveringTodoModule = false
+    @State private var liveMessagesPollTimer: Timer?
     @State private var messageFetchLimit = 20
     @State private var hasMoreMessages = true
     @State private var isLoadingMoreMessages = false
@@ -169,11 +170,13 @@ struct LogPopoverView: View {
             observeLiveLifecycle()
             startLiveTick()
             checkInitialRunningState()
+            startLiveMessagesPolling()
         }
         .onDisappear {
             stopObservingRunLogs()
             stopObservingRunBanners()
             stopObservingLiveLifecycle()
+            stopLiveMessagesPolling()
         }
     }
 
@@ -788,7 +791,7 @@ struct LogPopoverView: View {
                         .textSelection(.enabled)
                 case .liveTool(let name, let input, let output):
                     let lname = name.lowercased()
-                    if lname == "todowrite", let todos = parseTodoWritePayload(input, output: output) {
+                    if lname == "todowrite", let todos = extractTodosForLive(input: input, output: output, delta: input ?? ""), !todos.isEmpty {
                         todoWriteBanner(todos: todos)
                     } else if lname == "edit", let input, let diff = parseEditLivePayload(input, output: output) {
                         editDiffBanner(filePath: diff.path, oldString: diff.old, newString: diff.new)
@@ -873,15 +876,30 @@ struct LogPopoverView: View {
         if let o = liveCompletedObserver { NotificationCenter.default.removeObserver(o); liveCompletedObserver = nil }
     }
 
-    private func startLiveTick() {
+     private func startLiveTick() {
         let timer = Timer(timeInterval: 1.0, repeats: true) { _ in
             if self.liveRunning { self.liveTick += 1 }
         }
-        // Timer.scheduledTimer defaults to .default run loop mode, which is
-        // suspended while AppKit is in event-tracking (e.g. this popover's
-        // own show/scroll interactions) — same class of stall SubworkerManager
-        // already works around via its scheduleTimer(..., forMode: .common).
         RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func startLiveMessagesPolling() {
+        stopLiveMessagesPolling()
+        let t = Timer(timeInterval: 1.8, repeats: true) { _ in
+            Task { @MainActor in
+                guard let sid = self.selectedSessionId else { return }
+                if self.liveRunning || self.hasLiveContent(for: self.subworkerName) {
+                    self.fetchMessages(sessionId: sid, showSpinner: false)
+                }
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        liveMessagesPollTimer = t
+    }
+
+    private func stopLiveMessagesPolling() {
+        liveMessagesPollTimer?.invalidate()
+        liveMessagesPollTimer = nil
     }
 
     private func checkInitialRunningState() {
@@ -1425,6 +1443,17 @@ struct LogPopoverView: View {
                 if let data = delta.data(using: .utf8),
                    let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     let tool = obj["tool"] as? String ?? "tool"
+                    // Handle input-as-object (historical format uses dict) vs input-as-string (WS stringified)
+                    if let inputStr = obj["input"] as? String {
+                        return (tool, inputStr, obj["output"] as? String)
+                    }
+                    if let inputDict = obj["input"] as? [String: Any] {
+                        if let d = try? JSONSerialization.data(withJSONObject: inputDict),
+                           let s = String(data: d, encoding: .utf8) {
+                            return (tool, s, obj["output"] as? String)
+                        }
+                        return (tool, nil, obj["output"] as? String)
+                    }
                     if obj["filePath"] != nil || obj["oldString"] != nil || obj["content"] != nil {
                         return (tool, delta, obj["output"] as? String)
                     }
@@ -1440,10 +1469,25 @@ struct LogPopoverView: View {
             if (liveEntries[name]?.count ?? 0) > 40 {
                 liveEntries[name] = Array(liveEntries[name]!.suffix(40))
             }
-            if parsed.0.lowercased() == "todowrite", name == subworkerName, let todos = parseTodoWritePayload(parsed.1, output: parsed.2) {
-                verticalTodos = todos
+            if parsed.0.lowercased() == "todowrite", name == subworkerName {
+                if let todos = extractTodosForLive(input: parsed.1, output: parsed.2, delta: delta), !todos.isEmpty {
+                    verticalTodos = todos
+                }
+            } else if name == subworkerName, delta.lowercased().contains("\"todos\"") {
+                // Fallback: field was mislabeled but payload is a todoWrite
+                if let todos = extractTodosForLive(input: parsed.1, output: parsed.2, delta: delta), !todos.isEmpty {
+                    verticalTodos = todos
+                }
             }
         default:
+            if name == subworkerName, delta.lowercased().contains("\"todos\""), let todos = extractTodosForLive(input: nil, output: nil, delta: delta), !todos.isEmpty {
+                verticalTodos = todos
+                if liveEntries[name] == nil { liveEntries[name] = [] }
+                liveEntries[name]?.append(.liveTool(name: "todowrite", input: delta, output: nil))
+                if (liveEntries[name]?.count ?? 0) > 40 { liveEntries[name] = Array(liveEntries[name]!.suffix(40)) }
+                if name != liveAgent { liveAgent = name }
+                return
+            }
             if let last = liveEntries[name]?.last, case .liveText(let cur) = last {
                 if delta == cur { return }
                 if delta.count < 80 && cur.contains(delta) { return }
@@ -1459,6 +1503,29 @@ struct LogPopoverView: View {
             }
         }
         if name != liveAgent { liveAgent = name }
+    }
+
+    private func extractTodosForLive(input: String?, output: String?, delta: String) -> [TodoItem]? {
+        if let t = parseTodoWritePayload(input, output: output), !t.isEmpty { return t }
+        if let t = parseTodoWritePayload(delta, output: nil), !t.isEmpty { return t }
+        if let data = delta.data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let inputDict = obj["input"] as? [String: Any], let arr = inputDict["todos"] as? [[String: Any]], !arr.isEmpty {
+                let todos = arr.compactMap { d -> TodoItem? in
+                    guard let c = d["content"] as? String, !c.isEmpty else { return nil }
+                    return TodoItem(content: c, status: (d["status"] as? String ?? "pending").lowercased(), priority: (d["priority"] as? String ?? "medium").lowercased())
+                }
+                if !todos.isEmpty { return todos }
+            }
+            if let arr = obj["todos"] as? [[String: Any]], !arr.isEmpty {
+                let todos = arr.compactMap { d -> TodoItem? in
+                    guard let c = d["content"] as? String, !c.isEmpty else { return nil }
+                    return TodoItem(content: c, status: (d["status"] as? String ?? "pending").lowercased(), priority: (d["priority"] as? String ?? "medium").lowercased())
+                }
+                if !todos.isEmpty { return todos }
+            }
+        }
+        return nil
     }
 
     private func observeRunLogs() {
