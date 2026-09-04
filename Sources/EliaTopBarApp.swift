@@ -51,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var seenFirstSubworkerSnapshot = false
     private var menuRebuildThrottleWorkItem: DispatchWorkItem?
     private var statusItemWatchdog: Timer?
+    private var statusItemDispatchWatchdog: DispatchSourceTimer?
     private var lastMenuHash: Int = 0
     private var isMenuOpen = false
 
@@ -111,6 +112,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         .store(in: &cancellables)
 
+        NotificationCenter.default.addObserver(forName: SubworkerManager.subworkerToggleNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.resetMenuHashAndRebuild()
+        }
+
         // Cloudflare tunnel status — keep the menu line fresh (30s cadence).
         refreshTunnelStatus()
         let t = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
@@ -130,6 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(handleBecomeActive(_:)), name: NSApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleDisplayChange(_:)), name: NSApplication.didChangeScreenParametersNotification, object: nil)
         DistributedNotificationCenter.default().addObserver(self, selector: #selector(handleSystemWake(_:)), name: .init("com.apple.system.clockChanged"), object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleNetworkPathChange(_:)), name: SubworkerManager.networkPathChangedNotification, object: nil)
     }
 
     @objc private func handleDisplayChange(_ note: Notification) {
@@ -145,8 +151,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func handleBecomeActive(_ note: Notification) {
-        // didBecomeActive fires on every click-back — cheap to re-assert.
         ensureStatusItemAlive()
+        watchdogCheck()
+    }
+
+    @objc private func handleNetworkPathChange(_ note: Notification) {
+        AppLog.d("Network path changed — healing statusItem")
+        ensureStatusItemAlive()
+        watchdogCheck()
+        throttledSetupMenu()
     }
 
     private func healAfterWake() {
@@ -173,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func throttledSetupMenu() {
         if isMenuOpen || logPopover?.isShown == true || subworkerLogPopover?.isShown == true { return }
-        let currentHash = subworkerManager.subworkers.map { "\($0.name):\($0.enabled):\($0.running):\($0.nextRun ?? "")" }.joined().hashValue ^ colimaManager.instances.count
+        let currentHash = subworkerManager.subworkers.map { "\($0.name):\($0.enabled):\($0.running):\($0.nextRun ?? ""):\(subworkerManager.wsConnected):\(subworkerManager.hasError):\(subworkerManager.statusError ?? ""):\(subworkerManager.serverHealth?.healthStatus ?? "")" }.joined().hashValue ^ colimaManager.instances.count
         if currentHash == lastMenuHash && mainMenu != nil && (mainMenu?.numberOfItems ?? 0) > 0 { return }
         lastMenuHash = currentHash
         menuRebuildThrottleWorkItem?.cancel()
@@ -182,29 +195,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
     }
 
+    private func resetMenuHashAndRebuild() {
+        lastMenuHash = 0
+        menuRebuildThrottleWorkItem?.cancel()
+        setupMenu()
+    }
+
     func menuDidClose(_ menu: NSMenu) {
         isMenuOpen = false
         throttledSetupMenu()
     }
 
     private func startStatusItemWatchdog() {
+        // Keep RunLoop timer as secondary, but primary is DispatchSource (not coalesced by App Nap).
         statusItemWatchdog?.invalidate()
         statusItemWatchdog = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in self?.watchdogCheck() }
         RunLoop.main.add(statusItemWatchdog!, forMode: .common)
+
+        statusItemDispatchWatchdog?.cancel()
+        let src = DispatchSource.makeTimerSource(queue: .main)
+        src.schedule(deadline: .now() + 60, repeating: 60, leeway: .seconds(2))
+        src.setEventHandler { [weak self] in self?.watchdogCheck() }
+        src.resume()
+        statusItemDispatchWatchdog = src
+
+        // Enable health.log by default for this hardening build — user can still opt-out via defaults write.
+        if UserDefaults.standard.object(forKey: "topbarHealthLog") == nil {
+            UserDefaults.standard.set(true, forKey: "topbarHealthLog")
+        }
     }
 
     private func watchdogCheck() {
         let buttonNil = statusItem.button == nil
         let windowNil = statusItem.button?.window == nil
+        let superviewNil = statusItem.button?.superview == nil
         let menuEmpty = mainMenu == nil || (mainMenu?.numberOfItems ?? 0) == 0
         let targetWrong = statusItem.button?.target !== self
         let actionWrong = statusItem.button?.action != #selector(mainItemClicked(_:))
-        if buttonNil || windowNil || menuEmpty || targetWrong || actionWrong {
-            AppLog.d("watchdog: heal buttonNil=\(buttonNil) windowNil=\(windowNil) menuEmpty=\(menuEmpty) targetWrong=\(targetWrong) actionWrong=\(actionWrong)")
+        let shouldHeal = buttonNil || windowNil || superviewNil || menuEmpty || targetWrong || actionWrong
+        if shouldHeal {
+            AppLog.d("watchdog: heal buttonNil=\(buttonNil) windowNil=\(windowNil) superviewNil=\(superviewNil) menuEmpty=\(menuEmpty) targetWrong=\(targetWrong) actionWrong=\(actionWrong)")
+            // Always write health.log when topbarHealthLog is true (now default true). Also log via AppLog.d for unified stream.
             if UserDefaults.standard.bool(forKey: "topbarHealthLog") {
                 let path = NSString(string: "~/Library/Logs/EliaTopBar/health.log").expandingTildeInPath
                 try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
-                let line = "\(Date()): watchdog heal buttonNil=\(buttonNil) windowNil=\(windowNil) menuEmpty=\(menuEmpty) targetWrong=\(targetWrong) actionWrong=\(actionWrong) ws=\(subworkerManager.wsConnected) subs=\(subworkerManager.subworkers.count)\n"
+                let line = "\(Date()): watchdog heal buttonNil=\(buttonNil) windowNil=\(windowNil) superviewNil=\(superviewNil) menuEmpty=\(menuEmpty) targetWrong=\(targetWrong) actionWrong=\(actionWrong) ws=\(subworkerManager.wsConnected) subs=\(subworkerManager.subworkers.count)\n"
                 if let handle = FileHandle(forWritingAtPath: path) {
                     handle.seekToEndOfFile()
                     handle.write(Data(line.utf8))
@@ -957,15 +992,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func mainItemClicked(_ sender: NSStatusBarButton) {
-        AppLog.d("mainItemClicked — button click received")
+        AppLog.d("mainItemClicked — button click received buttonNil=\(statusItem.button == nil) windowNil=\(statusItem.button?.window == nil) menuItems=\(mainMenu?.numberOfItems ?? -1)")
         if let popover = logPopover, popover.isShown {
             popover.performClose(nil)
             logPopover = nil
         }
+        watchdogCheck()
         ensureStatusItemAlive()
         if mainMenu == nil || (mainMenu?.numberOfItems ?? 0) == 0 {
             AppLog.d("mainMenu was nil/empty at click — rebuilding synchronously")
             setupMenu()
+            lastMenuHash = subworkerManager.subworkers.map { "\($0.name):\($0.enabled):\($0.running):\($0.nextRun ?? ""):\(subworkerManager.wsConnected):\(subworkerManager.hasError):\(subworkerManager.statusError ?? "")" }.joined().hashValue ^ colimaManager.instances.count
+            menuRebuildThrottleWorkItem?.cancel()
         }
         let mouse = NSApp.currentEvent?.locationInWindow ?? sender.bounds.origin
         let point = sender.convert(mouse, from: nil)
@@ -992,10 +1030,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let menu = mainMenu {
             isMenuOpen = true
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: sender)
+            let popSucceeded = isMenuOpen == false || menu.numberOfItems > 0
             isMenuOpen = false
+            if !popSucceeded || statusItem.button?.window == nil {
+                AppLog.d("popUp may have failed windowNil=\(statusItem.button?.window == nil) — fallback to menu assignment")
+                statusItem.menu = mainMenu
+                statusItem.button?.performClick(nil)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.statusItem.menu = nil }
+            }
             throttledSetupMenu()
         } else {
             AppLog.d("mainMenu still nil at popUp — nothing to show")
+            statusItem.menu = mainMenu
+            statusItem.button?.performClick(nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.statusItem.menu = nil }
         }
     }
 
@@ -1118,11 +1166,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func enableSubworker(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
         subworkerManager.enableSubworker(name)
+        updateStatusIcon()
+        forceMenuRebuild()
     }
 
     @objc private func disableSubworker(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
         subworkerManager.disableSubworker(name)
+        updateStatusIcon()
+        forceMenuRebuild()
+    }
+
+    private func forceMenuRebuild() {
+        menuRebuildThrottleWorkItem?.cancel()
+        menuRebuildThrottleWorkItem = nil
+        lastMenuHash = subworkerManager.subworkers.map { "\($0.name):\($0.enabled):\($0.running):\($0.nextRun ?? "")" }.joined().hashValue ^ colimaManager.instances.count
+        setupMenu()
+        updateStatusIcon()
     }
 
     @objc private func setSubworkerModel(_ sender: NSMenuItem) {

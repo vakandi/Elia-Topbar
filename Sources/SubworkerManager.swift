@@ -187,6 +187,7 @@ final class SubworkerManager: ObservableObject {
         m.pathUpdateHandler = { [weak self] path in
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                NotificationCenter.default.post(name: Self.networkPathChangedNotification, object: nil)
                 if path.status == .satisfied {
                     if !self.wsConnected {
                         AppLog.d("Network path satisfied — reconnecting WS")
@@ -349,6 +350,8 @@ final class SubworkerManager: ObservableObject {
     static let runBannerNotification = Notification.Name("SubworkerRunBanner")
     static let subworkerStartedNotification = Notification.Name("SubworkerStarted")
     static let subworkerCompletedNotification = Notification.Name("SubworkerCompleted")
+    static let subworkerToggleNotification = Notification.Name("SubworkerToggleCompleted")
+    static let networkPathChangedNotification = Notification.Name("EliaNetworkPathChanged")
 
     /// Single source of truth for server state — WS events carry it so the
     /// icon and the menu can never disagree.
@@ -715,17 +718,44 @@ final class SubworkerManager: ObservableObject {
     func enableSubworker(_ name: String) {
         guard let url = URL(string: "\(baseURL)/enable/\(name)") else { return }
         AppLog.d("Enabling subworker: \(name)")
+        // Optimistic: flip immediately so UI moves agent to Active list without waiting for round-trip.
+        if let idx = subworkers.firstIndex(where: { $0.name == name }) {
+            subworkers[idx].enabled = true
+            recalculateCounts()
+        }
         var request = EliaAuth.authorize(url)
         request.httpMethod = "POST"
 
-        URLSession.shared.dataTask(with: request) { [weak self] _, _, error in
+        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
             Task { @MainActor [weak self] in
+                guard let self else { return }
                 if let error {
                     AppLog.d("Enable error: \(error.localizedDescription)")
-                } else if let idx = self?.subworkers.firstIndex(where: { $0.name == name }) {
-                    self?.subworkers[idx].enabled = true
-                    self?.recalculateCounts()
+                    self.lastError = "Enable failed: \(error.localizedDescription)"
+                    if let idx = self.subworkers.firstIndex(where: { $0.name == name }) {
+                        self.subworkers[idx].enabled = false
+                        self.recalculateCounts()
+                    }
+                    NotificationCenter.default.post(name: Self.subworkerToggleNotification, object: nil)
+                    return
                 }
+                if let http = response as? HTTPURLResponse, http.statusCode >= 400 {
+                    AppLog.d("Enable HTTP \(http.statusCode)")
+                    self.lastError = "Enable failed: HTTP \(http.statusCode)"
+                    if let idx = self.subworkers.firstIndex(where: { $0.name == name }) {
+                        self.subworkers[idx].enabled = false
+                        self.recalculateCounts()
+                    }
+                    NotificationCenter.default.post(name: Self.subworkerToggleNotification, object: nil)
+                    return
+                }
+                if let idx = self.subworkers.firstIndex(where: { $0.name == name }) {
+                    self.subworkers[idx].enabled = true
+                    self.recalculateCounts()
+                }
+                self.lastError = nil
+                NotificationCenter.default.post(name: Self.subworkerToggleNotification, object: nil)
+                Task { await self.fetchStatus() }
             }
         }.resume()
     }
@@ -733,17 +763,44 @@ final class SubworkerManager: ObservableObject {
     func disableSubworker(_ name: String) {
         guard let url = URL(string: "\(baseURL)/disable/\(name)") else { return }
         AppLog.d("Disabling subworker: \(name)")
+        // Optimistic: flip immediately so UI moves agent to Inactive list without waiting.
+        if let idx = subworkers.firstIndex(where: { $0.name == name }) {
+            subworkers[idx].enabled = false
+            recalculateCounts()
+        }
         var request = EliaAuth.authorize(url)
         request.httpMethod = "POST"
 
-        URLSession.shared.dataTask(with: request) { [weak self] _, _, error in
+        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
             Task { @MainActor [weak self] in
+                guard let self else { return }
                 if let error {
                     AppLog.d("Disable error: \(error.localizedDescription)")
-                } else if let idx = self?.subworkers.firstIndex(where: { $0.name == name }) {
-                    self?.subworkers[idx].enabled = false
-                    self?.recalculateCounts()
+                    self.lastError = "Disable failed: \(error.localizedDescription)"
+                    if let idx = self.subworkers.firstIndex(where: { $0.name == name }) {
+                        self.subworkers[idx].enabled = true
+                        self.recalculateCounts()
+                    }
+                    NotificationCenter.default.post(name: Self.subworkerToggleNotification, object: nil)
+                    return
                 }
+                if let http = response as? HTTPURLResponse, http.statusCode >= 400 {
+                    AppLog.d("Disable HTTP \(http.statusCode)")
+                    self.lastError = "Disable failed: HTTP \(http.statusCode)"
+                    if let idx = self.subworkers.firstIndex(where: { $0.name == name }) {
+                        self.subworkers[idx].enabled = true
+                        self.recalculateCounts()
+                    }
+                    NotificationCenter.default.post(name: Self.subworkerToggleNotification, object: nil)
+                    return
+                }
+                if let idx = self.subworkers.firstIndex(where: { $0.name == name }) {
+                    self.subworkers[idx].enabled = false
+                    self.recalculateCounts()
+                }
+                NotificationCenter.default.post(name: Self.subworkerToggleNotification, object: nil)
+                self.lastError = nil
+                Task { await self.fetchStatus() }
             }
         }.resume()
     }
