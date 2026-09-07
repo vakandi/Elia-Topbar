@@ -52,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuRebuildThrottleWorkItem: DispatchWorkItem?
     private var statusItemWatchdog: Timer?
     private var statusItemDispatchWatchdog: DispatchSourceTimer?
+    private var countdownRefreshTimer: Timer?
     private var lastMenuHash: Int = 0
     private var isMenuOpen = false
 
@@ -124,6 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         RunLoop.main.add(t, forMode: .common)
         tunnelPollTimer = t
         startStatusItemWatchdog()
+        startCountdownRefresh()
     }
 
     // MARK: - Wake / Display / Network heal
@@ -164,11 +166,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func healAfterWake() {
         ensureStatusItemAlive()
-        // Timers scheduled on .default are coalesced over sleep — recreate the cadence.
         rescheduleTunnelPoll()
-        // Force a WS reconnect — the old TCP is dead after sleep / Wi-Fi loss.
+        startCountdownRefresh()
         subworkerManager.forceReconnect()
-        // Fresh data for the next menu open.
         refreshTunnelStatus()
         colimaManager.refreshInstances()
         setupMenu()
@@ -204,6 +204,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func menuDidClose(_ menu: NSMenu) {
         isMenuOpen = false
         throttledSetupMenu()
+    }
+
+    private func startCountdownRefresh() {
+        countdownRefreshTimer?.invalidate()
+        let t = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+            guard let self, !self.isMenuOpen, self.logPopover?.isShown != true, self.subworkerLogPopover?.isShown != true else { return }
+            self.lastMenuHash = 0
+            self.setupMenu()
+        }
+        RunLoop.main.add(t, forMode: .common)
+        countdownRefreshTimer = t
     }
 
     private func startStatusItemWatchdog() {
