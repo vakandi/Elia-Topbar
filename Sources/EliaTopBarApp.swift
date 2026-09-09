@@ -282,7 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         button.target = self
         button.action = #selector(mainItemClicked(_:))
-        button.sendAction(on: [.leftMouseUp])
+        button.sendAction(on: [.leftMouseUp, .leftMouseDown])
         // Re-apply icon in case the backing store was purged.
         updateStatusIcon()
     }
@@ -292,7 +292,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem.button {
             button.target = self
             button.action = #selector(mainItemClicked(_:))
-            button.sendAction(on: [.leftMouseUp])
+            button.sendAction(on: [.leftMouseUp, .leftMouseDown])
         }
         startIconPulseObserver()
         updateStatusIcon()
@@ -1019,8 +1019,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let mouse = NSApp.currentEvent?.locationInWindow ?? sender.bounds.origin
         let point = sender.convert(mouse, from: nil)
 
-        if iconPhotoCount > 0, point.x >= iconPhotosStartX,
-           point.x < iconPhotosStartX + CGFloat(iconPhotoCount) * iconCellWidth {
+if iconPhotoCount > 0, point.x >= iconPhotosStartX,
+               point.x < iconPhotosStartX + CGFloat(iconPhotoCount) * iconCellWidth {
             let idx = min(max(Int((point.x - iconPhotosStartX) / iconCellWidth), 0), iconPhotoCount - 1)
             let names = subworkerManager.sortedRunningNames()
             guard idx < names.count else { return }
@@ -1035,23 +1035,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             showSubworkerLogPopover(for: name, button: sender)
-            return
+        }
+        // Fallthrough: if the click was not clearly on a photo zone, show the main menu
+        if let menu = mainMenu {
+            statusItem.menu = menu
+            statusItem.button?.performClick(nil)
         }
 
         if let menu = mainMenu {
-            isMenuOpen = true
-            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: sender)
-            let popSucceeded = isMenuOpen == false || menu.numberOfItems > 0
-            isMenuOpen = false
-            if !popSucceeded || statusItem.button?.window == nil {
-                AppLog.d("popUp may have failed windowNil=\(statusItem.button?.window == nil) — fallback to menu assignment")
-                statusItem.menu = mainMenu
-                statusItem.button?.performClick(nil)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.statusItem.menu = nil }
-            }
+            statusItem.menu = menu
+            statusItem.button?.performClick(nil)
+            // Do NOT immediately clear the menu — it stays until the user selects
+            // an item or clicks elsewhere. A brief delay then clears it so the
+            // menu doesn't persist indefinitely if no selection made.
             throttledSetupMenu()
         } else {
-            AppLog.d("mainMenu still nil at popUp — nothing to show")
+            AppLog.d("mainMenu still nil — nothing to show")
             statusItem.menu = mainMenu
             statusItem.button?.performClick(nil)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.statusItem.menu = nil }
