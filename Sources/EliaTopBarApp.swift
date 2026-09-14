@@ -204,6 +204,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func menuDidClose(_ menu: NSMenu) {
         isMenuOpen = false
+        // Release the menu so the next click routes through mainItemClicked
+        // again (a lingering statusItem.menu bypasses the button action,
+        // which left log popovers stuck open).
+        if statusItem.menu === menu { statusItem.menu = nil }
         throttledSetupMenu()
     }
 
@@ -927,8 +931,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func closeAllLogPopovers() {
+        if let popover = logPopover, popover.isShown { popover.performClose(nil) }
+        logPopover = nil
+        if let popover = subworkerLogPopover, popover.isShown { popover.performClose(nil) }
+        subworkerLogPopover = nil
+        subworkerLogPopoverName = nil
+    }
+
     @objc private func showLogs(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
+        closeAllLogPopovers()
 
         let popover = NSPopover()
         popover.contentSize = NSSize(width: 500, height: 400)
@@ -944,7 +957,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Draw running-agent photos flush against the LEFT edge; banner sits right.
+    @objc private func mainItemClicked(_ sender: NSStatusBarButton) {
+        AppLog.d("mainItemClicked — button click received buttonNil=\(statusItem.button == nil) windowNil=\(statusItem.button?.window == nil) menuItems=\(mainMenu?.numberOfItems ?? -1)")
+        if NSApp.currentEvent?.type == .leftMouseDown { return }
+        let wasOpenName = subworkerLogPopoverName
+        closeAllLogPopovers()
+        watchdogCheck()
+        ensureStatusItemAlive()
+        if mainMenu == nil || (mainMenu?.numberOfItems ?? 0) == 0 {
+            AppLog.d("mainMenu was nil/empty at click — rebuilding synchronously")
+            setupMenu()
+            lastMenuHash = subworkerManager.subworkers.map { "\($0.name):\($0.enabled):\($0.running):\($0.nextRun ?? ""):\(subworkerManager.wsConnected):\(subworkerManager.hasError):\(subworkerManager.statusError ?? "")" }.joined().hashValue ^ colimaManager.instances.count
+            menuRebuildThrottleWorkItem?.cancel()
+        }
+        let mouse = NSApp.currentEvent?.locationInWindow ?? sender.bounds.origin
+        let point = sender.convert(mouse, from: nil)
+
+        if iconPhotoCount > 0, point.x >= iconPhotosStartX,
+           point.x < iconPhotosStartX + CGFloat(iconPhotoCount) * iconCellWidth {
+            let idx = min(max(Int((point.x - iconPhotosStartX) / iconCellWidth), 0), iconPhotoCount - 1)
+            if idx < iconPhotoNames.count {
+                let name = iconPhotoNames[idx]
+                if wasOpenName == name {
+                    return
+                }
+                showSubworkerLogPopover(for: name, button: sender)
+                return
+            }
+        }
+        if let menu = mainMenu {
+            statusItem.menu = menu
+            statusItem.button?.performClick(nil)
+        } else {
+            AppLog.d("mainMenu still nil — nothing to show")
+            statusItem.menu = mainMenu
+            statusItem.button?.performClick(nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.statusItem.menu = nil }
+        }
+    }
+
+    private func reconcileSubworkerStatusItems() {
+        if let shown = subworkerLogPopoverName,
+           !subworkerManager.subworkers.contains(where: { $0.name == shown }) {
+            subworkerLogPopover?.performClose(nil)
+            subworkerLogPopover = nil
+            subworkerLogPopoverName = nil
+        }
+        for i in subworkerManager.subworkers.indices where !subworkerManager.subworkers[i].running {
+            if let at = subworkerManager.subworkers[i].lastErrorAt,
+               Date().timeIntervalSince(at) > 600 {
+                subworkerManager.subworkers[i].lastError = nil
+                subworkerManager.subworkers[i].lastErrorAt = nil
+            }
+        }
+        updateStatusIcon()
+    }
+
+    /// Draw running-agent photos flush against the banner; stuck together.
     private func appendFleetPhotos(to base: NSImage, names: [String], barHeight: CGFloat) -> NSImage {
         let cell = barHeight - 2
         let gap: CGFloat = 1
@@ -1026,77 +1095,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                   from: .zero, operation: .sourceOver, fraction: 1.0)
         composed.unlockFocus()
         return composed
-    }
-
-    @objc private func mainItemClicked(_ sender: NSStatusBarButton) {
-        AppLog.d("mainItemClicked — button click received buttonNil=\(statusItem.button == nil) windowNil=\(statusItem.button?.window == nil) menuItems=\(mainMenu?.numberOfItems ?? -1)")
-        if let popover = logPopover, popover.isShown {
-            popover.performClose(nil)
-            logPopover = nil
-        }
-        watchdogCheck()
-        ensureStatusItemAlive()
-        if mainMenu == nil || (mainMenu?.numberOfItems ?? 0) == 0 {
-            AppLog.d("mainMenu was nil/empty at click — rebuilding synchronously")
-            setupMenu()
-            lastMenuHash = subworkerManager.subworkers.map { "\($0.name):\($0.enabled):\($0.running):\($0.nextRun ?? ""):\(subworkerManager.wsConnected):\(subworkerManager.hasError):\(subworkerManager.statusError ?? "")" }.joined().hashValue ^ colimaManager.instances.count
-            menuRebuildThrottleWorkItem?.cancel()
-        }
-        let mouse = NSApp.currentEvent?.locationInWindow ?? sender.bounds.origin
-        let point = sender.convert(mouse, from: nil)
-
-if iconPhotoCount > 0, point.x >= iconPhotosStartX,
-           point.x < iconPhotosStartX + CGFloat(iconPhotoCount) * iconCellWidth {
-            let idx = min(max(Int((point.x - iconPhotosStartX) / iconCellWidth), 0), iconPhotoCount - 1)
-            if idx < iconPhotoNames.count {
-                let name = iconPhotoNames[idx]
-
-                if let popover = subworkerLogPopover,
-                   subworkerLogPopoverName == name,
-                   popover.isShown {
-                    popover.performClose(nil)
-                    subworkerLogPopover = nil
-                    subworkerLogPopoverName = nil
-                    return
-                }
-                showSubworkerLogPopover(for: name, button: sender)
-                return
-            }
-        }
-        if let popover = subworkerLogPopover, popover.isShown {
-            popover.performClose(nil)
-            subworkerLogPopover = nil
-            subworkerLogPopoverName = nil
-        }
-        if let menu = mainMenu {
-            statusItem.menu = menu
-            statusItem.button?.performClick(nil)
-        }
-
-        if let menu = mainMenu {
-            statusItem.menu = menu
-            statusItem.button?.performClick(nil)
-            // Do NOT immediately clear the menu — it stays until the user selects
-            // an item or clicks elsewhere. A brief delay then clears it so the
-            // menu doesn't persist indefinitely if no selection made.
-            throttledSetupMenu()
-        } else {
-            AppLog.d("mainMenu still nil — nothing to show")
-            statusItem.menu = mainMenu
-            statusItem.button?.performClick(nil)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.statusItem.menu = nil }
-        }
-    }
-
-    private func reconcileSubworkerStatusItems() {
-        let names = subworkerManager.subworkers.filter(\.running).map(\.name)
-
-        if let shown = subworkerLogPopoverName, !names.contains(shown) {
-            subworkerLogPopover?.performClose(nil)
-            subworkerLogPopover = nil
-            subworkerLogPopoverName = nil
-        }
-        updateStatusIcon()
     }
 
     private func subworkerIconWithBorder(photo: NSImage, color: NSColor) -> NSImage {

@@ -41,6 +41,7 @@ struct SubworkerInfo: Identifiable, Equatable {
     var scheduleExpression: String?
     var scheduleEvery: Int?
     var lastError: String?
+    var lastErrorAt: Date?
     var lastCompleted: Date?
     var model: String?
     var variant: String?
@@ -403,6 +404,7 @@ final class SubworkerManager: ObservableObject {
                 scheduleExpression: sched?["expression"] as? String ?? old?.scheduleExpression,
                 scheduleEvery: sched?["every"] as? Int ?? old?.scheduleEvery,
                 lastError: running ? nil : old?.lastError,
+                lastErrorAt: running ? nil : old?.lastErrorAt,
                 lastCompleted: running ? nil : old?.lastCompleted,
                 model: dict["model"] as? String ?? old?.model,
                 variant: dict["variant"] as? String ?? old?.variant
@@ -475,6 +477,7 @@ final class SubworkerManager: ObservableObject {
         if let idx = subworkers.firstIndex(where: { $0.name == name }) {
             subworkers[idx].running = true
             subworkers[idx].lastError = nil
+            subworkers[idx].lastErrorAt = nil
             recalculateCounts()
         }
         NotificationCenter.default.post(name: Self.subworkerStartedNotification, object: nil, userInfo: ["name": name])
@@ -488,6 +491,7 @@ final class SubworkerManager: ObservableObject {
         if let idx = subworkers.firstIndex(where: { $0.name == name }) {
             subworkers[idx].running = false
             subworkers[idx].lastError = nil
+            subworkers[idx].lastErrorAt = nil
             subworkers[idx].lastCompleted = Date()
         }
         recalculateCounts()
@@ -502,6 +506,7 @@ final class SubworkerManager: ObservableObject {
         if let idx = subworkers.firstIndex(where: { $0.name == name }) {
             subworkers[idx].running = false
             subworkers[idx].lastError = errorMsg
+            subworkers[idx].lastErrorAt = Date()
         }
         lastError = "\(name): \(errorMsg)"
         recalculateCounts()
@@ -647,20 +652,27 @@ final class SubworkerManager: ObservableObject {
             var parsed: [SubworkerInfo] = []
             for dict in swArray {
                 guard let name = dict["name"] as? String else { continue }
+                let old = subworkers.first(where: { $0.name == name })
+                let running = dict["running"] as? Bool ?? false
                 let schedule = dict["schedule"] as? [String: Any]
                 let sType = dict["schedule_type"] as? String ?? schedule?["type"] as? String
                 let info = SubworkerInfo(
                     id: name,
                     name: name,
                     enabled: dict["enabled"] as? Bool ?? false,
-                    running: dict["running"] as? Bool ?? false,
+                    running: running,
                     nextRun: dict["next_run"] as? String,
                     scheduleType: sType,
                     scheduleHours: schedule?["hours"] as? [Int],
                     scheduleMinute: schedule?["minute"] as? Int,
                     scheduleDays: schedule?["days"] as? [Int],
                     scheduleExpression: schedule?["expression"] as? String,
-                    scheduleEvery: schedule?["every"] as? Int
+                    scheduleEvery: schedule?["every"] as? Int,
+                    lastError: running ? nil : (dict["last_error"] as? String ?? old?.lastError),
+                    lastErrorAt: running ? nil : ((dict["last_error"] as? String) != nil ? Date() : old?.lastErrorAt),
+                    lastCompleted: running ? nil : old?.lastCompleted,
+                    model: dict["model"] as? String ?? old?.model,
+                    variant: dict["variant"] as? String ?? old?.variant
                 )
                 parsed.append(info)
             }
@@ -673,7 +685,6 @@ final class SubworkerManager: ObservableObject {
             recalculateCounts()
             isLoading = false
             statusError = nil
-            lastError = nil
             AppLog.d("Status updated: \(parsed.count) subworkers")
         } catch {
             statusError = error.localizedDescription
