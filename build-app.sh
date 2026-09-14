@@ -9,8 +9,14 @@ APP_BUNDLE="$APP_NAME.app"
 RAW_VERSION="${1:-0.0.0-dev}"
 VERSION="${RAW_VERSION#v}"
 
-echo "Building $APP_NAME $VERSION (universal)..."
-swift build -c release --arch arm64 --arch x86_64
+echo "Building $APP_NAME $VERSION..."
+if swift build -c release --arch arm64 --arch x86_64; then
+    echo "(universal)"
+else
+    echo "Universal failed (likely CLT-only, no xcbuild) — falling back to arm64."
+    swift build -c release --arch arm64
+    BUILD_DIR=".build/arm64-apple-macosx/release"
+fi
 
 echo "Creating app bundle..."
 rm -rf "$APP_BUNDLE"
@@ -30,6 +36,7 @@ cp assets/banners/icon_running_topbar.png assets/banners/icon_not_running_server
 # which the linker's ad-hoc signature on the raw binary requires. Without it a
 # downloaded (quarantined) app fails Gatekeeper as "damaged" (issue #4).
 echo "Signing bundle (ad-hoc)..."
+xattr -cr "$APP_BUNDLE"
 codesign --force --deep --sign "EliaTopBar Developer" "$APP_BUNDLE" 2>/dev/null || codesign --force --deep --sign - "$APP_BUNDLE"
 
 # Hard gate: a bundle that does not validate must not reach a DMG.

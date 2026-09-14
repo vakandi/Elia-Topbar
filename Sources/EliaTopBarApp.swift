@@ -56,6 +56,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var countdownRefreshTimer: Timer?
     private var lastMenuHash: Int = 0
     private var isMenuOpen = false
+    private weak var openModelMenu: NSMenu?
+    private var openModelAgent: String?
 
     private func detectNewlyRunningAgents() {
         let running = Set(subworkerManager.subworkers.filter(\.running).map(\.name))
@@ -116,6 +118,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         NotificationCenter.default.addObserver(forName: SubworkerManager.subworkerToggleNotification, object: nil, queue: .main) { [weak self] _ in
             self?.resetMenuHashAndRebuild()
+        }
+        NotificationCenter.default.addObserver(forName: SubworkerManager.modelsLoadedNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self, let menu = self.openModelMenu, let agent = self.openModelAgent else { return }
+            self.populateModelMenu(menu, agentName: agent)
         }
 
         // Cloudflare tunnel status — keep the menu line fresh (30s cadence).
@@ -204,6 +210,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func menuDidClose(_ menu: NSMenu) {
         isMenuOpen = false
+        if openModelMenu === menu {
+            openModelMenu = nil
+            openModelAgent = nil
+        }
         // Release the menu so the next click routes through mainItemClicked
         // again (a lingering statusItem.menu bypasses the button action,
         // which left log popovers stuck open).
@@ -321,6 +331,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateStatusIcon() {
         guard let button = statusItem.button else { return }
+        iconPhotoCount = 0
+        iconPhotoNames = []
 
         let hasRunning = colimaManager.hasRunningInstance
         let hasTransitioning = colimaManager.instances.contains { $0.status.isTransitioning }
@@ -616,13 +628,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let now = Date()
-        // Most recent session first, in both lists.
+        // Stable server list order in both lists: no reshuffling.
         let active = subworkerManager.subworkers
             .filter { $0.enabled }
-            .sorted { subworkerManager.recency($0.name) > subworkerManager.recency($1.name) }
         let inactive = subworkerManager.subworkers
             .filter { !$0.enabled }
-            .sorted { subworkerManager.recency($0.name) > subworkerManager.recency($1.name) }
 
         if !active.isEmpty {
             let header = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -1075,8 +1085,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if badge.hasError {
                 let badgeR = diameter * 0.30
                 let badgeRect = NSRect(
-                    x: dotRect.maxX - badgeR * 1.1,
-                    y: dotRect.maxY - badgeR * 1.1,
+                    x: dotRect.maxX - badgeR * 1.9,
+                    y: dotRect.maxY - badgeR * 1.9,
                     width: badgeR * 2,
                     height: badgeR * 2
                 )
@@ -1836,6 +1846,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 extension AppDelegate: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         guard let agentName = menu.identifier?.rawValue else { return }
+        openModelMenu = menu
+        openModelAgent = agentName
         populateModelMenu(menu, agentName: agentName)
     }
 

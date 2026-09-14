@@ -97,6 +97,7 @@ enum EliaAuth {
 
 @MainActor
 final class SubworkerManager: ObservableObject {
+    static let modelsLoadedNotification = Notification.Name("EliaTopBarModelsLoaded")
     // Published state
     @Published var wsConnected = false
     @Published var wsError: String?
@@ -878,6 +879,7 @@ final class SubworkerManager: ObservableObject {
                 let rest = options.filter { $0.provider != favoriteProvider }
                 self.availableModels = favorites + rest
                 AppLog.d("Loaded \(options.count) models")
+                NotificationCenter.default.post(name: Self.modelsLoadedNotification, object: nil)
             }
         }.resume()
     }
@@ -1067,8 +1069,9 @@ final class SubworkerManager: ObservableObject {
         AppLog.d("Counts: \(runningCount) running / \(totalEnabled) enabled")
     }
 
-    /// Running agents ordered by the user's fleetOrderMode:
-    /// default (most recent session first) · runs_desc/runs_asc · latest_msg · alpha
+    /// Running agents in stable list order (server/subworkers.json order):
+    /// new agents append at the end, finished ones drop out, nothing reshuffles.
+    /// Other fleetOrderMode values (runs_desc/runs_asc/latest_msg/alpha) still resort on demand.
     func sortedRunningNames() -> [String] {
         let running = subworkers.filter(\.running)
         switch fleetOrderMode {
@@ -1081,7 +1084,7 @@ final class SubworkerManager: ObservableObject {
         case "alpha":
             return running.map(\.name).sorted()
         default:
-            return running.sorted { recency($0.name) > recency($1.name) }.map(\.name)
+            return running.map(\.name)
         }
     }
 
