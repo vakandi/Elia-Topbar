@@ -10,7 +10,17 @@ enum AppLog {
     static func d(_ msg: String, file: String = #file, line: Int = #line) {
         guard debug else { return }
         let fn = (file as NSString).lastPathComponent
-        FileHandle.standardError.write(Data("[DEBUG \(fn):\(line)] \(msg)\n".utf8))
+        let line_out = "[DEBUG \(fn):\(line)] \(msg)\n"
+        FileHandle.standardError.write(Data(line_out.utf8))
+        let path = NSString(string: "~/Library/Logs/EliaTopBar/debug.log").expandingTildeInPath
+        try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        if let handle = FileHandle(forWritingAtPath: path) {
+            handle.seekToEndOfFile()
+            handle.write(Data(line_out.utf8))
+            handle.closeFile()
+        } else {
+            try? line_out.write(toFile: path, atomically: true, encoding: .utf8)
+        }
     }
 }
 
@@ -404,6 +414,7 @@ final class SubworkerManager: ObservableObject {
 
         subworkers = parsed
         recalculateCounts()
+        AppLog.d("status_update total=\(parsed.count) running=\(runningCount) ws=\(wsConnected) hasError=\(hasError) statusError=\(statusError ?? "-") lastError=\(lastError ?? "-")")
     }
 
     private func handleInitialStatus(_ json: [String: Any]) {
@@ -486,7 +497,7 @@ final class SubworkerManager: ObservableObject {
     private func handleSubworkerError(_ json: [String: Any]) {
         guard let name = json["name"] as? String else { return }
         let errorMsg = json["error"] as? String ?? "Unknown error"
-        AppLog.d("Subworker error: \(name) - \(errorMsg)")
+        AppLog.d("Subworker error: \(name) - \(errorMsg) subs=\(subworkers.count) running=\(runningCount)")
 
         if let idx = subworkers.firstIndex(where: { $0.name == name }) {
             subworkers[idx].running = false
@@ -498,7 +509,7 @@ final class SubworkerManager: ObservableObject {
     }
 
     private func handleDisconnect() {
-        AppLog.d("WS disconnected")
+        AppLog.d("WS disconnected subs=\(subworkers.count) running=\(runningCount) wsError=\(wsError ?? "-") statusError=\(statusError ?? "-")")
         clearPongState()
         wsTask?.cancel(with: .goingAway, reason: nil)
         wsTask = nil
@@ -710,6 +721,9 @@ final class SubworkerManager: ObservableObject {
                         self?.subworkers[idx].lastError = nil
                     }
                     self?.recalculateCounts()
+                } else {
+                    AppLog.d("Trigger failed: \(name) status=\((response as? HTTPURLResponse)?.statusCode ?? -1)")
+                    self?.lastError = "Trigger failed: \(name) HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)"
                 }
             }
         }.resume()

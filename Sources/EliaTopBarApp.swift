@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var iconPhotosStartX: CGFloat = 0
     private var iconCellWidth: CGFloat = 0
     private var iconPhotoCount: Int = 0
+    private var iconPhotoNames: [String] = []
     private var subworkerLogPopover: NSPopover?
     private var subworkerLogPopoverName: String?
     private var tunnelProgressController: TunnelProgressPanelController?
@@ -250,7 +251,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if UserDefaults.standard.bool(forKey: "topbarHealthLog") {
                 let path = NSString(string: "~/Library/Logs/EliaTopBar/health.log").expandingTildeInPath
                 try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
-                let line = "\(Date()): watchdog heal buttonNil=\(buttonNil) windowNil=\(windowNil) superviewNil=\(superviewNil) menuEmpty=\(menuEmpty) targetWrong=\(targetWrong) actionWrong=\(actionWrong) ws=\(subworkerManager.wsConnected) subs=\(subworkerManager.subworkers.count)\n"
+                let line = "\(Date()): watchdog heal buttonNil=\(buttonNil) windowNil=\(windowNil) superviewNil=\(superviewNil) menuEmpty=\(menuEmpty) targetWrong=\(targetWrong) actionWrong=\(actionWrong) ws=\(subworkerManager.wsConnected) subs=\(subworkerManager.subworkers.count) running=\(subworkerManager.runningCount) hasError=\(subworkerManager.hasError) statusError=\(subworkerManager.statusError ?? "-") lastError=\(subworkerManager.lastError ?? "-")\n"
                 if let handle = FileHandle(forWritingAtPath: path) {
                     handle.seekToEndOfFile()
                     handle.write(Data(line.utf8))
@@ -321,19 +322,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let hasTransitioning = colimaManager.instances.contains { $0.status.isTransitioning }
 
         let swDisconnected = !subworkerManager.wsConnected
-        let swHasError = subworkerManager.hasError
         let swRunning = subworkerManager.runningCount
 
         let barHeight = max(NSStatusBar.system.thickness, 20)
-        let runningNames = subworkerManager.sortedRunningNames()
+        var runningNames = subworkerManager.sortedRunningNames()
+        for sw in subworkerManager.subworkers where sw.lastError != nil && !runningNames.contains(sw.name) {
+            runningNames.append(sw.name)
+        }
 
-        if swDisconnected || swHasError {
-            let symbolName = swDisconnected ? "circle.slash" : "exclamationmark.circle"
+        if swDisconnected {
+            AppLog.d("icon fallback disconnected ws=\(subworkerManager.wsConnected) lastError=\(subworkerManager.lastError ?? "-") statusError=\(subworkerManager.statusError ?? "-") running=\(swRunning) fleet=\(runningNames.count) photosBefore=\(iconPhotoCount)")
+            let symbolName = "circle.slash"
             let config = NSImage.SymbolConfiguration(pointSize: barHeight * 0.58, weight: .medium)
             guard let baseImage = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
                 .withSymbolConfiguration(config) else { return }
             button.image = tintedSymbol(baseImage, color: .systemRed)
             iconPhotoCount = 0
+            iconPhotoNames = []
             return
         }
 
@@ -359,6 +364,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             xBanner.size = NSSize(width: barHeight * 0.92, height: barHeight * 0.92)
             button.image = xBanner
             iconPhotoCount = 0
+            iconPhotoNames = []
             return
         }
 
@@ -398,6 +404,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             tinted.isTemplate = (tintColor == .labelColor)
             button.image = tinted
             iconPhotoCount = 0
+            iconPhotoNames = []
         }
     }
 
@@ -941,12 +948,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func appendFleetPhotos(to base: NSImage, names: [String], barHeight: CGFloat) -> NSImage {
         let cell = barHeight - 2
         let gap: CGFloat = 1
-        let badges: [(photo: NSImage?, monogram: String, color: NSColor)] = names.map { name in
+        let badges: [(photo: NSImage?, monogram: String, color: NSColor, hasError: Bool)] = names.map { name in
             let sw = subworkerManager.subworkers.first(where: { $0.name == name })
             let color = sw.map { subworkerColor(for: $0) } ?? .systemGreen
             return (ProfilePhotos.shared.circularPhoto(for: name, size: 24),
                     monogram(for: name),
-                    color)
+                    color,
+                    sw?.lastError != nil)
         }
         iconCellWidth = cell
         let side = UserDefaults.standard.string(forKey: "fleetPhotosSide") ?? "left"
@@ -959,6 +967,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             iconPhotosStartX = pad
         }
         iconPhotoCount = names.count
+        iconPhotoNames = names
 
         let total: CGFloat = side == "right"
             ? iconPhotosStartX + CGFloat(names.count) * cell
@@ -994,6 +1003,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 str.draw(at: NSPoint(x: dotRect.midX - tsz.width / 2, y: dotRect.midY - tsz.height / 2))
             }
             NSGraphicsContext.restoreGraphicsState()
+            if badge.hasError {
+                let badgeR = diameter * 0.30
+                let badgeRect = NSRect(
+                    x: dotRect.maxX - badgeR * 1.1,
+                    y: dotRect.maxY - badgeR * 1.1,
+                    width: badgeR * 2,
+                    height: badgeR * 2
+                )
+                NSColor.systemRed.setFill()
+                NSBezierPath(ovalIn: badgeRect).fill()
+                NSColor.white.setStroke()
+                NSBezierPath(ovalIn: badgeRect).stroke()
+                let font = NSFont.systemFont(ofSize: badgeR * 1.1, weight: .black)
+                let str = NSAttributedString(string: "!", attributes: [.font: font, .foregroundColor: NSColor.white])
+                let tsz = str.size()
+                str.draw(at: NSPoint(x: badgeRect.midX - tsz.width / 2, y: badgeRect.midY - tsz.height / 2))
+            }
         }
         let baseX: CGFloat = side == "right" ? 0 : fleetWidth
         base.draw(at: NSPoint(x: baseX, y: (barHeight - base.size.height) / 2),
@@ -1020,23 +1046,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let point = sender.convert(mouse, from: nil)
 
 if iconPhotoCount > 0, point.x >= iconPhotosStartX,
-               point.x < iconPhotosStartX + CGFloat(iconPhotoCount) * iconCellWidth {
+           point.x < iconPhotosStartX + CGFloat(iconPhotoCount) * iconCellWidth {
             let idx = min(max(Int((point.x - iconPhotosStartX) / iconCellWidth), 0), iconPhotoCount - 1)
-            let names = subworkerManager.sortedRunningNames()
-            guard idx < names.count else { return }
-            let name = names[idx]
+            if idx < iconPhotoNames.count {
+                let name = iconPhotoNames[idx]
 
-            if let popover = subworkerLogPopover,
-               subworkerLogPopoverName == name,
-               popover.isShown {
-                popover.performClose(nil)
-                subworkerLogPopover = nil
-                subworkerLogPopoverName = nil
+                if let popover = subworkerLogPopover,
+                   subworkerLogPopoverName == name,
+                   popover.isShown {
+                    popover.performClose(nil)
+                    subworkerLogPopover = nil
+                    subworkerLogPopoverName = nil
+                    return
+                }
+                showSubworkerLogPopover(for: name, button: sender)
                 return
             }
-            showSubworkerLogPopover(for: name, button: sender)
         }
-        // Fallthrough: if the click was not clearly on a photo zone, show the main menu
+        if let popover = subworkerLogPopover, popover.isShown {
+            popover.performClose(nil)
+            subworkerLogPopover = nil
+            subworkerLogPopoverName = nil
+        }
         if let menu = mainMenu {
             statusItem.menu = menu
             statusItem.button?.performClick(nil)
