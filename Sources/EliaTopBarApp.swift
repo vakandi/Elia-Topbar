@@ -59,18 +59,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private weak var openModelMenu: NSMenu?
     private var openModelAgent: String?
 
+    private func logDrop(_ msg: String) {
+        let line = "[\(Date())] \(msg)\n"
+        if let data = line.data(using: .utf8) {
+            let url = URL(fileURLWithPath: "/tmp/EliaTopBar.log")
+            if FileManager.default.fileExists(atPath: url.path) {
+                if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(data); try? h.close() }
+            } else {
+                try? data.write(to: url)
+            }
+        }
+        print("[EliaDrop] \(msg)")
+    }
+
     private func detectNewlyRunningAgents() {
         let running = Set(subworkerManager.subworkers.filter(\.running).map(\.name))
+        logDrop("detect running=\(running) prev=\(previousRunningNames) isFirst=\(!seenFirstSubworkerSnapshot) duration=\(effectiveRunPopupDuration) max=\(maxConcurrentDrops) windowNil=\(statusItem.button?.window==nil) panels=\(RunPopupController.shared.panelCount)")
         defer {
             previousRunningNames = running
             seenFirstSubworkerSnapshot = true
         }
-        guard seenFirstSubworkerSnapshot else { return }
-        let newly = running.subtracting(previousRunningNames)
-        guard !newly.isEmpty, let buttonWindow = statusItem.button?.window else { return }
-        let dropX = buttonWindow.frame.midX
-        let duration = UserDefaults.standard.object(forKey: "runPopupDuration") as? Double ?? 10
-        for name in newly.sorted() {
+        let isFirst = !seenFirstSubworkerSnapshot
+        if isFirst {
+            return
+        }
+        let duration = effectiveRunPopupDuration
+        guard duration > 0 else { return }
+        let newly = running.subtracting(previousRunningNames).filter { !RunPopupController.shared.hasPanel(for: $0) }
+        guard !newly.isEmpty else { return }
+        let dropX = menuBarAnchorX()
+        let limited = Array(newly.sorted().prefix(maxConcurrentDrops - RunPopupController.shared.panelCount))
+        guard !limited.isEmpty else { return }
+        for name in limited {
+            RunPopupController.shared.show(for: name, dropX: dropX, duration: duration)
+        }
+    }
+
+    @objc private func handleRunPopupEnabledChanged() {
+        let running = Set(subworkerManager.subworkers.filter(\.running).map(\.name))
+        guard !running.isEmpty else { return }
+        let duration = effectiveRunPopupDuration
+        guard duration > 0 else { return }
+        let dropX = menuBarAnchorX()
+        let available = maxConcurrentDrops - RunPopupController.shared.panelCount
+        guard available > 0 else { return }
+        let limited = Array(running.filter { !RunPopupController.shared.hasPanel(for: $0) }.sorted().prefix(available))
+        for name in limited {
             RunPopupController.shared.show(for: name, dropX: dropX, duration: duration)
         }
     }
@@ -90,6 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             subworkerManager.updateBaseURL(savedURL)
         }
         subworkerManager.start()
+        NotificationCenter.default.addObserver(self, selector: #selector(handleRunPopupEnabledChanged), name: .eliaRunPopupEnabledChanged, object: nil)
 
         setupStatusItem()
         setupMenu()
@@ -113,6 +148,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.updateStatusIcon()
             self.throttledSetupMenu()
             self.reconcileSubworkerStatusItems()
+            // Drop was never firing: defined but never called. Real agent runs
+            // arrive here via $subworkers/$runningCount — Test button bypasses this.
+            self.detectNewlyRunningAgents()
         }
         .store(in: &cancellables)
 
@@ -313,6 +351,80 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateStatusIcon()
     }
 
+    private var runningIconTimer: Timer?
+    private var runningPhase: Double = 0
+    private var primaryStyle: String { UserDefaults.standard.string(forKey: "primaryIconStyle") ?? "default" }
+    private var effectiveRunPopupDuration: TimeInterval {
+        if UserDefaults.standard.bool(forKey: "runPopupCustomEnabled") {
+            return UserDefaults.standard.object(forKey: "runPopupCustomDuration") as? Double ?? 15
+        }
+        return UserDefaults.standard.object(forKey: "runPopupDuration") as? Double ?? 10
+    }
+    private var maxConcurrentDrops: Int { UserDefaults.standard.object(forKey: "runPopupMaxConcurrent") as? Int ?? 5 }
+    private func menuBarAnchorX() -> CGFloat {
+        if let screen = NSScreen.main {
+            if let midX = statusItem.button?.window?.frame.midX, midX > screen.frame.minX + 200 {
+                return midX
+            }
+            return screen.frame.maxX - 140
+        }
+        return statusItem.button?.window?.frame.midX ?? 900
+    }
+
+    private func ensureRunningAnimation() {
+        let shouldAnimate = (subworkerManager.runningCount > 0 && primaryStyle != "default")
+        if shouldAnimate && runningIconTimer == nil {
+            runningIconTimer = Timer.scheduledTimer(withTimeInterval: 1.0/20.0, repeats: true) { [weak self] _ in
+                self?.runningPhase += 0.13
+                self?.updateStatusIcon()
+            }
+            RunLoop.main.add(runningIconTimer!, forMode: .common)
+        } else if !shouldAnimate {
+            runningIconTimer?.invalidate(); runningIconTimer = nil
+        }
+    }
+
+    private func animatedPrimaryIcon(style: String, barHeight: CGFloat, phase: Double) -> NSImage {
+        let size = barHeight * 0.92
+        let c = CGPoint(x: size/2, y: size/2)
+        return NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in
+            switch style {
+            case "grok":
+                let sq: CGFloat = size * 0.82, half = sq/2, rad: CGFloat = sq*0.28
+                let r = NSRect(x: c.x-half, y: c.y-half, width: sq, height: sq)
+                let perim: CGFloat = 4*(sq-2*rad)+2*CGFloat.pi*rad
+                NSColor.labelColor.withAlphaComponent(0.16).setStroke()
+                let t = NSBezierPath(roundedRect: r, xRadius: rad, yRadius: rad); t.lineWidth=1.2; t.stroke()
+                let visLen = perim*0.68, orbitPhase = -CGFloat(phase)*10
+                let head = NSBezierPath(roundedRect: r, xRadius: rad, yRadius: rad); head.lineWidth=2; head.lineCapStyle = .round
+                head.setLineDash([visLen, perim-visLen], count: 2, phase: orbitPhase); NSColor.labelColor.withAlphaComponent(0.95).setStroke(); head.stroke()
+                let tail = NSBezierPath(roundedRect: r, xRadius: rad, yRadius: rad); tail.lineWidth=2; tail.lineCapStyle = .round
+                tail.setLineDash([perim*0.22, perim*0.78], count: 2, phase: orbitPhase+visLen+perim*0.05); NSColor.labelColor.withAlphaComponent(0.35).setStroke(); tail.stroke()
+                let pulse = 0.5-0.5*cos(phase*2.2); let cr: CGFloat = size*0.08+CGFloat(pulse)*size*0.04
+                NSColor.labelColor.withAlphaComponent(0.95).setFill(); NSBezierPath(ovalIn: NSRect(x:c.x-cr,y:c.y-cr,width:cr*2,height:cr*2)).fill()
+            case "grokIcon":
+                let sq: CGFloat = size * 0.92, half = sq/2, rad: CGFloat = sq*0.27
+                let r = NSRect(x: c.x-half, y: c.y-half, width: sq, height: sq)
+                let perim: CGFloat = 4*(sq-2*rad)+2*CGFloat.pi*rad
+                NSColor.labelColor.withAlphaComponent(0.16).setStroke()
+                let t = NSBezierPath(roundedRect: r, xRadius: rad, yRadius: rad); t.lineWidth=1.2; t.stroke()
+                let visLen = perim*0.68, orbitPhase = -CGFloat(phase)*10
+                let head = NSBezierPath(roundedRect: r, xRadius: rad, yRadius: rad); head.lineWidth=2; head.lineCapStyle = .round
+                head.setLineDash([visLen, perim-visLen], count: 2, phase: orbitPhase); NSColor.labelColor.withAlphaComponent(0.95).setStroke(); head.stroke()
+                let tail = NSBezierPath(roundedRect: r, xRadius: rad, yRadius: rad); tail.lineWidth=2; tail.lineCapStyle = .round
+                tail.setLineDash([perim*0.22, perim*0.78], count: 2, phase: orbitPhase+visLen+perim*0.05); NSColor.labelColor.withAlphaComponent(0.35).setStroke(); tail.stroke()
+                if let icon = Self.runningBannerIcon { let s: CGFloat = size*0.78; let rr = NSRect(x:c.x-s/2,y:c.y-s/2,width:s,height:s); let inset=(sq-s)/2; let iconRad=max(0,rad-inset); NSGraphicsContext.saveGraphicsState(); NSBezierPath(roundedRect: rr, xRadius: iconRad, yRadius: iconRad).addClip(); icon.draw(in: rr, from: NSRect(origin:.zero,size:icon.size), operation:.sourceOver, fraction:1); NSGraphicsContext.restoreGraphicsState() }
+            case "pulseIcon":
+                let sc = 1+0.38*sin(phase); let rr: CGFloat = size*0.38*sc; let sq: CGFloat = size*0.92, rad: CGFloat = sq*0.27
+                NSColor.systemGreen.withAlphaComponent(0.26).setFill(); NSBezierPath(roundedRect: NSRect(x:c.x-rr*1.45,y:c.y-rr*1.45,width:rr*2.9,height:rr*2.9), xRadius: rad, yRadius: rad).fill()
+                NSColor.systemGreen.setFill(); NSBezierPath(roundedRect: NSRect(x:c.x-rr*0.95,y:c.y-rr*0.95,width:rr*1.9,height:rr*1.9), xRadius: rad*0.7, yRadius: rad*0.7).fill()
+                if let icon = Self.runningBannerIcon { let s: CGFloat = size*0.78; let rr2 = NSRect(x:c.x-s/2,y:c.y-s/2,width:s,height:s); let inset=(sq-s)/2; let iconRad=max(0,rad-inset); NSGraphicsContext.saveGraphicsState(); NSBezierPath(roundedRect: rr2, xRadius: iconRad, yRadius: iconRad).addClip(); icon.draw(in: rr2, from: NSRect(origin:.zero,size:icon.size), operation:.sourceOver, fraction:1); NSGraphicsContext.restoreGraphicsState() }
+            default: break
+            }
+            return true
+        }
+    }
+
     // MARK: - Dynamic Icon
 
     private static let runningBannerIcon: NSImage? = {
@@ -331,6 +443,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateStatusIcon() {
         guard let button = statusItem.button else { return }
+        ensureRunningAnimation()
         iconPhotoCount = 0
         iconPhotoNames = []
 
@@ -358,21 +471,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Elia system healthy → custom brain banner instead of the docker box.
-        if subworkerManager.serverHealth?.healthStatus == "healthy",
-           let banner = Self.runningBannerIcon?.copy() as? NSImage {
-            banner.size = NSSize(width: barHeight * 0.92, height: barHeight * 0.92)
-            var base: NSImage
-            if swRunning > 0 {
-                base = badgeImage(base: banner, count: swRunning, barHeight: barHeight)
-            } else {
-                base = banner
+        // Elia system healthy → custom brain banner or animated primary when running
+        if subworkerManager.serverHealth?.healthStatus == "healthy" {
+            let style = primaryStyle
+            if swRunning > 0 && style != "default" {
+                let animBase = animatedPrimaryIcon(style: style, barHeight: barHeight, phase: runningPhase)
+                var base = badgeImage(base: animBase, count: swRunning, barHeight: barHeight)
+                if !runningNames.isEmpty {
+                    base = appendFleetPhotos(to: base, names: runningNames, barHeight: barHeight)
+                }
+                button.image = base
+                return
             }
-            if !runningNames.isEmpty {
-                base = appendFleetPhotos(to: base, names: runningNames, barHeight: barHeight)
+            if let banner = Self.runningBannerIcon?.copy() as? NSImage {
+                banner.size = NSSize(width: barHeight * 0.92, height: barHeight * 0.92)
+                var base: NSImage
+                if swRunning > 0 {
+                    base = badgeImage(base: banner, count: swRunning, barHeight: barHeight)
+                } else {
+                    base = banner
+                }
+                if !runningNames.isEmpty {
+                    base = appendFleetPhotos(to: base, names: runningNames, barHeight: barHeight)
+                }
+                button.image = base
+                return
             }
-            button.image = base
-            return
         }
 
         // Docker up but OpenCode server unreachable → red X banner.
@@ -1323,11 +1447,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onTestRunPopup: { [weak self] in
                 guard let self else { return }
-                let dropX = self.statusItem.button?.window?.frame.midX
-                    ?? (NSScreen.main?.frame.midX ?? 400)
+                let dropX = self.menuBarAnchorX()
                 let name = self.subworkerManager.subworkers.first?.name ?? "test-agent"
-                let stored = UserDefaults.standard.object(forKey: "runPopupDuration") as? Double ?? 10
-                RunPopupController.shared.show(for: name, dropX: dropX, duration: stored == 0 ? 10 : stored)
+                let dur = self.effectiveRunPopupDuration
+                RunPopupController.shared.show(for: name, dropX: dropX, duration: dur == 0 ? 10 : dur)
             },
             onOrderChange: { [weak self] mode in
                 self?.subworkerManager.fleetOrderMode = mode
