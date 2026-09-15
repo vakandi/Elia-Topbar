@@ -315,8 +315,10 @@ final class SubworkerManager: ObservableObject {
             applyServerHealth(from: json)
         case "subworker_started":
             handleSubworkerStarted(json)
-        case "subworker_completed":
+        case "subworker_completed", "subworker_success":
             handleSubworkerCompleted(json)
+        case "subworker_cancelled":
+            handleSubworkerCancelled(json)
         case "subworker_error":
             handleSubworkerError(json)
         case "run_log":
@@ -499,9 +501,25 @@ final class SubworkerManager: ObservableObject {
         NotificationCenter.default.post(name: Self.subworkerCompletedNotification, object: nil, userInfo: ["name": name])
     }
 
+    private func handleSubworkerCancelled(_ json: [String: Any]) {
+        guard let name = json["name"] as? String else { return }
+        AppLog.d("Subworker cancelled: \(name)")
+
+        if let idx = subworkers.firstIndex(where: { $0.name == name }) {
+            subworkers[idx].running = false
+            subworkers[idx].lastError = nil
+            subworkers[idx].lastErrorAt = nil
+        }
+        recalculateCounts()
+    }
+
     private func handleSubworkerError(_ json: [String: Any]) {
         guard let name = json["name"] as? String else { return }
-        let errorMsg = json["error"] as? String ?? "Unknown error"
+        guard let errorMsg = json["error"] as? String, !errorMsg.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            AppLog.d("Subworker error event without message for \(name) — treating as plain completion, no badge")
+            handleSubworkerCompleted(json)
+            return
+        }
         AppLog.d("Subworker error: \(name) - \(errorMsg) subs=\(subworkers.count) running=\(runningCount)")
 
         if let idx = subworkers.firstIndex(where: { $0.name == name }) {

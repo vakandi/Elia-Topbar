@@ -89,14 +89,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !newly.isEmpty else { return }
         let dropX = menuBarAnchorX()
         let limited = Array(newly.sorted().prefix(maxConcurrentDrops - RunPopupController.shared.panelCount))
-        guard !limited.isEmpty else { return }
-        for name in limited {
-            RunPopupController.shared.show(for: name, dropX: dropX, duration: duration)
-        }
-    }
-
-    @objc private func handleRunPopupEnabledChanged() {
-        let running = Set(subworkerManager.subworkers.filter(\.running).map(\.name))
+         guard !limited.isEmpty else { return }
+         for name in limited {
+             RunPopupController.shared.show(for: name, dropX: dropX, duration: duration, baseURL: subworkerManager.currentBaseURL)
+         }
+     }
+     @objc private func handleRunPopupEnabledChanged() {
+         let running = Set(subworkerManager.subworkers.filter(\.running).map(\.name))
         guard !running.isEmpty else { return }
         let duration = effectiveRunPopupDuration
         guard duration > 0 else { return }
@@ -104,9 +103,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let available = maxConcurrentDrops - RunPopupController.shared.panelCount
         guard available > 0 else { return }
         let limited = Array(running.filter { !RunPopupController.shared.hasPanel(for: $0) }.sorted().prefix(available))
-        for name in limited {
-            RunPopupController.shared.show(for: name, dropX: dropX, duration: duration)
-        }
+         for name in limited {
+             RunPopupController.shared.show(for: name, dropX: dropX, duration: duration, baseURL: subworkerManager.currentBaseURL)
+         }
+     }
+     @objc private func handleShowMiniBubble(_ note: Notification) {
+        guard let name = note.userInfo?["name"] as? String else { return }
+        let dropX = menuBarAnchorX()
+         let dur = effectiveRunPopupDuration == 0 ? 10 : effectiveRunPopupDuration
+         RunPopupController.shared.show(for: name, dropX: dropX, duration: dur, baseURL: subworkerManager.currentBaseURL, disableAutoClose: true)
+     }
+     @objc private func handleCloseLogViewer() { closeAllLogPopovers() }
+    @objc private func handleOpenTopbarSettings() {
+        if let w = topbarSettingsWindow { w.close() }
+        DispatchQueue.main.async { [weak self] in self?.openTopbarSettings(NSMenuItem()) }
     }
 
     /// Keeps App Nap from throttling our timers — status-bar apps are background by definition.
@@ -125,6 +135,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         subworkerManager.start()
         NotificationCenter.default.addObserver(self, selector: #selector(handleRunPopupEnabledChanged), name: .eliaRunPopupEnabledChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleShowMiniBubble(_:)), name: .eliaShowMiniBubble, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleCloseLogViewer), name: .eliaCloseLogViewer, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleOpenTopbarSettings), name: .eliaOpenTopbarSettings, object: nil)
 
         setupStatusItem()
         setupMenu()
@@ -355,10 +368,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var runningPhase: Double = 0
     private var primaryStyle: String { UserDefaults.standard.string(forKey: "primaryIconStyle") ?? "default" }
     private var effectiveRunPopupDuration: TimeInterval {
+        let base = UserDefaults.standard.object(forKey: "runPopupDuration") as? Double ?? 10
+        if base == 0 { return 0 }
         if UserDefaults.standard.bool(forKey: "runPopupCustomEnabled") {
             return UserDefaults.standard.object(forKey: "runPopupCustomDuration") as? Double ?? 15
         }
-        return UserDefaults.standard.object(forKey: "runPopupDuration") as? Double ?? 10
+        return base
     }
     private var maxConcurrentDrops: Int { UserDefaults.standard.object(forKey: "runPopupMaxConcurrent") as? Int ?? 5 }
     private func menuBarAnchorX() -> CGFloat {
@@ -1073,8 +1088,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         subworkerLogPopoverName = nil
     }
 
+    private var viewerPreferredUI: String { UserDefaults.standard.string(forKey: "viewerPreferredUI") ?? "logViewer" }
     @objc private func showLogs(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
+        if viewerPreferredUI == "miniBubble" {
+             closeAllLogPopovers(); let dropX = menuBarAnchorX(); RunPopupController.shared.show(for: name, dropX: dropX, duration: effectiveRunPopupDuration, baseURL: subworkerManager.currentBaseURL, showSessionSelector: true, disableAutoClose: true); return
+        }
         closeAllLogPopovers()
 
         let popover = NSPopover()
@@ -1112,9 +1131,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let idx = min(max(Int((point.x - iconPhotosStartX) / iconCellWidth), 0), iconPhotoCount - 1)
             if idx < iconPhotoNames.count {
                 let name = iconPhotoNames[idx]
+                if RunPopupController.shared.hasPanel(for: name) {
+                    RunPopupController.shared.retract(for: name)
+                    return
+                }
                 if wasOpenName == name {
                     return
                 }
+                 if viewerPreferredUI == "miniBubble" {
+                     let dropX = menuBarAnchorX(); RunPopupController.shared.show(for: name, dropX: dropX, duration: effectiveRunPopupDuration, baseURL: subworkerManager.currentBaseURL, showSessionSelector: true, disableAutoClose: true); return
+                 }
                 showSubworkerLogPopover(for: name, button: sender)
                 return
             }
@@ -1175,6 +1201,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let total: CGFloat = side == "right"
             ? iconPhotosStartX + CGFloat(names.count) * cell
             : fleetWidth + base.size.width
+        let isSquare = (UserDefaults.standard.string(forKey: "dropPhotoShape") ?? "round") == "square"
         let composed = NSImage(size: NSSize(width: total, height: max(base.size.height, barHeight)))
         composed.lockFocus()
         for (i, badge) in badges.enumerated() {
@@ -1184,12 +1211,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                  y: (rect.height - diameter) / 2,
                                  width: diameter,
                                  height: diameter)
+            let dotRadius: CGFloat = isSquare ? diameter * 0.27 : diameter / 2
+            let dotPath = NSBezierPath(roundedRect: dotRect, xRadius: dotRadius, yRadius: dotRadius)
             badge.color.setFill()
-            NSBezierPath(ovalIn: dotRect).fill()
+            dotPath.fill()
 
             NSGraphicsContext.saveGraphicsState()
             let photoRect = dotRect.insetBy(dx: 1, dy: 1)
-            NSBezierPath(ovalIn: photoRect).addClip()
+            let photoRadius: CGFloat = photoRect.width / 2
+            NSBezierPath(roundedRect: photoRect, xRadius: photoRadius, yRadius: photoRadius).addClip()
             if let photo = badge.photo {
                 let scale = max(photoRect.width / photo.size.width, photoRect.height / photo.size.height)
                 photo.draw(in: NSRect(
@@ -1307,7 +1337,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showSubworkerLogPopover(for name: String, button: NSButton?) {
-        guard let button else { return }
+        if viewerPreferredUI == "miniBubble" {
+             let dropX = menuBarAnchorX(); RunPopupController.shared.show(for: name, dropX: dropX, duration: effectiveRunPopupDuration, baseURL: subworkerManager.currentBaseURL, showSessionSelector: true); return
+         }
+         guard let button else { return }
         if let popover = subworkerLogPopover {
             if subworkerLogPopoverName == name && popover.isShown {
                 return
@@ -1449,9 +1482,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 let dropX = self.menuBarAnchorX()
                 let name = self.subworkerManager.subworkers.first?.name ?? "test-agent"
-                let dur = self.effectiveRunPopupDuration
-                RunPopupController.shared.show(for: name, dropX: dropX, duration: dur == 0 ? 10 : dur)
-            },
+                 let dur = self.effectiveRunPopupDuration
+                  RunPopupController.shared.show(for: name, dropX: dropX, duration: dur == 0 ? 10 : dur, baseURL: subworkerManager.currentBaseURL, disableAutoClose: true)
+             },
             onOrderChange: { [weak self] mode in
                 self?.subworkerManager.fleetOrderMode = mode
                 self?.updateStatusIcon()

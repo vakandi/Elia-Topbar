@@ -28,22 +28,25 @@ struct TopbarSettingsView: View {
     @State private var maxDrops: Int = UserDefaults.standard.object(forKey: "runPopupMaxConcurrent") as? Int ?? 5
     @State private var customEnabled: Bool = UserDefaults.standard.bool(forKey: "runPopupCustomEnabled")
     @State private var customDuration: Double = UserDefaults.standard.object(forKey: "runPopupCustomDuration") as? Double ?? 15
+    @State private var dropPhotoShape: String = UserDefaults.standard.string(forKey: "dropPhotoShape") ?? "round"
+    @State private var viewerChoice: String = UserDefaults.standard.string(forKey: "viewerPreferredUI") ?? "logViewer"
 
     private let defaults = UserDefaults.standard
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Topbar Settings")
-                    .font(.system(size: 13, weight: .semibold))
-                Spacer()
-                Button(action: { onRefresh() }) {
-                    Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Topbar Settings")
+                        .font(.system(size: 13, weight: .semibold))
+                    Spacer()
+                    Button(action: { onRefresh() }) {
+                        Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
-            }
 
-            menuBarPreview
+                menuBarPreview
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 8) {
@@ -130,7 +133,7 @@ struct TopbarSettingsView: View {
                                 defaults.set(v, forKey: "runPopupDuration")
                                 runPopupEnabled = v > 0
                             }
-                        Text(!runPopupEnabled || runPopupDuration == 0 ? "Off" : "\(Int(runPopupDuration))s")
+                        Text(!runPopupEnabled || runPopupDuration == 0 ? "Off" : "\(Int(customEnabled ? customDuration : runPopupDuration))s")
                             .monospacedDigit()
                             .foregroundColor(.secondary)
                             .frame(width: 34, alignment: .trailing)
@@ -164,6 +167,14 @@ struct TopbarSettingsView: View {
                         Spacer()
                     }
                     .opacity(customEnabled ? 1 : 0.5)
+                    Picker("Agent icon", selection: $dropPhotoShape) {
+                        Text("Round").tag("round")
+                        Text("Square (primary radius)").tag("square")
+                    }
+                    .onChange(of: dropPhotoShape) { v in
+                        defaults.set(v, forKey: "dropPhotoShape")
+                        onRefresh()
+                    }
                     Text("Photo + live bubble dropping from the icon when an agent starts. Hover to keep open — retracts 1.5s after mouse leaves. Click to dismiss.")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -172,6 +183,20 @@ struct TopbarSettingsView: View {
             } label: {
                 Text("Run animation").font(.caption).foregroundColor(.secondary)
             }
+
+            GroupBox {
+                VStack(alignment:.leading, spacing:8){
+                    Picker("When clicking agent / View logs", selection: $viewerChoice){
+                        Text("Log Viewer (full)").tag("logViewer")
+                        Text("Mini bubble (Drop)").tag("miniBubble")
+                    }
+                    .onChange(of: viewerChoice){ v in defaults.set(v, forKey:"viewerPreferredUI"); onRefresh() }
+                    HStack(spacing:8){
+                        Button("Reset") { viewerChoice="logViewer"; defaults.set("logViewer", forKey:"viewerPreferredUI"); defaults.removeObject(forKey:"viewerRememberMini"); onRefresh() }.controlSize(.small)
+                        Text("Remember from LogViewer checkbox").font(.caption2).foregroundColor(.secondary)
+                    }
+                }.padding(6)
+            } label: { Text("Viewer & icons").font(.caption).foregroundColor(.secondary) }
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 6) {
@@ -205,8 +230,9 @@ struct TopbarSettingsView: View {
             } label: {
                 Text("Placement (system-managed)").font(.caption).foregroundColor(.secondary)
             }
+            }
+            .padding(14)
         }
-        .padding(14)
         .frame(width: 430)
         .frame(maxHeight: 600)
         .onReceive(previewTimer) { _ in previewPhase += 0.13 }
@@ -339,8 +365,12 @@ struct TopbarSettingsView: View {
     }
 
     private func agentDot(letter: String, color: Color) -> some View {
-        ZStack {
-            Circle().fill(color.opacity(0.9)).frame(width: 13, height: 13)
+        let isSquare = (UserDefaults.standard.string(forKey: "dropPhotoShape") ?? "round") == "square"
+        return ZStack {
+            Group {
+                if isSquare { RoundedRectangle(cornerRadius: 3.5).fill(color.opacity(0.9)) }
+                else { Circle().fill(color.opacity(0.9)) }
+            }.frame(width: 13, height: 13)
             Text(letter)
                 .font(.system(size: 8, weight: .bold))
                 .foregroundColor(.white)
@@ -455,4 +485,7 @@ struct PrimaryDropDelegate: DropDelegate {
 extension Notification.Name {
     static let eliaPulseMainIcon = Notification.Name("eliaPulseMainIcon")
     static let eliaRunPopupEnabledChanged = Notification.Name("eliaRunPopupEnabledChanged")
+    static let eliaShowMiniBubble = Notification.Name("eliaShowMiniBubble")
+    static let eliaCloseLogViewer = Notification.Name("eliaCloseLogViewer")
+    static let eliaOpenTopbarSettings = Notification.Name("eliaOpenTopbarSettings")
 }
