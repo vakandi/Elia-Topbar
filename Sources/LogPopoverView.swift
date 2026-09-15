@@ -204,19 +204,18 @@ struct LogPopoverView: View {
                     .fontWeight(.semibold)
                     .lineLimit(1)
                     .help(subworkerName)
-                  Button(action: {
-                      let remember = UserDefaults.standard.bool(forKey: "viewerRememberMini")
-                      if remember { UserDefaults.standard.set("miniBubble", forKey: "viewerPreferredUI") }
-                      NotificationCenter.default.post(name: .eliaShowMiniBubble, object: nil, userInfo: ["name": subworkerName])
-                      NotificationCenter.default.post(name: .eliaCloseLogViewer, object: nil)
-                  }) {
-                      HStack(spacing:4){ Image(systemName:"bubble.left.fill").font(.system(size:9)); Text("Mini bubble").font(.system(size:10, weight:.semibold)) }
-                      .foregroundColor(.white).padding(.horizontal,10).padding(.vertical,5).background(Color.accentColor).cornerRadius(6)
-                  }.buttonStyle(.plain).padding(.top,4)
-                  HStack{
-                      Spacer()
+                  HStack(spacing:8){
+                      Button(action: {
+                          let remember = UserDefaults.standard.bool(forKey: "viewerRememberMini")
+                          if remember { UserDefaults.standard.set("miniBubble", forKey: "viewerPreferredUI") }
+                          NotificationCenter.default.post(name: .eliaShowMiniBubble, object: nil, userInfo: ["name": subworkerName])
+                          NotificationCenter.default.post(name: .eliaCloseLogViewer, object: nil)
+                      }) {
+                          HStack(spacing:4){ Image(systemName:"bubble.left.fill").font(.system(size:9)); Text("Mini bubble").font(.system(size:10, weight:.semibold)) }
+                          .foregroundColor(.white).padding(.horizontal,10).padding(.vertical,5).background(Color.accentColor).cornerRadius(6)
+                      }.buttonStyle(.plain)
                       Toggle(isOn: Binding(get:{ UserDefaults.standard.bool(forKey:"viewerRememberMini") }, set:{ UserDefaults.standard.set($0, forKey:"viewerRememberMini") })) { Text("Remember").font(.caption2).foregroundColor(.secondary) }.toggleStyle(.checkbox).controlSize(.mini)
-                  }.padding(.top,2)
+                  }.padding(.top,4)
              }.frame(maxWidth: .infinity)
              .padding(.vertical, 10)
 
