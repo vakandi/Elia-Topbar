@@ -865,15 +865,10 @@ struct RunPopupView: View {
     }
 
     private func fetchRunHistory(){
-        guard let listURL = URL(string: "\(baseURL)/sessions/\(agentName)/list") else { historyReady = true; return }
-        var req = EliaAuth.authorize(listURL); req.timeoutInterval = 8
-        URLSession.shared.dataTask(with: req){ data,_,_ in
-            guard let data=data, let json=try? JSONSerialization.jsonObject(with:data) as? [String:Any], let arr=json["sessions"] as? [[String:Any]], let first=arr.first, let sid=first["session_id"] as? String, !sid.isEmpty else {
-                Task { @MainActor in self.historyReady = true }
-                return
-            }
-            self.fetchMessagesForHistory(sessionId: sid)
-        }.resume()
+        // Empty state on open: never merge the previous session here. Live
+        // WebSocket events via observeLogs() populate entries, todos and
+        // subagents as soon as the agent actually produces new output.
+        Task { @MainActor in self.historyReady = true }
     }
     private func fetchMessagesForHistory(sessionId: String){
         guard let url = URL(string: "\(baseURL)/sessions/\(agentName)?session_id=\(sessionId)&limit=30") else { historyReady = true; return }

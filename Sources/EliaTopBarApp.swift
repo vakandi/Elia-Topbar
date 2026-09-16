@@ -254,7 +254,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func throttledSetupMenu() {
         if isMenuOpen || logPopover?.isShown == true || subworkerLogPopover?.isShown == true { return }
-        let currentHash = subworkerManager.subworkers.map { "\($0.name):\($0.enabled):\($0.running):\($0.nextRun ?? ""):\(subworkerManager.wsConnected):\(subworkerManager.hasError):\(subworkerManager.statusError ?? ""):\(subworkerManager.serverHealth?.healthStatus ?? "")" }.joined().hashValue ^ colimaManager.instances.count
+        // nextRun is a live countdown that changes every poll — including it here
+        // rebuilt the whole 40-item menu every 5s (AppKit layout storm, 55% CPU).
+        // Countdown labels already refresh on the 30s countdown timer.
+        let currentHash = subworkerManager.subworkers.map { "\($0.name):\($0.enabled):\($0.running):\(subworkerManager.wsConnected):\(subworkerManager.hasError):\(subworkerManager.statusError ?? ""):\(subworkerManager.serverHealth?.healthStatus ?? "")" }.joined().hashValue ^ colimaManager.instances.count
         if currentHash == lastMenuHash && mainMenu != nil && (mainMenu?.numberOfItems ?? 0) > 0 { return }
         lastMenuHash = currentHash
         menuRebuildThrottleWorkItem?.cancel()
@@ -376,6 +379,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var runningIconTimer: Timer?
     private var runningPhase: Double = 0
+    // Skips redundant menu-bar repaints: composing the icon runs CoreText +
+    // fleet-photo blending, so identical states reuse the current NSImage.
+    private var lastIconKey = ""
     private var primaryStyle: String { UserDefaults.standard.string(forKey: "primaryIconStyle") ?? "default" }
     private var effectiveRunPopupDuration: TimeInterval {
         let base = UserDefaults.standard.object(forKey: "runPopupDuration") as? Double ?? 10
@@ -399,8 +405,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func ensureRunningAnimation() {
         let shouldAnimate = (subworkerManager.runningCount > 0 && primaryStyle != "default")
         if shouldAnimate && runningIconTimer == nil {
-            runningIconTimer = Timer.scheduledTimer(withTimeInterval: 1.0/20.0, repeats: true) { [weak self] _ in
-                self?.runningPhase += 0.13
+            // 10fps is plenty for a menu-bar dot; 20fps doubled CoreText/badge
+            // compositing cost and showed up in cpu_resource diagnostics.
+            runningIconTimer = Timer.scheduledTimer(withTimeInterval: 1.0/10.0, repeats: true) { [weak self] _ in
+                self?.runningPhase += 0.26
                 self?.updateStatusIcon()
             }
             RunLoop.main.add(runningIconTimer!, forMode: .common)
@@ -469,6 +477,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateStatusIcon() {
         guard let button = statusItem.button else { return }
         ensureRunningAnimation()
+
+        let barHeight = max(NSStatusBar.system.thickness, 20)
+        var runningNames = subworkerManager.sortedRunningNames()
+        for sw in subworkerManager.subworkers where sw.lastError != nil && !runningNames.contains(sw.name) {
+            runningNames.append(sw.name)
+        }
+        // Content key for the paint cache: quantized phase keeps animating while
+        // duplicate fires inside one bucket skip the full CoreText/fleet compose.
+        let defs = UserDefaults.standard
+        let iconKey = "\(subworkerManager.wsConnected)|\(subworkerManager.runningCount)|\(subworkerManager.serverHealth?.healthStatus ?? "-")|\(primaryStyle)|\(Int((runningPhase * 10).rounded()))|\(runningNames.joined(separator: ","))|\(colimaManager.hasRunningInstance)|\(colimaManager.instances.contains { $0.status.isTransitioning })|\(barHeight)|\(defs.string(forKey: "fleetPhotosSide") ?? "left")|\(defs.object(forKey: "fleetLeftPad") as? Double ?? 3)|\(defs.string(forKey: "dropPhotoShape") ?? "round")"
+        if iconKey == lastIconKey { return }
+        lastIconKey = iconKey
+
         iconPhotoCount = 0
         iconPhotoNames = []
 
@@ -477,12 +498,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let swDisconnected = !subworkerManager.wsConnected
         let swRunning = subworkerManager.runningCount
-
-        let barHeight = max(NSStatusBar.system.thickness, 20)
-        var runningNames = subworkerManager.sortedRunningNames()
-        for sw in subworkerManager.subworkers where sw.lastError != nil && !runningNames.contains(sw.name) {
-            runningNames.append(sw.name)
-        }
 
         if swDisconnected {
             AppLog.d("icon fallback disconnected ws=\(subworkerManager.wsConnected) lastError=\(subworkerManager.lastError ?? "-") statusError=\(subworkerManager.statusError ?? "-") running=\(swRunning) fleet=\(runningNames.count) photosBefore=\(iconPhotoCount)")
@@ -1148,7 +1163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if mainMenu == nil || (mainMenu?.numberOfItems ?? 0) == 0 {
             AppLog.d("mainMenu was nil/empty at click — rebuilding synchronously")
             setupMenu()
-            lastMenuHash = subworkerManager.subworkers.map { "\($0.name):\($0.enabled):\($0.running):\($0.nextRun ?? ""):\(subworkerManager.wsConnected):\(subworkerManager.hasError):\(subworkerManager.statusError ?? "")" }.joined().hashValue ^ colimaManager.instances.count
+            lastMenuHash = subworkerManager.subworkers.map { "\($0.name):\($0.enabled):\($0.running):\(subworkerManager.wsConnected):\(subworkerManager.hasError):\(subworkerManager.statusError ?? "")" }.joined().hashValue ^ colimaManager.instances.count
             menuRebuildThrottleWorkItem?.cancel()
         }
         let mouse = NSApp.currentEvent?.locationInWindow ?? sender.bounds.origin
@@ -1196,11 +1211,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             subworkerLogPopover = nil
             subworkerLogPopoverName = nil
         }
-        for i in subworkerManager.subworkers.indices where !subworkerManager.subworkers[i].running {
-            if let at = subworkerManager.subworkers[i].lastErrorAt,
-               Date().timeIntervalSince(at) > 600 {
-                subworkerManager.subworkers[i].lastError = nil
-                subworkerManager.subworkers[i].lastErrorAt = nil
+        // Never mutate @Published state synchronously inside its own Combine sink:
+        // that re-publishes on the same runloop turn and recursed until stack-guard
+        // overflow (EXC_BAD_ACCESS, 50k-frame cycle via Published.withMutation).
+        // Collect here, clear on the next turn — each pass then terminates.
+        let now = Date()
+        let stale = subworkerManager.subworkers.indices.filter { i in
+            !subworkerManager.subworkers[i].running
+                && subworkerManager.subworkers[i].lastErrorAt.map({ now.timeIntervalSince($0) > 600 }) == true
+        }
+        if !stale.isEmpty {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                for i in stale where i < self.subworkerManager.subworkers.indices.count {
+                    self.subworkerManager.subworkers[i].lastError = nil
+                    self.subworkerManager.subworkers[i].lastErrorAt = nil
+                }
             }
         }
         updateStatusIcon()
@@ -1419,7 +1445,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func forceMenuRebuild() {
         menuRebuildThrottleWorkItem?.cancel()
         menuRebuildThrottleWorkItem = nil
-        lastMenuHash = subworkerManager.subworkers.map { "\($0.name):\($0.enabled):\($0.running):\($0.nextRun ?? "")" }.joined().hashValue ^ colimaManager.instances.count
+        lastMenuHash = subworkerManager.subworkers.map { "\($0.name):\($0.enabled):\($0.running)" }.joined().hashValue ^ colimaManager.instances.count
         setupMenu()
         updateStatusIcon()
     }
@@ -1583,6 +1609,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         if ProfilePhotos.shared.setPhoto(for: name, sourceURL: url) {
+            lastIconKey = ""
             updateStatusIcon()
             reconcileSubworkerStatusItems()
             setupMenu()
@@ -1592,6 +1619,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func removeProfilePhoto(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
         ProfilePhotos.shared.removePhoto(for: name)
+        lastIconKey = ""
         updateStatusIcon()
         reconcileSubworkerStatusItems()
         setupMenu()

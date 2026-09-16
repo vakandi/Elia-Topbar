@@ -5,7 +5,15 @@ import Network
 // MARK: - Debug Logging
 
 enum AppLog {
+    // Release builds stay silent; DEBUG builds keep verbose logging.
+    // The old hardcoded `true` wrote an unbounded 18M debug.log and
+    // burned disk/CPU on every poll in production.
+    #if DEBUG
     static let debug = true
+    #else
+    static let debug = false
+    #endif
+    private static let maxLogBytes: UInt64 = 2 * 1024 * 1024
 
     static func d(_ msg: String, file: String = #file, line: Int = #line) {
         guard debug else { return }
@@ -14,6 +22,11 @@ enum AppLog {
         FileHandle.standardError.write(Data(line_out.utf8))
         let path = NSString(string: "~/Library/Logs/EliaTopBar/debug.log").expandingTildeInPath
         try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        // Rotate instead of growing forever.
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+           (attrs[.size] as? UInt64 ?? 0) > maxLogBytes {
+            try? FileManager.default.removeItem(atPath: path)
+        }
         if let handle = FileHandle(forWritingAtPath: path) {
             handle.seekToEndOfFile()
             handle.write(Data(line_out.utf8))
@@ -677,6 +690,11 @@ final class SubworkerManager: ObservableObject {
                 let running = dict["running"] as? Bool ?? false
                 let schedule = dict["schedule"] as? [String: Any]
                 let sType = dict["schedule_type"] as? String ?? schedule?["type"] as? String
+                let serverError = dict["last_error"] as? String
+                // Keep a stable timestamp when the server repeats the same error string,
+                // otherwise every poll creates a fresh Date() and the array never compares
+                // equal — which re-publishes $subworkers and re-fires every subscriber.
+                let errorAt: Date? = running ? nil : (serverError != nil ? (old?.lastError == serverError ? old?.lastErrorAt : Date()) : old?.lastErrorAt)
                 let info = SubworkerInfo(
                     id: name,
                     name: name,
@@ -689,15 +707,19 @@ final class SubworkerManager: ObservableObject {
                     scheduleDays: schedule?["days"] as? [Int],
                     scheduleExpression: schedule?["expression"] as? String,
                     scheduleEvery: schedule?["every"] as? Int,
-                    lastError: running ? nil : (dict["last_error"] as? String ?? old?.lastError),
-                    lastErrorAt: running ? nil : ((dict["last_error"] as? String) != nil ? Date() : old?.lastErrorAt),
+                    lastError: running ? nil : (serverError ?? old?.lastError),
+                    lastErrorAt: errorAt,
                     lastCompleted: running ? nil : old?.lastCompleted,
                     model: dict["model"] as? String ?? old?.model,
                     variant: dict["variant"] as? String ?? old?.variant
                 )
                 parsed.append(info)
             }
-            subworkers = parsed
+            // Assign only on real change: unconditional assignment re-publishes
+            // $subworkers every poll and re-fires the menu/icon/reconcile chain.
+            if parsed != subworkers {
+                subworkers = parsed
+            }
             loadModelSelections()
             for sw in parsed {
                 if let m = sw.model, !m.isEmpty { modelSelections[sw.name] = m }
@@ -1084,8 +1106,11 @@ final class SubworkerManager: ObservableObject {
     // MARK: - Helpers
 
     private func recalculateCounts() {
-        runningCount = subworkers.filter(\.running).count
-        totalEnabled = subworkers.filter(\.enabled).count
+        let running = subworkers.filter(\.running).count
+        let enabled = subworkers.filter(\.enabled).count
+        // Same-value assignment still re-publishes, so guard both counters.
+        if running != runningCount { runningCount = running }
+        if enabled != totalEnabled { totalEnabled = enabled }
         AppLog.d("Counts: \(runningCount) running / \(totalEnabled) enabled")
     }
 
