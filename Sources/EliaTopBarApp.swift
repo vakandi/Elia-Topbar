@@ -48,6 +48,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var topbarSettingsWindow: NSWindow?
     /// Hit-test geometry for the merged icon: photos zone + banner zone.
     private var iconPhotosStartX: CGFloat = 0
+    // X of the primary base inside the composed icon (0 when fleet is right
+    // of / absent; fleetWidth when fleet photos sit left). The animated ring
+    // overlay must be drawn here, not at x=0.
+    private var iconBaseStartX: CGFloat = 0
     private var iconCellWidth: CGFloat = 0
     private var iconPhotoCount: Int = 0
     private var iconPhotoNames: [String] = []
@@ -382,6 +386,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Skips redundant menu-bar repaints: composing the icon runs CoreText +
     // fleet-photo blending, so identical states reuse the current NSImage.
     private var lastIconKey = ""
+    // Static layer cache for the animated primary icon: banner + badge text +
+    // fleet photos composited once per content change; each frame only blits
+    // the ring overlay on top instead of re-running CoreText and photo decode.
+    private var lastStaticKey = ""
+    private var cachedStaticIcon: NSImage?
     private var primaryStyle: String { UserDefaults.standard.string(forKey: "primaryIconStyle") ?? "default" }
     private var effectiveRunPopupDuration: TimeInterval {
         let base = UserDefaults.standard.object(forKey: "runPopupDuration") as? Double ?? 10
@@ -405,10 +414,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func ensureRunningAnimation() {
         let shouldAnimate = (subworkerManager.runningCount > 0 && primaryStyle != "default")
         if shouldAnimate && runningIconTimer == nil {
-            // 10fps is plenty for a menu-bar dot; 20fps doubled CoreText/badge
-            // compositing cost and showed up in cpu_resource diagnostics.
-            runningIconTimer = Timer.scheduledTimer(withTimeInterval: 1.0/10.0, repeats: true) { [weak self] _ in
-                self?.runningPhase += 0.26
+            // Frames are cheap now (cached static + one ring blit), so 15fps
+            // stays smooth without the old full-recompose cost per tick.
+            runningIconTimer = Timer.scheduledTimer(withTimeInterval: 1.0/15.0, repeats: true) { [weak self] _ in
+                self?.runningPhase += 0.173
                 self?.updateStatusIcon()
             }
             RunLoop.main.add(runningIconTimer!, forMode: .common)
@@ -417,13 +426,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func animatedPrimaryIcon(style: String, barHeight: CGFloat, phase: Double) -> NSImage {
+    private func grokRingOverlay(style: String, barHeight: CGFloat, phase: Double) -> NSImage {
         let size = barHeight * 0.92
         let c = CGPoint(x: size/2, y: size/2)
         return NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in
             switch style {
-            case "grok":
-                let sq: CGFloat = size * 0.82, half = sq/2, rad: CGFloat = sq*0.28
+            case "grok", "grokIcon":
+                let sq: CGFloat = style == "grok" ? size * 0.82 : size * 0.92
+                let half = sq/2, rad: CGFloat = sq*0.28
                 let r = NSRect(x: c.x-half, y: c.y-half, width: sq, height: sq)
                 let perim: CGFloat = 4*(sq-2*rad)+2*CGFloat.pi*rad
                 NSColor.labelColor.withAlphaComponent(0.16).setStroke()
@@ -433,29 +443,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 head.setLineDash([visLen, perim-visLen], count: 2, phase: orbitPhase); NSColor.labelColor.withAlphaComponent(0.95).setStroke(); head.stroke()
                 let tail = NSBezierPath(roundedRect: r, xRadius: rad, yRadius: rad); tail.lineWidth=2; tail.lineCapStyle = .round
                 tail.setLineDash([perim*0.22, perim*0.78], count: 2, phase: orbitPhase+visLen+perim*0.05); NSColor.labelColor.withAlphaComponent(0.35).setStroke(); tail.stroke()
-                let pulse = 0.5-0.5*cos(phase*2.2); let cr: CGFloat = size*0.08+CGFloat(pulse)*size*0.04
-                NSColor.labelColor.withAlphaComponent(0.95).setFill(); NSBezierPath(ovalIn: NSRect(x:c.x-cr,y:c.y-cr,width:cr*2,height:cr*2)).fill()
-            case "grokIcon":
-                let sq: CGFloat = size * 0.92, half = sq/2, rad: CGFloat = sq*0.27
-                let r = NSRect(x: c.x-half, y: c.y-half, width: sq, height: sq)
-                let perim: CGFloat = 4*(sq-2*rad)+2*CGFloat.pi*rad
-                NSColor.labelColor.withAlphaComponent(0.16).setStroke()
-                let t = NSBezierPath(roundedRect: r, xRadius: rad, yRadius: rad); t.lineWidth=1.2; t.stroke()
-                let visLen = perim*0.68, orbitPhase = -CGFloat(phase)*10
-                let head = NSBezierPath(roundedRect: r, xRadius: rad, yRadius: rad); head.lineWidth=2; head.lineCapStyle = .round
-                head.setLineDash([visLen, perim-visLen], count: 2, phase: orbitPhase); NSColor.labelColor.withAlphaComponent(0.95).setStroke(); head.stroke()
-                let tail = NSBezierPath(roundedRect: r, xRadius: rad, yRadius: rad); tail.lineWidth=2; tail.lineCapStyle = .round
-                tail.setLineDash([perim*0.22, perim*0.78], count: 2, phase: orbitPhase+visLen+perim*0.05); NSColor.labelColor.withAlphaComponent(0.35).setStroke(); tail.stroke()
-                if let icon = Self.runningBannerIcon { let s: CGFloat = size*0.78; let rr = NSRect(x:c.x-s/2,y:c.y-s/2,width:s,height:s); let inset=(sq-s)/2; let iconRad=max(0,rad-inset); NSGraphicsContext.saveGraphicsState(); NSBezierPath(roundedRect: rr, xRadius: iconRad, yRadius: iconRad).addClip(); icon.draw(in: rr, from: NSRect(origin:.zero,size:icon.size), operation:.sourceOver, fraction:1); NSGraphicsContext.restoreGraphicsState() }
+                if style == "grok" {
+                    let pulse = 0.5-0.5*cos(phase*2.2); let cr: CGFloat = size*0.08+CGFloat(pulse)*size*0.04
+                    NSColor.labelColor.withAlphaComponent(0.95).setFill(); NSBezierPath(ovalIn: NSRect(x:c.x-cr,y:c.y-cr,width:cr*2,height:cr*2)).fill()
+                }
             case "pulseIcon":
                 let sc = 1+0.38*sin(phase); let rr: CGFloat = size*0.38*sc; let sq: CGFloat = size*0.92, rad: CGFloat = sq*0.27
                 NSColor.systemGreen.withAlphaComponent(0.26).setFill(); NSBezierPath(roundedRect: NSRect(x:c.x-rr*1.45,y:c.y-rr*1.45,width:rr*2.9,height:rr*2.9), xRadius: rad, yRadius: rad).fill()
                 NSColor.systemGreen.setFill(); NSBezierPath(roundedRect: NSRect(x:c.x-rr*0.95,y:c.y-rr*0.95,width:rr*1.9,height:rr*1.9), xRadius: rad*0.7, yRadius: rad*0.7).fill()
-                if let icon = Self.runningBannerIcon { let s: CGFloat = size*0.78; let rr2 = NSRect(x:c.x-s/2,y:c.y-s/2,width:s,height:s); let inset=(sq-s)/2; let iconRad=max(0,rad-inset); NSGraphicsContext.saveGraphicsState(); NSBezierPath(roundedRect: rr2, xRadius: iconRad, yRadius: iconRad).addClip(); icon.draw(in: rr2, from: NSRect(origin:.zero,size:icon.size), operation:.sourceOver, fraction:1); NSGraphicsContext.restoreGraphicsState() }
             default: break
             }
             return true
         }
+    }
+
+    // Static square behind the animated ring (banner png, or transparent).
+    // Cached per content key so per-frame work is only the ring blit.
+    private func grokBannerBase(style: String, barHeight: CGFloat) -> NSImage {
+        let size = barHeight * 0.92
+        if style == "grok" {
+            return NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in true }
+        }
+        let base = NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in true }
+        if let icon = Self.runningBannerIcon {
+            let s: CGFloat = size*0.78
+            let sq: CGFloat = size*0.92, rad: CGFloat = sq*0.27
+            let rr = NSRect(x: size/2-s/2, y: size/2-s/2, width: s, height: s)
+            base.lockFocus()
+            let inset=(sq-s)/2; let iconRad=max(0,rad-inset)
+            NSGraphicsContext.saveGraphicsState()
+            NSBezierPath(roundedRect: rr, xRadius: iconRad, yRadius: iconRad).addClip()
+            icon.draw(in: rr, from: NSRect(origin:.zero,size:icon.size), operation:.sourceOver, fraction:1)
+            NSGraphicsContext.restoreGraphicsState()
+            base.unlockFocus()
+        }
+        return base
     }
 
     // MARK: - Dynamic Icon
@@ -515,12 +537,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if subworkerManager.serverHealth?.healthStatus == "healthy" {
             let style = primaryStyle
             if swRunning > 0 && style != "default" {
-                let animBase = animatedPrimaryIcon(style: style, barHeight: barHeight, phase: runningPhase)
-                var base = badgeImage(base: animBase, count: swRunning, barHeight: barHeight)
-                if !runningNames.isEmpty {
-                    base = appendFleetPhotos(to: base, names: runningNames, barHeight: barHeight)
+                let staticKey = "\(swDisconnected)|\(swRunning)|\(subworkerManager.serverHealth?.healthStatus ?? "-")|\(style)|\(runningNames.joined(separator: ","))|\(hasRunning)|\(hasTransitioning)|\(barHeight)|\(defs.string(forKey: "fleetPhotosSide") ?? "left")|\(defs.object(forKey: "fleetLeftPad") as? Double ?? 3)|\(defs.string(forKey: "dropPhotoShape") ?? "round")"
+                if staticKey != lastStaticKey || cachedStaticIcon == nil {
+                    iconBaseStartX = 0
+                    var base = badgeImage(base: grokBannerBase(style: style, barHeight: barHeight), count: swRunning, barHeight: barHeight)
+                    if !runningNames.isEmpty {
+                        base = appendFleetPhotos(to: base, names: runningNames, barHeight: barHeight)
+                    }
+                    cachedStaticIcon = base
+                    lastStaticKey = staticKey
                 }
-                button.image = base
+                guard let stat = cachedStaticIcon else { return }
+                let size = barHeight * 0.92
+                let frame = stat.copy() as! NSImage
+                frame.lockFocus()
+                grokRingOverlay(style: style, barHeight: barHeight, phase: runningPhase).draw(
+                    in: NSRect(x: iconBaseStartX, y: (frame.size.height - size) / 2, width: size, height: size),
+                    from: NSRect(origin: .zero, size: NSSize(width: size, height: size)),
+                    operation: .sourceOver, fraction: 1.0)
+                frame.unlockFocus()
+                button.image = frame
                 return
             }
             if let banner = Self.runningBannerIcon?.copy() as? NSImage {
@@ -1314,6 +1350,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         let baseX: CGFloat = side == "right" ? 0 : fleetWidth
+        iconBaseStartX = baseX
         base.draw(at: NSPoint(x: baseX, y: (barHeight - base.size.height) / 2),
                   from: .zero, operation: .sourceOver, fraction: 1.0)
         composed.unlockFocus()
@@ -1610,6 +1647,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if ProfilePhotos.shared.setPhoto(for: name, sourceURL: url) {
             lastIconKey = ""
+            lastStaticKey = ""
+            cachedStaticIcon = nil
             updateStatusIcon()
             reconcileSubworkerStatusItems()
             setupMenu()
@@ -1620,6 +1659,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let name = sender.representedObject as? String else { return }
         ProfilePhotos.shared.removePhoto(for: name)
         lastIconKey = ""
+        lastStaticKey = ""
+        cachedStaticIcon = nil
         updateStatusIcon()
         reconcileSubworkerStatusItems()
         setupMenu()
