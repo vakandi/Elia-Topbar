@@ -51,7 +51,7 @@ import SwiftUI
         startX = max(screen.frame.minX+8, min(startX, screen.frame.maxX-totalWidth-8))
         for (idx,name) in sorted.enumerated() { guard let p=panels[name] else { continue }
             let x=startX+CGFloat(idx)*(width+gap)
-            let frame=NSRect(x:x,y:barBottom-height,width:width,height:height)
+            var frame=p.frame; frame.origin.x=x
             if p.frame.origin.x != x { NSAnimationContext.runAnimationGroup({ ctx in ctx.duration=0.35; ctx.timingFunction=CAMediaTimingFunction(name:.easeInEaseOut); p.animator().setFrame(frame, display:true) }) }
         }
     }
@@ -90,8 +90,11 @@ import SwiftUI
         guard let p=panels[agentName], let screen=NSScreen.main else { return }
         let barBottom = screen.frame.maxY - NSStatusBar.system.thickness
         var f=p.frame
-        f.size.height = max(260, min(newHeight, screen.frame.height - 60))
-        f.origin.y = barBottom - f.size.height
+        let h = max(260, min(newHeight, screen.frame.height - 60))
+        let currentTop = p.frame.origin.y + p.frame.size.height
+        let top = abs(currentTop - barBottom) > 4 ? currentTop : barBottom
+        f.size.height = h
+        f.origin.y = top - h
         if f.origin.y < screen.frame.minY + 8 { f.origin.y = screen.frame.minY + 8 }
         if f != p.frame { p.setFrame(f, display:true, animate:true) }
     }
@@ -176,6 +179,8 @@ struct RunPopupView: View {
     @State private var trafficOutRate: Double = 0
     @State private var trafficObserver: NSObjectProtocol?
     @State private var trafficTimer: Timer? = nil
+    @State private var statusTimer: Timer? = nil
+    private func startStatusRefresh(){ statusTimer?.invalidate(); let t = Timer.scheduledTimer(withTimeInterval: 4.0, repeats: true){ _ in Task{ @MainActor in self.fetchAgentStatus() } }; RunLoop.main.add(t, forMode: .common); statusTimer = t }
     @State private var showStickerPinned: Bool = false
     @State private var subagentKeys: [LivestreamStore.SubagentKey] = []
     @State private var subagentPollTimers: [LivestreamStore.SubagentKey: Timer] = [:]
@@ -266,7 +271,7 @@ struct RunPopupView: View {
         .animation(.easeInOut(duration:0.22), value: showSticker)
         .animation(.easeInOut(duration:0.2), value: effectiveTodos.isEmpty)
         .animation(.easeInOut(duration:0.2), value: subagentKeys.isEmpty)
-        .onAppear{ showStickerPinned=false; isHoveringLive=false; historyReady=false; verticalTodos=[]; subagentKeys=[]; expandedSubagent=nil; isLockedCached=RunPopupController.shared.isLocked(for: agentName); draggableEnabledState=UserDefaults.standard.bool(forKey:"dropDraggableEnabled"); observeDraggable(); observeTraffic(); fetchAgentStatus(); fetchRunHistory(); observeLogs(); startTick() }.onDisappear{ if let o=observer{NotificationCenter.default.removeObserver(o)}; if let d=draggableObserver{NotificationCenter.default.removeObserver(d)}; if let t=trafficObserver{NotificationCenter.default.removeObserver(t)}; trafficTimer?.invalidate(); stopAllSubagentPolling() }.onTapGesture{onTap()}.onHover{ h in RunPopupController.shared.setHover(h, for:agentName) }
+        .onAppear{ showStickerPinned=false; isHoveringLive=false; historyReady=false; verticalTodos=[]; subagentKeys=[]; expandedSubagent=nil; isLockedCached=RunPopupController.shared.isLocked(for: agentName); draggableEnabledState=UserDefaults.standard.bool(forKey:"dropDraggableEnabled"); observeDraggable(); observeTraffic(); fetchAgentStatus(); fetchRunHistory(); observeLogs(); startTick(); startStatusRefresh() }.onDisappear{ if let o=observer{NotificationCenter.default.removeObserver(o)}; if let d=draggableObserver{NotificationCenter.default.removeObserver(d)}; if let t=trafficObserver{NotificationCenter.default.removeObserver(t)}; trafficTimer?.invalidate(); statusTimer?.invalidate(); stopAllSubagentPolling() }.onTapGesture{onTap()}.onHover{ h in RunPopupController.shared.setHover(h, for:agentName) }
         .onChange(of: showStickerPinned){ _ in updatePanelForSubagents() }
         .onChange(of: isHoveringLive){ _ in updatePanelForSubagents() }
         .onReceive(livestream.throttled){ agent in if agent==agentName { refreshSubagentsFromLive() } }
@@ -361,7 +366,7 @@ struct RunPopupView: View {
                             .shadow(color:.black.opacity(0.22), radius:10, x:3, y:5)
                             .transition(.opacity.combined(with:.move(edge:.leading)))
                     }
-                }.frame(width:28, height:cardH).onHover{ v in setHoverSubagent(v) }
+                }.frame(width:28, height:cardH, alignment:.leading).zIndex(10).onHover{ v in setHoverSubagent(v) }
             }
             if hasTodo {
                 ZStack(alignment:.leading){
@@ -369,6 +374,7 @@ struct RunPopupView: View {
                         .frame(width: 28, height: cardH)
                         .background(RunRoundedCorner(radius:14, corners: hasSubLeft ? [] : [.topLeft,.bottomLeft]).fill(.regularMaterial))
                         .overlay(RunRoundedCorner(radius:14, corners: hasSubLeft ? [] : [.topLeft,.bottomLeft]).stroke(Color.primary.opacity(0.12)))
+                        .opacity(isHoveringTodoModule ? 0 : 1)
                     if isHoveringTodoModule {
                         popupVerticalTodoStripExpanded
                             .frame(width: 180, height: cardH)
@@ -377,7 +383,7 @@ struct RunPopupView: View {
                             .shadow(color:.black.opacity(0.22), radius:10, x:3, y:5)
                             .transition(.opacity.combined(with:.move(edge:.leading)))
                     }
-                }.frame(width:28, height:cardH).onHover{ v in withAnimation(.easeInOut(duration:0.15)){ isHoveringTodoModule = v } }
+                }.frame(width:28, height:cardH, alignment:.leading).zIndex(10).onHover{ v in withAnimation(.easeInOut(duration:0.15)){ isHoveringTodoModule = v } }
             }
             if showSessions { popupSessionSidebar }
             bubbleAttachedConfigured(hasLeft: hasTodo || hasSubLeft, hasRight: hasSubRight)
@@ -396,19 +402,7 @@ struct RunPopupView: View {
                             .shadow(color:.black.opacity(0.22), radius:10, x:-3, y:5)
                             .transition(.opacity.combined(with:.move(edge:.trailing)))
                     }
-                }.frame(width:28, height:cardH).onHover{ v in setHoverSubagent(v) }
-            }
-        }
-        .overlay(alignment:.leading){
-            if !effectiveTodos.isEmpty && isHoveringTodoModule {
-                popupVerticalTodoStripExpanded
-                    .frame(width: 180, height: cardH)
-                    .background(RunRoundedCorner(radius:14, corners:[.topLeft,.bottomLeft]).fill(.regularMaterial))
-                    .overlay(RunRoundedCorner(radius:14, corners:[.topLeft,.bottomLeft]).stroke(Color.primary.opacity(0.12)))
-                    .shadow(color:.black.opacity(0.22), radius:10, x:3, y:5)
-                    .onHover{ h in withAnimation(.easeInOut(duration:0.18)){ isHoveringTodoModule=h } }
-                    .transition(.opacity.combined(with: .move(edge:.leading)))
-                    .zIndex(20)
+                }.frame(width:28, height:cardH, alignment:.trailing).onHover{ v in setHoverSubagent(v) }
             }
         }
     }
@@ -591,9 +585,15 @@ struct RunPopupView: View {
         Dictionary(grouping: filteredSubagentsForSide, by: { $0.teamRunId })
     }
     private func isWorking(_ k: LivestreamStore.SubagentKey) -> Bool {
-        let s = livestream.subagentStream(for: k)
-        if s.isEmpty { return agentRunning==true }
-        return agentRunning==true && s.count>0
+        if isSubagentComplete(k) { return false }
+        return agentRunning==true
+    }
+    private func isSubagentComplete(_ k: LivestreamStore.SubagentKey) -> Bool {
+        for e in livestream.stream(for: agentName) {
+            if case .tool(_, let name, _, let output) = e, name.lowercased()=="background_output",
+               let o = output, o.contains("Task Result"), o.contains(k.sessionId) { return true }
+        }
+        return false
     }
     private var subagentVerticalStripCollapsed: some View {
         let keys = filteredSubagentsForSide
