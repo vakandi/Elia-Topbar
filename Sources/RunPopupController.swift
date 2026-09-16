@@ -21,7 +21,7 @@ import SwiftUI
          logPopup("show agent=\(agentName) dropX=\(dropX) duration=\(duration) panelsBefore=\(panels.count) screen=\(String(describing: NSScreen.main?.frame))")
          guard duration > 0, let screen = NSScreen.main else { logPopup("show abort duration<=0 or no screen"); return }
          if panels[agentName] != nil { logPopup("show already has panel for \(agentName) reschedule"); if !disableAutoClose { scheduleRetract(for: agentName, after: duration) }; return }
-         let width: CGFloat = 310, height: CGFloat = 260, gap: CGFloat = 8
+         let width: CGFloat = 340, height: CGFloat = 260, gap: CGFloat = 8
          let barBottom = screen.frame.maxY - NSStatusBar.system.thickness
          let count = panels.count + 1
          let totalWidth = CGFloat(count) * width + CGFloat(count-1) * gap
@@ -43,7 +43,7 @@ import SwiftUI
      }
     private func repositionAll(dropX: CGFloat) {
         guard let screen = NSScreen.main else { return }
-        let width: CGFloat=310, height: CGFloat=260, gap: CGFloat=8
+        let width: CGFloat=340, height: CGFloat=260, gap: CGFloat=8
         let barBottom = screen.frame.maxY - NSStatusBar.system.thickness
         let sorted = panels.keys.sorted()
         let totalWidth = CGFloat(sorted.count)*width + CGFloat(max(0,sorted.count-1))*gap
@@ -86,6 +86,15 @@ import SwiftUI
     func panelOrigin(for name: String) -> CGPoint? { panels[name]?.frame.origin }
     func setPanelOrigin(_ origin: CGPoint, for name: String) { guard let p=panels[name] else { return }; var f=p.frame; f.origin=origin; p.setFrame(f, display:true) }
     func refreshAllDraggable() { for (name,p) in panels { p.isMovableByWindowBackground = canDrag(for: name) } }
+    func updateHeight(for agentName: String, to newHeight: CGFloat) {
+        guard let p=panels[agentName], let screen=NSScreen.main else { return }
+        let barBottom = screen.frame.maxY - NSStatusBar.system.thickness
+        var f=p.frame
+        f.size.height = max(260, min(newHeight, screen.frame.height - 60))
+        f.origin.y = barBottom - f.size.height
+        if f.origin.y < screen.frame.minY + 8 { f.origin.y = screen.frame.minY + 8 }
+        if f != p.frame { p.setFrame(f, display:true, animate:true) }
+    }
     func closeAll() {
         let count = panels.count
         AppLog.d("closeAll Drops count=\(count)")
@@ -118,6 +127,21 @@ private class HoverPanel: NSPanel {
     }
 }
 struct PulseGlow: ViewModifier { @State private var pulsing=false; func body(content:Content)->some View{ content.scaleEffect(pulsing ? 1.18:1.0).opacity(pulsing ? 0.3:0.9).animation(.easeInOut(duration:0.9).repeatForever(autoreverses:true),value:pulsing).onAppear{pulsing=true} } }
+struct GrokWorkingDot: View {
+    @State private var dashPhase: CGFloat = 0
+    var body: some View {
+        let sq: CGFloat = 8, rad: CGFloat = 1.8
+        let perim: CGFloat = 4*(sq-2*rad) + 2*CGFloat.pi*rad
+        let headLen = perim*0.62
+        let tailLen = perim*0.22
+        return ZStack{
+            RoundedRectangle(cornerRadius:rad).stroke(Color.primary.opacity(0.18), lineWidth:1).frame(width:sq,height:sq)
+            RoundedRectangle(cornerRadius:rad).stroke(Color.accentColor, style: StrokeStyle(lineWidth:1.35, lineCap:.round, dash:[headLen, perim-headLen], dashPhase:dashPhase)).frame(width:sq,height:sq)
+            RoundedRectangle(cornerRadius:rad).stroke(Color.accentColor.opacity(0.42), style: StrokeStyle(lineWidth:1.1, lineCap:.round, dash:[tailLen, perim-tailLen], dashPhase:dashPhase+headLen+perim*0.06)).frame(width:sq,height:sq)
+            Circle().fill(Color.accentColor).frame(width:2.4,height:2.4)
+        }.frame(width:sq,height:sq).onAppear{ withAnimation(.linear(duration:0.85).repeatForever(autoreverses:false)){ dashPhase=perim } }
+    }
+}
 
 // MARK: - RunPopupView — full livestream renderer (mirrors LogPopoverView)
 
@@ -126,6 +150,7 @@ struct RunPopupView: View {
     let baseURL: String; let showSessionSelector: Bool; let disableAutoClose: Bool
     @State private var observer: NSObjectProtocol?
     @State private var verticalTodos: [RunTodoItem] = []
+    @State private var historyReady = false
     @State private var isHoveringTodoModule = false
     @State private var liveEntries: [RunLiveEntry] = []
     @State private var liveRunning = true
@@ -154,9 +179,23 @@ struct RunPopupView: View {
     @State private var showStickerPinned: Bool = false
     @State private var subagentKeys: [LivestreamStore.SubagentKey] = []
     @State private var subagentPollTimers: [LivestreamStore.SubagentKey: Timer] = [:]
+    @State private var expandedSubagent: LivestreamStore.SubagentKey? = nil
     @State private var isHoveringLive: Bool = false
+    @State private var isHoveringSubagent: Bool = false
     @State private var pendingHoverOff: DispatchWorkItem? = nil
+    @State private var pendingSubagentHoverOff: DispatchWorkItem? = nil
     private var showSticker: Bool { showStickerPinned || isHoveringLive }
+    private func setHoverSubagent(_ hovering: Bool){
+        pendingSubagentHoverOff?.cancel()
+        if hovering {
+            pendingSubagentHoverOff=nil
+            if !isHoveringSubagent { withAnimation(.easeInOut(duration:0.15)){ isHoveringSubagent=true } }
+        } else {
+            let w=DispatchWorkItem{ withAnimation(.easeInOut(duration:0.15)){ isHoveringSubagent=false } }
+            pendingSubagentHoverOff=w
+            DispatchQueue.main.asyncAfter(deadline:.now()+0.12, execute:w)
+        }
+    }
     private func setHoverLive(_ hovering: Bool){
         pendingHoverOff?.cancel()
         if hovering {
@@ -178,6 +217,8 @@ struct RunPopupView: View {
     struct RunSessionInfo: Codable, Identifiable { let id: String; let title: String? }
 
     private var dropPosition: String { UserDefaults.standard.string(forKey:"dropIconPosition") ?? "above" }
+    private var subagentPosition: String { UserDefaults.standard.string(forKey:"subagentPosition") ?? "right" }
+    private var teamTasksPosition: String { UserDefaults.standard.string(forKey:"teamTasksPosition") ?? "side" }
     private var draggableEnabled: Bool { draggableEnabledState }
     var body: some View {
         Group {
@@ -185,6 +226,7 @@ struct RunPopupView: View {
             case "left":
                 VStack(spacing:6){
                     if showSticker { stickerHeader.onHover{ setHoverLive($0) }.transition(.opacity.combined(with:.move(edge:.top))) }
+                    if teamTasksPosition=="above" { teamTasksAboveBar }
                     HStack(alignment:.center, spacing:8){
                         photoBadge
                         mainCard
@@ -194,6 +236,7 @@ struct RunPopupView: View {
             case "right":
                 VStack(spacing:6){
                     if showSticker { stickerHeader.onHover{ setHoverLive($0) }.transition(.opacity.combined(with:.move(edge:.top))) }
+                    if teamTasksPosition=="above" { teamTasksAboveBar }
                     HStack(alignment:.center, spacing:8){
                         mainCard
                         photoBadge
@@ -201,27 +244,49 @@ struct RunPopupView: View {
                     subagentStack
                 }.padding(.top,4)
             case "inlineTiny":
-                VStack(spacing:6){ if showSticker { stickerHeader.onHover{ setHoverLive($0) }.transition(.opacity.combined(with:.move(edge:.top))) }; mainCard; subagentStack }.padding(.top,4)
+                VStack(spacing:6){ if showSticker { stickerHeader.onHover{ setHoverLive($0) }.transition(.opacity.combined(with:.move(edge:.top))) }; if teamTasksPosition=="above" { teamTasksAboveBar }; mainCard; subagentStack }.padding(.top,4)
             default:
                 VStack(spacing:6){
                     photoBadge
                     if showSticker { stickerHeader.onHover{ setHoverLive($0) }.transition(.opacity.combined(with:.move(edge:.top))) }
+                    if teamTasksPosition=="above" { teamTasksAboveBar }
                     mainCard
                     subagentStack
                 }.padding(.top,4)
             }
         }
-        .frame(width: showSessions ? 400 : (effectiveTodos.isEmpty ? 264 : 298))
+        .frame(width: {
+            let hasTodo = historyReady && !effectiveTodos.isEmpty
+            let hasSub = historyReady && !filteredSubagentsForSide.isEmpty
+            if showSessions { return 400 }
+            if hasTodo && hasSub { return 326 }
+            if hasTodo || hasSub { return 298 }
+            return 264
+        }())
         .animation(.easeInOut(duration:0.22), value: showSticker)
         .animation(.easeInOut(duration:0.2), value: effectiveTodos.isEmpty)
-        .onAppear{ showStickerPinned=false; isHoveringLive=false; isLockedCached=RunPopupController.shared.isLocked(for: agentName); draggableEnabledState=UserDefaults.standard.bool(forKey:"dropDraggableEnabled"); observeDraggable(); observeTraffic(); fetchAgentStatus(); fetchRunHistory(); observeLogs(); startTick() }.onDisappear{ if let o=observer{NotificationCenter.default.removeObserver(o)}; if let d=draggableObserver{NotificationCenter.default.removeObserver(d)}; if let t=trafficObserver{NotificationCenter.default.removeObserver(t)}; trafficTimer?.invalidate(); stopAllSubagentPolling() }.onTapGesture{onTap()}.onHover{ h in RunPopupController.shared.setHover(h, for:agentName) }
+        .animation(.easeInOut(duration:0.2), value: subagentKeys.isEmpty)
+        .onAppear{ showStickerPinned=false; isHoveringLive=false; historyReady=false; verticalTodos=[]; subagentKeys=[]; expandedSubagent=nil; isLockedCached=RunPopupController.shared.isLocked(for: agentName); draggableEnabledState=UserDefaults.standard.bool(forKey:"dropDraggableEnabled"); observeDraggable(); observeTraffic(); fetchAgentStatus(); fetchRunHistory(); observeLogs(); startTick() }.onDisappear{ if let o=observer{NotificationCenter.default.removeObserver(o)}; if let d=draggableObserver{NotificationCenter.default.removeObserver(d)}; if let t=trafficObserver{NotificationCenter.default.removeObserver(t)}; trafficTimer?.invalidate(); stopAllSubagentPolling() }.onTapGesture{onTap()}.onHover{ h in RunPopupController.shared.setHover(h, for:agentName) }
+        .onChange(of: showStickerPinned){ _ in updatePanelForSubagents() }
+        .onChange(of: isHoveringLive){ _ in updatePanelForSubagents() }
         .onReceive(livestream.throttled){ agent in if agent==agentName { refreshSubagentsFromLive() } }
         .onReceive(livestream.subagentThrottled){ key in if key.parentAgent==agentName { /* subagent updated, no action needed, view auto-refreshes */ } }
     }
-    private var stickerHeader: some View {
-        let tools = storeEntries.filter{ if case .tool = $0 { return true } else { return false } }.count
-        let msgs = storeEntries.filter{ if case .text = $0 { return true } else if case .reasoning = $0 { return true } else { return false } }.count
-        return HStack(spacing:6){
+    private func bubbleAttachedConfigured(hasLeft: Bool, hasRight: Bool) -> some View {
+        var corners: RunRoundedCorner.RunCornerSet = []
+        if !hasLeft { corners.insert(.topLeft); corners.insert(.bottomLeft) }
+        if !hasRight { corners.insert(.topRight); corners.insert(.bottomRight) }
+        let shape: AnyShape = corners.isEmpty ? AnyShape(Rectangle()) : AnyShape(RunRoundedCorner(radius:14, corners:corners))
+        return bubbleContent.background(shape.fill(.regularMaterial)).overlay(shape.stroke(Color.primary.opacity(0.12)))
+    }
+
+    @ViewBuilder private var stickerHeader: some View {
+        if !historyReady {
+            HStack{ ProgressView().controlSize(.mini).scaleEffect(0.7); Text("Loading session…").font(.system(size:7)).foregroundColor(.secondary); Spacer() }.padding(.horizontal,6).padding(.vertical,4).frame(maxWidth:.infinity).background(RoundedRectangle(cornerRadius:8).fill(Color(nsColor:.controlBackgroundColor).opacity(0.9)).overlay(RoundedRectangle(cornerRadius:8).stroke(Color.primary.opacity(0.12))))
+        } else {
+            let tools = storeEntries.filter{ if case .tool = $0 { return true } else { return false } }.count
+            let msgs = storeEntries.filter{ if case .text = $0 { return true } else if case .reasoning = $0 { return true } else { return false } }.count
+            HStack(spacing:6){
             HStack(spacing:4){
                 Image(systemName:"antenna.radiowaves.left.and.right").font(.system(size:7, weight:.bold)).foregroundColor(.secondary)
                 HStack(spacing:2){
@@ -236,31 +301,103 @@ struct RunPopupView: View {
             Spacer()
             HStack(spacing:3){ Image(systemName:"wrench.and.screwdriver").font(.system(size:7)); Text("\(tools) tools").font(.system(size:7, weight:.medium)).foregroundColor(.purple) }.padding(.horizontal,5).padding(.vertical,3).background(Color.purple.opacity(0.10)).cornerRadius(6)
             HStack(spacing:3){ Image(systemName:"bubble.left").font(.system(size:7)); Text("\(msgs) msgs").font(.system(size:7, weight:.medium)).foregroundColor(.blue) }.padding(.horizontal,5).padding(.vertical,3).background(Color.blue.opacity(0.10)).cornerRadius(6)
-        }.padding(.horizontal,6).padding(.vertical,4).frame(maxWidth:.infinity).background(RoundedRectangle(cornerRadius:8).fill(.regularMaterial)).overlay(RoundedRectangle(cornerRadius:8).stroke(Color.primary.opacity(0.12)))
+            }.padding(.horizontal,6).padding(.vertical,4).frame(maxWidth:.infinity).background(RoundedRectangle(cornerRadius:8).fill(.regularMaterial)).overlay(RoundedRectangle(cornerRadius:8).stroke(Color.primary.opacity(0.12)))
+            }
+    }
+    @ViewBuilder private var teamTasksAboveBar: some View {
+        let tasks = subagentKeys.filter{ $0.kind=="team_task" }
+        if tasks.isEmpty || teamTasksPosition != "above" {
+            EmptyView()
+        } else {
+            ScrollView(.horizontal, showsIndicators:false){
+                HStack(spacing:6){
+                    Image(systemName:"list.bullet").font(.system(size:7, weight:.bold)).foregroundColor(.orange)
+                    ForEach(tasks, id:\.self){ k in
+                        let isSel = expandedSubagent==k
+                        HStack(spacing:3){
+                            Group{ if isWorking(k) { GrokWorkingDot() } else { Text("✅").font(.system(size:6)) } }.frame(width:8,height:8)
+                            Text(k.description).font(.system(size:7, weight:.medium)).foregroundColor(isSel ? .orange : .primary).lineLimit(1)
+                        }.padding(.horizontal,6).padding(.vertical,4).background(isSel ? Color.orange.opacity(0.15) : Color.orange.opacity(0.08)).cornerRadius(6).overlay(RoundedRectangle(cornerRadius:6).stroke(isSel ? Color.orange.opacity(0.3) : Color.clear))
+                        .onTapGesture{ withAnimation(.easeInOut(duration:0.15)){ expandedSubagent = isSel ? nil : k } }
+                    }
+                }.padding(.horizontal,6).padding(.vertical,4)
+            }.frame(maxWidth:.infinity).background(RoundedRectangle(cornerRadius:8).fill(Color.orange.opacity(0.08))).overlay(RoundedRectangle(cornerRadius:8).stroke(Color.orange.opacity(0.18)))
+        }
     }
     private var subagentStack: some View {
         Group {
-            if !subagentKeys.isEmpty {
-                VStack(alignment:.leading, spacing:6){
-                    ForEach(subagentKeys, id:\.self){ key in
-                        SubagentBubbleView(key: key, baseURL: baseURL)
-                    }
-                }
+            if historyReady, let exp = expandedSubagent, subagentKeys.contains(exp) {
+                SubagentBubbleView(key: exp, baseURL: baseURL, onClose: { withAnimation(.easeInOut(duration:0.18)){ expandedSubagent=nil } })
+                    .transition(.opacity.combined(with:.move(edge:.top)))
+                    .onChange(of: expandedSubagent){ _ in updatePanelForSubagents() }
             }
         }
     }
+    private func updatePanelForSubagents(){
+        let baseH: CGFloat = 260
+        let stickerH: CGFloat = showSticker ? 36 : 0
+        let subH: CGFloat = expandedSubagent==nil ? 0 : 110
+        let newH = baseH + (showSticker ? 6 : 0) + subH + 12
+        RunPopupController.shared.updateHeight(for: agentName, to: newH)
+    }
     private var mainCard: some View {
         let cardH: CGFloat = 175
+        let hasTodo = historyReady && !effectiveTodos.isEmpty
+        let hasSubLeft = historyReady && !filteredSubagentsForSide.isEmpty && subagentPosition=="left"
+        let hasSubRight = historyReady && !filteredSubagentsForSide.isEmpty && subagentPosition=="right"
         return HStack(alignment:.top, spacing:0){
-            if !effectiveTodos.isEmpty {
-                popupVerticalTodoStripCollapsed
-                    .frame(width: 28, height: cardH)
-                    .background(RunRoundedCorner(radius:14, corners:[.topLeft,.bottomLeft]).fill(.regularMaterial))
-                    .overlay(RunRoundedCorner(radius:14, corners:[.topLeft,.bottomLeft]).stroke(Color.primary.opacity(0.12)))
-                    .onHover{ h in withAnimation(.easeInOut(duration:0.18)){ if h { isHoveringTodoModule=true } } }
+            if hasSubLeft {
+                ZStack(alignment:.leading){
+                    subagentVerticalStripCollapsed
+                        .frame(width: 28, height: cardH)
+                        .background(RunRoundedCorner(radius:14, corners:[.topLeft,.bottomLeft]).fill(.regularMaterial))
+                        .overlay(RunRoundedCorner(radius:14, corners:[.topLeft,.bottomLeft]).stroke(Color.primary.opacity(0.12)))
+                        .opacity(isHoveringSubagent ? 0 : 1)
+                    if isHoveringSubagent {
+                        subagentVerticalStripExpanded
+                            .frame(width: 180, height: cardH)
+                            .background(RunRoundedCorner(radius:14, corners:[.topLeft,.bottomLeft]).fill(.regularMaterial))
+                            .overlay(RunRoundedCorner(radius:14, corners:[.topLeft,.bottomLeft]).stroke(Color.primary.opacity(0.12)))
+                            .shadow(color:.black.opacity(0.22), radius:10, x:3, y:5)
+                            .transition(.opacity.combined(with:.move(edge:.leading)))
+                    }
+                }.frame(width:28, height:cardH).onHover{ v in setHoverSubagent(v) }
+            }
+            if hasTodo {
+                ZStack(alignment:.leading){
+                    popupVerticalTodoStripCollapsed
+                        .frame(width: 28, height: cardH)
+                        .background(RunRoundedCorner(radius:14, corners: hasSubLeft ? [] : [.topLeft,.bottomLeft]).fill(.regularMaterial))
+                        .overlay(RunRoundedCorner(radius:14, corners: hasSubLeft ? [] : [.topLeft,.bottomLeft]).stroke(Color.primary.opacity(0.12)))
+                    if isHoveringTodoModule {
+                        popupVerticalTodoStripExpanded
+                            .frame(width: 180, height: cardH)
+                            .background(RunRoundedCorner(radius:14, corners:[.topLeft,.bottomLeft]).fill(.regularMaterial))
+                            .overlay(RunRoundedCorner(radius:14, corners:[.topLeft,.bottomLeft]).stroke(Color.primary.opacity(0.12)))
+                            .shadow(color:.black.opacity(0.22), radius:10, x:3, y:5)
+                            .transition(.opacity.combined(with:.move(edge:.leading)))
+                    }
+                }.frame(width:28, height:cardH).onHover{ v in withAnimation(.easeInOut(duration:0.15)){ isHoveringTodoModule = v } }
             }
             if showSessions { popupSessionSidebar }
-            bubbleAttached
+            bubbleAttachedConfigured(hasLeft: hasTodo || hasSubLeft, hasRight: hasSubRight)
+            if hasSubRight {
+                ZStack(alignment:.trailing){
+                    subagentVerticalStripCollapsed
+                        .frame(width: 28, height: cardH)
+                        .background(RunRoundedCorner(radius:14, corners:[.topRight,.bottomRight]).fill(.regularMaterial))
+                        .overlay(RunRoundedCorner(radius:14, corners:[.topRight,.bottomRight]).stroke(Color.primary.opacity(0.12)))
+                        .opacity(isHoveringSubagent ? 0 : 1)
+                    if isHoveringSubagent {
+                        subagentVerticalStripExpanded
+                            .frame(width: 180, height: cardH)
+                            .background(RunRoundedCorner(radius:14, corners:[.topRight,.bottomRight]).fill(.regularMaterial))
+                            .overlay(RunRoundedCorner(radius:14, corners:[.topRight,.bottomRight]).stroke(Color.primary.opacity(0.12)))
+                            .shadow(color:.black.opacity(0.22), radius:10, x:-3, y:5)
+                            .transition(.opacity.combined(with:.move(edge:.trailing)))
+                    }
+                }.frame(width:28, height:cardH).onHover{ v in setHoverSubagent(v) }
+            }
         }
         .overlay(alignment:.leading){
             if !effectiveTodos.isEmpty && isHoveringTodoModule {
@@ -303,7 +440,8 @@ struct RunPopupView: View {
         }
     }
     private var effectiveTodos: [RunTodoItem] {
-        livestream.todo(for: agentName).map { RunTodoItem(content: $0.content, status: $0.status, priority: $0.priority) }
+        guard historyReady else { return [] }
+        return livestream.todo(for: agentName).map { RunTodoItem(content: $0.content, status: $0.status, priority: $0.priority) }
     }
     private var liveStatus: (text:String, color:Color, dot:Color?) {
         if let running = agentRunning {
@@ -443,6 +581,93 @@ struct RunPopupView: View {
                 }.padding(.horizontal,6)
             }
             if effectiveTodos.count>10{ Text("+\(effectiveTodos.count-10)").font(.system(size:7)).foregroundColor(.secondary) }
+            Spacer(minLength:2)
+        }.padding(.vertical,6)
+    }
+    private var filteredSubagentsForSide: [LivestreamStore.SubagentKey] {
+        subagentKeys.filter{ !(teamTasksPosition=="above" && $0.kind=="team_task") }
+    }
+    private var groupedSubagents: [String?: [LivestreamStore.SubagentKey]] {
+        Dictionary(grouping: filteredSubagentsForSide, by: { $0.teamRunId })
+    }
+    private func isWorking(_ k: LivestreamStore.SubagentKey) -> Bool {
+        let s = livestream.subagentStream(for: k)
+        if s.isEmpty { return agentRunning==true }
+        return agentRunning==true && s.count>0
+    }
+    private var subagentVerticalStripCollapsed: some View {
+        let keys = filteredSubagentsForSide
+        let perCol = 12
+        let cols = max(1, (keys.count + perCol - 1) / perCol)
+        return VStack(spacing:6){
+            Image(systemName:"person.2.fill").font(.system(size:7, weight:.semibold)).foregroundColor(.pink).padding(.top,6)
+            Divider().opacity(0.3).padding(.horizontal,4)
+            HStack(alignment:.top, spacing:2){
+                ForEach(0..<cols, id:\.self){ col in
+                    let slice = Array(keys.dropFirst(col*perCol).prefix(perCol))
+                    VStack(spacing:4){
+                        ForEach(slice, id:\.self){ k in
+                            Group{
+                                if isWorking(k) { GrokWorkingDot() }
+                                else { Text("✅").font(.system(size:7)) }
+                            }.frame(width:10,height:10)
+                        }
+                    }.frame(width:12)
+                }
+            }
+            Spacer(minLength:2)
+        }.padding(.vertical,6)
+    }
+    private var subagentVerticalStripExpanded: some View {
+        let groups = groupedSubagents
+        return VStack(spacing:6){
+            HStack(spacing:4){
+                Image(systemName:"person.2.fill").font(.system(size:7, weight:.semibold)).foregroundColor(.pink)
+                Text("SUBAGENTS").font(.system(size:7, weight:.bold, design:.monospaced)).foregroundColor(.pink); Spacer(); Text("\(subagentKeys.count)").font(.system(size:7,weight:.medium, design:.monospaced)).foregroundColor(.secondary).padding(.horizontal,4).padding(.vertical,1).background(Color.pink.opacity(0.12)).cornerRadius(3)
+            }.padding(.horizontal,6).padding(.top,6)
+            Divider().opacity(0.3).padding(.horizontal,4)
+            if groups.count>1 {
+                ForEach(Array(groups.keys.enumerated()), id:\.offset){ _, teamId in
+                    let keys = groups[teamId] ?? []
+                    let teamName = teamId ?? "bg"
+                    VStack(alignment:.leading, spacing:3){
+                        Text(teamName).font(.system(size:6, weight:.bold, design:.monospaced)).foregroundColor(.secondary).padding(.horizontal,6)
+                        ForEach(keys, id:\.self){ k in
+                            let isSel = expandedSubagent==k
+                            let tools = livestream.subagentStream(for: k).filter{ if case .tool = $0 { return true } else { return false }}.count
+                            let msgs = livestream.subagentStream(for: k).filter{ if case .text = $0 { return true } else if case .reasoning = $0 { return true } else { return false }}.count
+                            let badgeColor: Color = k.kind=="team" ? .blue : k.kind=="call_omo" ? .purple : k.kind=="task" ? .orange : .secondary
+                            let badgeText = k.kind=="team" ? "team" : k.kind=="call_omo" ? "bg" : k.kind=="task" ? "task" : k.kind
+                            Button(action: { withAnimation(.easeInOut(duration:0.18)){ expandedSubagent = isSel ? nil : k } }){
+                                HStack(spacing:5){
+                                    Group{ if isWorking(k) { GrokWorkingDot() } else { Text("✅").font(.system(size:6)) } }.frame(width:8,height:8)
+                                    Text(k.description).font(.system(size:7, weight:.semibold)).foregroundColor(isSel ? .pink : .primary).lineLimit(1)
+                                    Text(badgeText).font(.system(size:5, weight:.bold, design:.monospaced)).foregroundColor(.white).padding(.horizontal,3).padding(.vertical,1).background(badgeColor).cornerRadius(3)
+                                    Spacer()
+                                    Text("\(tools)⧉ \(msgs)✉︎").font(.system(size:6, design:.monospaced)).foregroundColor(.secondary)
+                                }.padding(.horizontal,6).padding(.vertical,4).background(isSel ? Color.pink.opacity(0.10) : Color.clear).cornerRadius(6)
+                            }.buttonStyle(.plain)
+                        }
+                    }.padding(.vertical,4).background(Color.primary.opacity(0.04)).cornerRadius(6)
+                }
+            } else {
+                ForEach(subagentKeys, id:\.self){ k in
+                    let isSel = expandedSubagent==k
+                    let tools = livestream.subagentStream(for: k).filter{ if case .tool = $0 { return true } else { return false }}.count
+                    let msgs = livestream.subagentStream(for: k).filter{ if case .text = $0 { return true } else if case .reasoning = $0 { return true } else { return false }}.count
+                    let badgeColor: Color = k.kind=="team" ? .blue : k.kind=="call_omo" ? .purple : k.kind=="task" ? .orange : .secondary
+                    let badgeText = k.kind=="team" ? "team" : k.kind=="call_omo" ? "bg" : k.kind=="task" ? "task" : k.kind
+                    Button(action: { withAnimation(.easeInOut(duration:0.18)){ expandedSubagent = isSel ? nil : k } }){
+                        HStack(spacing:5){
+                            Group{ if isWorking(k) { GrokWorkingDot() } else { Text("✅").font(.system(size:6)) } }.frame(width:8,height:8)
+                            Text(k.description).font(.system(size:7, weight:.semibold)).foregroundColor(isSel ? .pink : .primary).lineLimit(1)
+                            Text(badgeText).font(.system(size:5, weight:.bold, design:.monospaced)).foregroundColor(.white).padding(.horizontal,3).padding(.vertical,1).background(badgeColor).cornerRadius(3)
+                            Spacer()
+                            Text("\(tools)⧉ \(msgs)✉︎").font(.system(size:6, design:.monospaced)).foregroundColor(.secondary)
+                        }.padding(.horizontal,6).padding(.vertical,4).background(isSel ? Color.pink.opacity(0.10) : Color.clear).cornerRadius(6)
+                    }.buttonStyle(.plain)
+                }
+            }
             Spacer(minLength:2)
         }.padding(.vertical,6)
     }
@@ -636,53 +861,70 @@ struct RunPopupView: View {
     }
 
     private func fetchRunHistory(){
-        guard let listURL = URL(string: "\(baseURL)/sessions/\(agentName)/list") else { return }
+        guard let listURL = URL(string: "\(baseURL)/sessions/\(agentName)/list") else { historyReady = true; return }
         var req = EliaAuth.authorize(listURL); req.timeoutInterval = 8
         URLSession.shared.dataTask(with: req){ data,_,_ in
-            guard let data=data, let json=try? JSONSerialization.jsonObject(with:data) as? [String:Any], let arr=json["sessions"] as? [[String:Any]], let first=arr.first, let sid=first["session_id"] as? String, !sid.isEmpty else { return }
+            guard let data=data, let json=try? JSONSerialization.jsonObject(with:data) as? [String:Any], let arr=json["sessions"] as? [[String:Any]], let first=arr.first, let sid=first["session_id"] as? String, !sid.isEmpty else {
+                Task { @MainActor in self.historyReady = true }
+                return
+            }
             self.fetchMessagesForHistory(sessionId: sid)
         }.resume()
     }
     private func fetchMessagesForHistory(sessionId: String){
-        guard let url = URL(string: "\(baseURL)/sessions/\(agentName)?session_id=\(sessionId)&limit=30") else { return }
+        guard let url = URL(string: "\(baseURL)/sessions/\(agentName)?session_id=\(sessionId)&limit=30") else { historyReady = true; return }
         URLSession.shared.dataTask(with: EliaAuth.authorize(url)){ data,_,_ in
-            guard let data=data, let json=try? JSONSerialization.jsonObject(with:data) as? [String:Any], let rawMessages=json["messages"] as? [[String:Any]] else { return }
+            guard let data=data, let json=try? JSONSerialization.jsonObject(with:data) as? [String:Any], let rawMessages=json["messages"] as? [[String:Any]] else {
+                Task { @MainActor in self.historyReady = true }
+                return
+            }
             Task { @MainActor in
                 LivestreamStore.shared.mergeHistory(agent: self.agentName, sessionId: sessionId, rawMessages: rawMessages)
                 self.updateSubagents(from: rawMessages)
+                self.historyReady = true
             }
         }.resume()
     }
     private func updateSubagents(from rawMessages: [[String: Any]]){
         let keys = LivestreamStore.shared.extractSubagents(parentAgent: agentName, rawMessages: rawMessages)
-        for k in keys where !subagentKeys.contains(k) {
-            subagentKeys.append(k)
-            startPollingSubagent(k)
-        }
-        // also check live store entries for newly arrived call_omo_agent deltas not yet in history
+        AppLog.d("updateSubagents \(agentName) history keys=\(keys.map{$0.sessionId})")
         let liveEntries = LivestreamStore.shared.stream(for: agentName)
         var liveRaw: [[String: Any]] = []
         for e in liveEntries {
-            if case .tool(_, let name, let input, let output) = e, name.lowercased()=="call_omo_agent" || name.lowercased()=="task" {
+            if case .tool(_, let name, let input, let output) = e, ["call_omo_agent","task","team_create"].contains(name.lowercased()) {
                 var part: [String: Any] = ["type":"tool","tool":name]
                 if let i=input { part["input"]=i }
                 if let o=output { part["output"]=o }
                 liveRaw.append(["parts":[part]])
             }
         }
+        var liveKeys: [LivestreamStore.SubagentKey] = []
         if !liveRaw.isEmpty {
-            let liveKeys = LivestreamStore.shared.extractSubagents(parentAgent: agentName, rawMessages: liveRaw)
-            for k in liveKeys where !subagentKeys.contains(k) {
-                subagentKeys.append(k)
-                startPollingSubagent(k)
-            }
+            liveKeys = LivestreamStore.shared.extractSubagents(parentAgent: agentName, rawMessages: liveRaw)
+            AppLog.d("updateSubagents \(agentName) live keys=\(liveKeys.map{$0.sessionId})")
         }
+        var merged = keys
+        for k in liveKeys where !merged.contains(k) { merged.append(k) }
+        let hasReal = merged.contains { $0.sessionId.hasPrefix("ses_") }
+        if hasReal { merged.removeAll { $0.sessionId.hasPrefix("pending:team") } }
+        let oldKeys = subagentKeys
+        subagentKeys = merged
+        for k in merged where !oldKeys.contains(k) && !k.sessionId.hasPrefix("pending:") && !k.sessionId.hasPrefix("task:") {
+            AppLog.d("start polling new subagent \(k.sessionId) for \(agentName)")
+            startPollingSubagent(k)
+        }
+        for k in oldKeys where !merged.contains(k) {
+            subagentPollTimers[k]?.invalidate()
+            subagentPollTimers.removeValue(forKey: k)
+            AppLog.d("stopped polling removed subagent \(k.sessionId) for \(agentName)")
+        }
+        AppLog.d("subagentKeys now \(subagentKeys.map{$0.sessionId}) for \(agentName)")
     }
     private func refreshSubagentsFromLive(){
         let liveEntries = LivestreamStore.shared.stream(for: agentName)
         var liveRaw: [[String: Any]] = []
         for e in liveEntries {
-            if case .tool(_, let name, let input, let output) = e, name.lowercased()=="call_omo_agent" || name.lowercased()=="task" {
+            if case .tool(_, let name, let input, let output) = e, ["call_omo_agent","task","team_create"].contains(name.lowercased()) {
                 var part: [String: Any] = ["type":"tool","tool":name]
                 if let i=input { part["input"]=i }
                 if let o=output { part["output"]=o }
@@ -691,9 +933,11 @@ struct RunPopupView: View {
         }
         if liveRaw.isEmpty { return }
         let liveKeys = LivestreamStore.shared.extractSubagents(parentAgent: agentName, rawMessages: liveRaw)
+        let hasReal = liveKeys.contains { $0.sessionId.hasPrefix("ses_") }
+        if hasReal { subagentKeys.removeAll { $0.sessionId.hasPrefix("pending:team") } }
         for k in liveKeys where !subagentKeys.contains(k) {
             subagentKeys.append(k)
-            startPollingSubagent(k)
+            if !k.sessionId.hasPrefix("pending:") { startPollingSubagent(k) }
         }
     }
     private func startPollingSubagent(_ key: LivestreamStore.SubagentKey){
@@ -990,6 +1234,7 @@ struct RunPopupView: View {
 struct SubagentBubbleView: View {
     let key: LivestreamStore.SubagentKey
     let baseURL: String
+    var onClose: (() -> Void)? = nil
     @ObservedObject private var store = LivestreamStore.shared
     @State private var isPinned = true
     @State private var pending: DispatchWorkItem? = nil
@@ -1005,6 +1250,11 @@ struct SubagentBubbleView: View {
     var body: some View {
         VStack(alignment:.leading, spacing:4){
             HStack(spacing:6){
+                if let onClose = onClose {
+                    Button(action: onClose){
+                        Image(systemName:"xmark").font(.system(size:7, weight:.bold)).foregroundColor(.secondary).frame(width:16,height:16).background(Color.secondary.opacity(0.12)).clipShape(Circle())
+                    }.buttonStyle(.plain).help("Hide subagent")
+                }
                 Image(systemName:"person.2.fill").font(.system(size:8)).foregroundColor(.pink)
                 Text(key.description).font(.system(size:8, weight:.semibold)).foregroundColor(.primary).lineLimit(1)
                 Text(key.agent).font(.system(size:6, design:.monospaced)).foregroundColor(.secondary).padding(.horizontal,4).padding(.vertical,1).background(Color.pink.opacity(0.12)).cornerRadius(4)

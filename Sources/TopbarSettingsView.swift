@@ -30,6 +30,8 @@ struct TopbarSettingsView: View {
     @State private var customDuration: Double = UserDefaults.standard.object(forKey: "runPopupCustomDuration") as? Double ?? 15
     @State private var dropPhotoShape: String = UserDefaults.standard.string(forKey: "dropPhotoShape") ?? "round"
     @State private var dropIconPosition: String = UserDefaults.standard.string(forKey: "dropIconPosition") ?? "above"
+    @State private var subagentPosition: String = UserDefaults.standard.string(forKey: "subagentPosition") ?? "right"
+    @State private var teamTasksPosition: String = UserDefaults.standard.string(forKey: "teamTasksPosition") ?? "side"
     @State private var dropDraggableEnabled: Bool = UserDefaults.standard.bool(forKey: "dropDraggableEnabled")
     @State private var closeDropsOnPrimaryClick: Bool = (UserDefaults.standard.object(forKey: "closeDropsOnPrimaryClick") as? Bool ?? true)
     @State private var viewerChoice: String = UserDefaults.standard.string(forKey: "viewerPreferredUI") ?? "logViewer"
@@ -186,6 +188,22 @@ struct TopbarSettingsView: View {
                     }
                     .onChange(of: dropIconPosition) { v in
                         defaults.set(v, forKey: "dropIconPosition")
+                        onRefresh()
+                    }
+                    Picker("Subagents", selection: $subagentPosition) {
+                        Text("Left of bubble").tag("left")
+                        Text("Right of bubble").tag("right")
+                    }
+                    .onChange(of: subagentPosition) { v in
+                        defaults.set(v, forKey: "subagentPosition")
+                        onRefresh()
+                    }
+                    Picker("Team tasks", selection: $teamTasksPosition) {
+                        Text("Above RunPopup").tag("above")
+                        Text("Right side bar").tag("side")
+                    }
+                    .onChange(of: teamTasksPosition) { v in
+                        defaults.set(v, forKey: "teamTasksPosition")
                         onRefresh()
                     }
                     Toggle("Enable draggable Drops", isOn: $dropDraggableEnabled)

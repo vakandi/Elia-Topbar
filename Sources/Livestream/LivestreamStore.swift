@@ -13,13 +13,22 @@ import SwiftUI
 
     @Published private(set) var streams: [String: AgentStream] = [:]
     @Published private(set) var todos: [String: [LivestreamTodoItem]] = [:]
+    /// Latest session this agent's todos/stream were synced from. Used to drop
+    /// stale per-session state (e.g. previous run's todo list) when a new run
+    /// with a different sessionId arrives.
+    private(set) var sessionForAgent: [String: String] = [:]
 
     struct SubagentKey: Hashable {
         let parentAgent: String
         let sessionId: String
         let description: String
         let agent: String
+        let kind: String
+        let teamRunId: String?
         var id: String { "\(parentAgent):\(sessionId)" }
+        init(parentAgent: String, sessionId: String, description: String, agent: String, kind: String = "subagent", teamRunId: String? = nil) {
+            self.parentAgent = parentAgent; self.sessionId = sessionId; self.description = description; self.agent = agent; self.kind = kind; self.teamRunId = teamRunId
+        }
     }
     @Published private(set) var subagentStreams: [SubagentKey: AgentStream] = [:]
     @Published private(set) var subagentTodos: [SubagentKey: [LivestreamTodoItem]] = [:]
@@ -119,6 +128,10 @@ import SwiftUI
     }
 
     func mergeHistory(agent: String, sessionId: String, rawMessages: [[String: Any]]) {
+        if sessionForAgent[agent] != sessionId {
+            sessionForAgent[agent] = sessionId
+            todos[agent] = nil
+        }
         if rawMessages.isEmpty { return }
         if streams[agent] == nil { streams[agent] = AgentStream() }
         var historyEntries: [LivestreamEntry] = []
@@ -170,8 +183,11 @@ import SwiftUI
                 if latestTodos != nil { break }
             }
         }
-        if let extracted = latestTodos, !extracted.isEmpty { todos[agent] = extracted }
-
+        if let extracted = latestTodos, !extracted.isEmpty {
+            todos[agent] = extracted
+        } else if latestTodos == nil && todos[agent] == nil {
+            todos[agent] = []
+        }
         if historyEntries.isEmpty { return }
 
         var current = streams[agent]!.entries
@@ -219,10 +235,56 @@ import SwiftUI
     func extractSubagents(parentAgent: String, rawMessages: [[String: Any]]) -> [SubagentKey] {
         var seen: Set<String> = []
         var out: [SubagentKey] = []
+        AppLog.d("extractSubagents parent=\(parentAgent) rawCount=\(rawMessages.count)")
         for raw in rawMessages {
             guard let parts = raw["parts"] as? [[String: Any]] else { continue }
             for part in parts where part["type"] as? String == "tool" {
                 let tool = (part["tool"] as? String ?? "").lowercased()
+                if tool == "team_create" {
+                    let outStr = part["output"] as? String ?? ""
+                    var teamId: String? = nil
+                    if let data = outStr.data(using: .utf8), let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        teamId = obj["teamRunId"] as? String
+                        if let rt = obj["runtimeState"] as? [String: Any], let members = rt["members"] as? [[String: Any]] {
+                            for m in members {
+                                guard let sid = m["sessionId"] as? String, !sid.isEmpty, !seen.contains(sid) else { continue }
+                                seen.insert(sid)
+                                let name = m["name"] as? String ?? "team-member"
+                                let agent = m["subagent_type"] as? String ?? m["agentType"] as? String ?? "member"
+                                out.append(SubagentKey(parentAgent: parentAgent, sessionId: sid, description: name, agent: agent, kind: "team", teamRunId: teamId))
+                            }
+                        }
+                    }
+                    if out.isEmpty {
+                        if let outDict = part["output"] as? [String: Any], let rt = outDict["runtimeState"] as? [String: Any], let members = rt["members"] as? [[String: Any]] {
+                            if teamId == nil { teamId = outDict["teamRunId"] as? String }
+                            for m in members {
+                                guard let sid = m["sessionId"] as? String, !sid.isEmpty, !seen.contains(sid) else { continue }
+                                seen.insert(sid)
+                                let name = m["name"] as? String ?? "team-member"
+                                let agent = m["subagent_type"] as? String ?? "member"
+                                out.append(SubagentKey(parentAgent: parentAgent, sessionId: sid, description: name, agent: agent, kind: "team", teamRunId: teamId))
+                            }
+                        }
+                    }
+                    if out.isEmpty {
+                        var pendingDesc = "Team creating…"
+                        let input = part["input"]
+                        if let d = input as? [String: Any], let n = d["name"] as? String { pendingDesc = n }
+                        else if let s = input as? String, let data = s.data(using: .utf8), let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                            if let n = obj["name"] as? String { pendingDesc = n }
+                            else if let inline = obj["inline_spec"] as? String, let idata = inline.data(using: .utf8), let iobj = try? JSONSerialization.jsonObject(with: idata) as? [String: Any], let n = iobj["name"] as? String { pendingDesc = n }
+                        } else if let inline = (input as? [String: Any])?["inline_spec"] as? String, let data = inline.data(using: .utf8), let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let n = obj["name"] as? String {
+                            pendingDesc = n
+                        }
+                        let pendingId = "pending:team:\(parentAgent):\(pendingDesc)"
+                        if !seen.contains(pendingId) {
+                            seen.insert(pendingId)
+                            out.append(SubagentKey(parentAgent: parentAgent, sessionId: pendingId, description: pendingDesc, agent: "team", kind: "team"))
+                        }
+                    }
+                    continue
+                }
                 guard tool == "call_omo_agent" || tool == "task" else { continue }
                 let input = part["input"]
                 var desc = ""
@@ -246,9 +308,40 @@ import SwiftUI
                 guard let sid = sessId, !sid.isEmpty, !seen.contains(sid) else { continue }
                 seen.insert(sid)
                 let cleanDesc = desc.isEmpty ? tool : String(desc.prefix(80))
-                out.append(SubagentKey(parentAgent: parentAgent, sessionId: sid, description: cleanDesc, agent: agent))
+                let k: String = tool == "call_omo_agent" ? "call_omo" : (tool == "team_create" ? "team" : "task")
+                out.append(SubagentKey(parentAgent: parentAgent, sessionId: sid, description: cleanDesc, agent: agent, kind: k))
             }
         }
+        if out.contains(where: { $0.sessionId.hasPrefix("ses_") }) {
+            out.removeAll { $0.sessionId.hasPrefix("pending:team") }
+        }
+        for raw in rawMessages {
+            guard let parts = raw["parts"] as? [[String: Any]] else { continue }
+            for part in parts where (part["tool"] as? String ?? "").lowercased() == "team_task_create" {
+                var teamId: String? = nil
+                if let d = part["input"] as? [String: Any] { teamId = d["teamRunId"] as? String }
+                else if let s = part["input"] as? String, let data = s.data(using: .utf8), let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] { teamId = obj["teamRunId"] as? String }
+                let outStr = part["output"] as? String ?? ""
+                var subject = ""
+                var tid = ""
+                if let data = outStr.data(using: .utf8), let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let task = obj["task"] as? [String: Any] {
+                    subject = task["subject"] as? String ?? task["description"] as? String ?? ""
+                    tid = task["id"] as? String ?? ""
+                    if teamId == nil { teamId = obj["teamRunId"] as? String ?? task["teamRunId"] as? String }
+                }
+                if subject.isEmpty {
+                    if let d = part["input"] as? [String: Any] { subject = d["subject"] as? String ?? d["description"] as? String ?? "" }
+                    else if let s = part["input"] as? String, let data = s.data(using: .utf8), let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] { subject = obj["subject"] as? String ?? obj["description"] as? String ?? "" }
+                }
+                if tid.isEmpty { tid = subject }
+                if subject.isEmpty { subject = "task" }
+                let keyId = "task:\(parentAgent):\(teamId ?? ""):\(tid)"
+                if seen.contains(keyId) { continue }
+                seen.insert(keyId)
+                out.append(SubagentKey(parentAgent: parentAgent, sessionId: keyId, description: String(subject.prefix(60)), agent: "task", kind: "team_task", teamRunId: teamId))
+            }
+        }
+        if !out.isEmpty { AppLog.d("extractSubagents found \(out.count) for \(parentAgent): \(out.map{$0.sessionId})") }
         return out
     }
 
