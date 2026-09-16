@@ -189,7 +189,7 @@ struct RunPopupView: View {
     @State private var isHoveringSubagent: Bool = false
     @State private var pendingHoverOff: DispatchWorkItem? = nil
     @State private var pendingSubagentHoverOff: DispatchWorkItem? = nil
-    private var showSticker: Bool { showStickerPinned || isHoveringLive }
+    private var showSticker: Bool { (showStickerPinned || isHoveringLive) && panelsSticker }
     private func setHoverSubagent(_ hovering: Bool){
         pendingSubagentHoverOff?.cancel()
         if hovering {
@@ -222,6 +222,9 @@ struct RunPopupView: View {
     struct RunSessionInfo: Codable, Identifiable { let id: String; let title: String? }
 
     private var dropPosition: String { UserDefaults.standard.string(forKey:"dropIconPosition") ?? "above" }
+    private var panelsSticker: Bool { UserDefaults.standard.object(forKey:"dropShowSticker") as? Bool ?? true }
+    private var panelsTodo: Bool { UserDefaults.standard.object(forKey:"dropShowTodo") as? Bool ?? true }
+    private var panelsSubagents: Bool { UserDefaults.standard.object(forKey:"dropShowSubagents") as? Bool ?? true }
     private var subagentPosition: String { UserDefaults.standard.string(forKey:"subagentPosition") ?? "right" }
     private var teamTasksPosition: String { UserDefaults.standard.string(forKey:"teamTasksPosition") ?? "side" }
     private var draggableEnabled: Bool { draggableEnabledState }
@@ -261,7 +264,7 @@ struct RunPopupView: View {
             }
         }
         .frame(width: {
-            let hasTodo = historyReady && !effectiveTodos.isEmpty
+            let hasTodo = historyReady && panelsTodo && !effectiveTodos.isEmpty
             let hasSub = historyReady && !filteredSubagentsForSide.isEmpty
             if showSessions { return 400 }
             if hasTodo && hasSub { return 326 }
@@ -311,7 +314,7 @@ struct RunPopupView: View {
     }
     @ViewBuilder private var teamTasksAboveBar: some View {
         let tasks = subagentKeys.filter{ $0.kind=="team_task" }
-        if tasks.isEmpty || teamTasksPosition != "above" {
+        if !panelsSubagents || tasks.isEmpty || teamTasksPosition != "above" {
             EmptyView()
         } else {
             ScrollView(.horizontal, showsIndicators:false){
@@ -331,7 +334,7 @@ struct RunPopupView: View {
     }
     private var subagentStack: some View {
         Group {
-            if historyReady, let exp = expandedSubagent, subagentKeys.contains(exp) {
+            if panelsSubagents, historyReady, let exp = expandedSubagent, subagentKeys.contains(exp) {
                 SubagentBubbleView(key: exp, baseURL: baseURL, onClose: { withAnimation(.easeInOut(duration:0.18)){ expandedSubagent=nil } })
                     .transition(.opacity.combined(with:.move(edge:.top)))
                     .onChange(of: expandedSubagent){ _ in updatePanelForSubagents() }
@@ -347,7 +350,7 @@ struct RunPopupView: View {
     }
     private var mainCard: some View {
         let cardH: CGFloat = 175
-        let hasTodo = historyReady && !effectiveTodos.isEmpty
+        let hasTodo = historyReady && panelsTodo && !effectiveTodos.isEmpty
         let hasSubLeft = historyReady && !filteredSubagentsForSide.isEmpty && subagentPosition=="left"
         let hasSubRight = historyReady && !filteredSubagentsForSide.isEmpty && subagentPosition=="right"
         return HStack(alignment:.top, spacing:0){
@@ -407,7 +410,7 @@ struct RunPopupView: View {
         }
     }
     private var bubbleAttached: some View {
-        let hasTodo = !effectiveTodos.isEmpty
+        let hasTodo = panelsTodo && !effectiveTodos.isEmpty
         let shape: AnyShape = hasTodo ? AnyShape(RunRoundedCorner(radius:14, corners:[.topRight,.bottomRight])) : AnyShape(RoundedRectangle(cornerRadius:14))
         return bubbleContent.background(shape.fill(.regularMaterial)).overlay(shape.stroke(Color.primary.opacity(0.12)))
     }
@@ -579,7 +582,8 @@ struct RunPopupView: View {
         }.padding(.vertical,6)
     }
     private var filteredSubagentsForSide: [LivestreamStore.SubagentKey] {
-        subagentKeys.filter{ !(teamTasksPosition=="above" && $0.kind=="team_task") }
+        guard panelsSubagents else { return [] }
+        return subagentKeys.filter{ !(teamTasksPosition=="above" && $0.kind=="team_task") }
     }
     private var groupedSubagents: [String?: [LivestreamStore.SubagentKey]] {
         Dictionary(grouping: filteredSubagentsForSide, by: { $0.teamRunId })

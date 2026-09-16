@@ -35,16 +35,40 @@ struct TopbarSettingsView: View {
     @State private var dropDraggableEnabled: Bool = UserDefaults.standard.bool(forKey: "dropDraggableEnabled")
     @State private var closeDropsOnPrimaryClick: Bool = (UserDefaults.standard.object(forKey: "closeDropsOnPrimaryClick") as? Bool ?? true)
     @State private var viewerChoice: String = UserDefaults.standard.string(forKey: "viewerPreferredUI") ?? "logViewer"
+    @State private var profile: String = UserDefaults.standard.string(forKey: "eliaProfile") ?? "developer"
+    @State private var showSticker: Bool = (UserDefaults.standard.object(forKey: "dropShowSticker") as? Bool ?? true)
+    @State private var showTodo: Bool = (UserDefaults.standard.object(forKey: "dropShowTodo") as? Bool ?? true)
+    @State private var showSubagents: Bool = (UserDefaults.standard.object(forKey: "dropShowSubagents") as? Bool ?? true)
 
     private let defaults = UserDefaults.standard
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Topbar Settings")
+                HStack(spacing: 7) {
+                    if let logo = BrandAssets.sherlock {
+                        Image(nsImage: logo)
+                            .resizable().scaledToFill()
+                            .frame(width: 24, height: 24)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    Text("EliaTopBar for OpenCode/EliaAgent")
                         .font(.system(size: 13, weight: .semibold))
+                    Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—")")
+                        .font(.caption2).foregroundColor(.secondary)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.12)).cornerRadius(5)
                     Spacer()
+                    Link(destination: URL(string: "https://github.com/vakandi/Elia-Topbar")!) {
+                        HStack(spacing: 4) {
+                            if let mark = BrandAssets.githubMark {
+                                Image(nsImage: mark)
+                                    .resizable().scaledToFit()
+                                    .frame(width: 14, height: 14)
+                            }
+                            Text("by @vakandi").font(.caption2)
+                        }
+                    }
                     Button(action: { onRefresh() }) {
                         Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
                     }
@@ -119,6 +143,55 @@ struct TopbarSettingsView: View {
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 8) {
+                    Picker("Profile", selection: $profile) {
+                        Text("Developer").tag("developer")
+                        Text("Calm").tag("calm")
+                        Text("Minimal").tag("minimal")
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: profile) { v in applyProfile(v) }
+                    Text(profileCaption)
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                .padding(6)
+            } label: {
+                Text("Profile — one tap setup").font(.caption).foregroundColor(.secondary)
+            }
+
+            GroupBox {
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle("Live stats header (traffic, tools, msgs)", isOn: $showSticker)
+                        .onChange(of: showSticker) { v in defaults.set(v, forKey: "dropShowSticker"); onRefresh() }
+                    Toggle("Todo strip (fused card + side panel)", isOn: $showTodo)
+                        .onChange(of: showTodo) { v in defaults.set(v, forKey: "dropShowTodo"); onRefresh() }
+                    Toggle("Subagent strip (groks + bubbles)", isOn: $showSubagents)
+                        .onChange(of: showSubagents) { v in defaults.set(v, forKey: "dropShowSubagents"); onRefresh() }
+                    Picker("Subagents", selection: $subagentPosition) {
+                        Text("Left of bubble").tag("left")
+                        Text("Right of bubble").tag("right")
+                    }
+                    .onChange(of: subagentPosition) { v in
+                        defaults.set(v, forKey: "subagentPosition")
+                        onRefresh()
+                    }
+                    .disabled(!showSubagents)
+                    Picker("Team tasks", selection: $teamTasksPosition) {
+                        Text("Above RunPopup").tag("above")
+                        Text("Right side bar").tag("side")
+                    }
+                    .onChange(of: teamTasksPosition) { v in
+                        defaults.set(v, forKey: "teamTasksPosition")
+                        onRefresh()
+                    }
+                    .disabled(!showSubagents)
+                }
+                .padding(6)
+            } label: {
+                Text("Drop panels").font(.caption).foregroundColor(.secondary)
+            }
+
+            GroupBox {
+                VStack(alignment: .leading, spacing: 8) {
                     Toggle("Enable drop livestream on agent start", isOn: $runPopupEnabled)
                         .onChange(of: runPopupEnabled) { enabled in
                             if enabled {
@@ -188,22 +261,6 @@ struct TopbarSettingsView: View {
                     }
                     .onChange(of: dropIconPosition) { v in
                         defaults.set(v, forKey: "dropIconPosition")
-                        onRefresh()
-                    }
-                    Picker("Subagents", selection: $subagentPosition) {
-                        Text("Left of bubble").tag("left")
-                        Text("Right of bubble").tag("right")
-                    }
-                    .onChange(of: subagentPosition) { v in
-                        defaults.set(v, forKey: "subagentPosition")
-                        onRefresh()
-                    }
-                    Picker("Team tasks", selection: $teamTasksPosition) {
-                        Text("Above RunPopup").tag("above")
-                        Text("Right side bar").tag("side")
-                    }
-                    .onChange(of: teamTasksPosition) { v in
-                        defaults.set(v, forKey: "teamTasksPosition")
                         onRefresh()
                     }
                     Toggle("Enable draggable Drops", isOn: $dropDraggableEnabled)
@@ -283,6 +340,32 @@ struct TopbarSettingsView: View {
         .frame(width: 430)
         .frame(maxHeight: 600)
         .onReceive(previewTimer) { _ in previewPhase += 0.13 }
+    }
+
+    private var profileCaption: String {
+        switch profile {
+        case "calm": return "Calm — drops stay, stats header off. For following runs without the numbers."
+        case "minimal": return "Minimal — no drops, dots + LogViewer only. For non-dev daily use."
+        default: return "Developer — full livestream: stats, todos, subagents. For active building."
+        }
+    }
+    private func applyProfile(_ v: String) {
+        defaults.set(v, forKey: "eliaProfile")
+        if v == "developer" {
+            runPopupEnabled = true; if runPopupDuration == 0 { runPopupDuration = 10; defaults.set(10, forKey: "runPopupDuration") }
+            showSticker = true; showTodo = true; showSubagents = true
+        } else if v == "calm" {
+            runPopupEnabled = true; if runPopupDuration == 0 { runPopupDuration = 10; defaults.set(10, forKey: "runPopupDuration") }
+            showSticker = false; showTodo = true; showSubagents = true
+        } else {
+            runPopupEnabled = false; runPopupDuration = 0; defaults.set(0, forKey: "runPopupDuration")
+            showSticker = false; showTodo = false; showSubagents = false
+        }
+        defaults.set(showSticker, forKey: "dropShowSticker")
+        defaults.set(showTodo, forKey: "dropShowTodo")
+        defaults.set(showSubagents, forKey: "dropShowSubagents")
+        NotificationCenter.default.post(name: .eliaRunPopupEnabledChanged, object: nil)
+        onRefresh()
     }
 
     // MARK: - Live menu bar preview

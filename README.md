@@ -6,7 +6,7 @@
 <!-- Tagline -->
 <p align="center">
   <strong>Native macOS menu bar command center for the Elia agent ecosystem.</strong><br>
-  Live subworker status, real-time logs, one-click triggers — plus full Colima instance control.
+  Live subworker status, Drop livestreams, subagent matrix, todo tracking — plus full Colima instance control.
 </p>
 
 <!-- Badges -->
@@ -36,16 +36,22 @@ and turns every subworker into a live, actionable dashboard row.
 - 🟢 **Live agent states** pushed over WebSocket — running, idle, disabled, error, done
 - 📍 **Per-agent menu bar icons** — each running subworker gets its own top-bar dot with a
   monogram, colored by state (green = healthy, red = error)
-- 💬 **Run popup animation** — when an agent starts, its photo drops from the menu bar
-  icon with a live chat bubble streaming the run output — visible even over fullscreen
-  video, auto-retracts, click to dismiss
+- 💬 **Drop livestreams** — when an agent starts, its photo drops from the menu bar
+  with a live chat bubble streaming the run output (terminal/tool/skill/todo banners) —
+  visible even over fullscreen video, draggable anywhere, auto-retracts, click to dismiss
+- 🧬 **Subagent matrix** — background agents, team members and delegated tasks surface as
+  live Grok pills in a side strip (left/right) with per-team grouping, kind badges and
+  click-to-expand full livestream bubbles
+- ✅ **Todo tracking** — fused todo card + hover side panel with live progress, one line per task
 - 🖱️ **Click-to-view LogViewer** — click an agent photo to open the full session browser
-  (sessions, messages, tool calls, live stream), always clamped inside the screen
+  (sessions, messages, reasoning, tool calls, live stream), always clamped inside the screen
+- 🎭 **Profiles** — Developer (full livestream), Calm (essentials), Minimal (dots + LogViewer)
+  one-tap setups for dev and non-dev use
 - ⚡ **Manual Run Subworker** — trigger any subworker on demand from a dropdown
 - 🔁 **Enable / Disable, next run, schedule** — per-agent submenu with everything you need
-- ⚙️ **Topbar Settings** — agent photos side, live padding, run animation duration + test
-  trigger — zero permissions required
-- ❤️ **Server health** — connection state, PID, restart count, reconnect button
+- ⚙️ **Topbar Settings** — profiles, Drop panels, menu bar layout with live preview,
+  run animation, viewer choice — zero permissions required
+- ❤️ **Server health** — connection state, PID, restart count, reconnect button, one-click RAM cleanup
 - ⏱️ **Loading + error states everywhere** — every server-loaded menu shows a spinner
   while fetching, then data — or the full error message if it fails
 
@@ -63,9 +69,14 @@ open a shell, inspect resources, delete, auto-refresh and launch-at-login.
 | **WebSocket live updates** | Real-time status pushed from the Elia FastAPI server (`ws://localhost:5656/ws`) |
 | **Active Agents list** | Every subworker with live state: `⚡ Running`, `⏸️ Idle`, `⛔ Disabled`, `💥 Error`, `✅ Done` |
 | **Per-agent top bar icons** | Running agents each get a colored status dot with their monogram in the menu bar |
-| **Run popup animation** | Agent photo drops from the icon + live output bubble when a run starts — visible over fullscreen video, auto-retracts (configurable), click to dismiss |
+| **Run popup animation** | Agent photo drops from the icon + live output bubble when a run starts — visible over fullscreen video, draggable (stays where dropped), auto-retracts (configurable), click to dismiss |
+| **Drop livestream** | Full renderer mirroring LogViewer: terminal / skill / todo / edit / write banners, coalesced reasoning, traffic `↓/↑`, tool+message counters, session switcher |
+| **Subagent matrix** | `call_omo` (bg) / `team` / `task` pills with static-square Grok animation while working, `✅` when done (result-collected detection), per-team columns, expandable bubbles |
+| **Todo strip** | Fused todo card in-bubble + hover side panel with `done/total`, one row per task, colored status dots |
 | **LogViewer** | Full session browser per agent: sessions list, messages, reasoning, tool-call banners, live stream — always clamped inside the screen |
-| **Topbar Settings panel** | Agent photos side (left/right of banner), live padding slider, run animation duration + test trigger — no permissions needed |
+| **Profiles** | Developer / Calm / Minimal one-tap setups — full livestream for builders, essentials for followers, dots-only for non-devs |
+| **Drop panels settings** | Show/hide stats header, todo strip, subagent strip; subagents left/right; team tasks above/side — all live, no restart |
+| **Topbar Settings panel** | Version badge, logo, GitHub link, agent photos side (left/right of banner), live padding slider, run animation duration + test trigger — no permissions needed |
 | **Manual Run Subworker** | Trigger any subworker from a dropdown — no terminal needed |
 | **Per-agent submenu** | Status, next run, schedule, last run, view logs, trigger now, enable / disable |
 | **Server health section** | Connection state, running/total counts, server state + PID + restarts, reconnect |
@@ -191,11 +202,35 @@ Running subworkers appear as individual dots in the menu bar:
 | Setting | How | Default |
 |---------|-----|---------|
 | Server URL | Menu → **Change Server URL…** | `http://localhost:5656` |
+| Profile | Topbar Settings → **Profile** | Developer |
+| Stats header / Todo / Subagents | Topbar Settings → **Drop panels** | all on |
+| Subagents side | Topbar Settings → **Drop panels → Subagents** | Right of bubble |
+| Team tasks | Topbar Settings → **Drop panels → Team tasks** | Right side bar |
 | Agent photos side | Topbar Settings → **Agent photos** | Left of banner |
 | Icon padding | Topbar Settings → **Left / Right padding** (live preview) | 3 pt |
+| Primary style when running | Topbar Settings → **Primary when running** | Default (banner + count) |
+| Viewer on click | Topbar Settings → **Viewer & icons** | Log Viewer (full) |
+| Draggable Drops | Topbar Settings → **Run animation** | off |
 | Run popup duration | Topbar Settings → **Run animation** (0 = off) | 10 s |
 | Refresh interval | Menu → **Refresh Interval** (Colima section) | 5 s |
 | Launch at Login | Menu → **Launch at Login** | off |
+
+### EliaTopBar vs [Open Island](https://github.com/Octane0411/open-vibe-island)
+
+[Open Island](https://github.com/Octane0411/open-vibe-island) (and Vibe Island) monitor
+**local** coding sessions — Claude Code, Codex, Cursor, … running in your own terminals.
+EliaTopBar is the same idea pointed at a different target: a **dedicated OpenCode server**
+([EliaAgent](https://github.com/vakandi/EliaAgent)) running **autonomous scheduled subworkers**.
+
+| | Open Island | EliaTopBar 2.0 |
+|---|---|---|
+| Watches | Local CLI sessions on your Mac | Server subworkers (scheduled + triggered) |
+| Connection | Local hooks / JSONL polling | WebSocket + REST to EliaAgent (`:5656`) |
+| Subagents / teams | — | Live matrix: bg agents, team members, delegated tasks |
+| Todos | — | Fused card + side panel, live progress |
+| Trigger / schedule agents | — | Manual run, enable/disable, schedules, server cleanup |
+| Profiles | — | Developer / Calm / Minimal |
+| Containers | — | Full Colima management |
 
 ---
 
