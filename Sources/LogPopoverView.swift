@@ -126,6 +126,7 @@ struct LogPopoverView: View {
     @State private var hasMoreMessages = true
     @State private var isLoadingMoreMessages = false
     @State private var continuingIds: Set<String> = []
+    @ObservedObject private var livestream = LivestreamStore.shared
 
     private var displayItems: [DisplayItem] {
         var items: [DisplayItem] = messages.map { .message($0) }
@@ -177,6 +178,10 @@ struct LogPopoverView: View {
             stopObservingRunBanners()
             stopObservingLiveLifecycle()
             stopLiveMessagesPolling()
+        }
+        .onReceive(livestream.$todos) { map in
+            let todos = map[subworkerName] ?? []
+            verticalTodos = todos.map { TodoItem(content: $0.content, status: $0.status, priority: $0.priority) }
         }
     }
 
@@ -762,7 +767,7 @@ struct LogPopoverView: View {
 
     @ViewBuilder
     private var liveStreamPanel: some View {
-        let entries = liveEntries[subworkerName] ?? []
+        let entries = livestream.stream(for: subworkerName)
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("LIVE")
@@ -772,7 +777,7 @@ struct LogPopoverView: View {
                     .padding(.vertical, 2)
                     .background(Color.orange)
                     .cornerRadius(4)
-                Text(liveAgent ?? subworkerName)
+                Text(subworkerName)
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Spacer()
@@ -780,9 +785,9 @@ struct LogPopoverView: View {
                     .fill(Color.orange)
                     .frame(width: 6, height: 6)
             }
-            ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+            ForEach(entries) { entry in
                 switch entry {
-                case .liveReasoning(let text):
+                case .reasoning(_, let text):
                     VStack(alignment: .leading, spacing: 2) {
                         Text("THINKING")
                             .font(.system(size: 8, weight: .semibold, design: .monospaced))
@@ -796,24 +801,24 @@ struct LogPopoverView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                case .liveText(let text):
-                    MarkdownView(text: streamingSafeMarkdown(text), baseColor: .primary)
+                case .text(_, let text):
+                    MarkdownView(text: LivestreamParsing.streamingSafeMarkdown(text), baseColor: .primary)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
-                case .liveTool(let name, let input, let output):
+                case .tool(_, let name, let input, let output):
                     let lname = name.lowercased()
-                    if lname == "todowrite", let todos = extractTodosForLive(input: input, output: output, delta: input ?? ""), !todos.isEmpty {
-                        todoWriteBanner(todos: todos)
-                    } else if lname == "edit", let input, let diff = parseEditLivePayload(input, output: output) {
+                    if lname == "todowrite", let todos = LivestreamParsing.extractTodos(input: input, output: output, delta: input ?? ""), !todos.isEmpty {
+                        todoWriteBanner(todos: todos.map{ TodoItem(content:$0.content, status:$0.status, priority:$0.priority) })
+                    } else if lname == "edit", let input, let diff = LivestreamParsing.parseEdit(input) {
                         editDiffBanner(filePath: diff.path, oldString: diff.old, newString: diff.new)
-                    } else if lname == "write", let input, let wp = parseWriteLivePayload(input) {
+                    } else if lname == "write", let input, let wp = LivestreamParsing.parseWrite(input) {
                         writeFileBanner(filePath: wp.path, contentPreview: wp.preview, output: output)
                     } else {
                         toolBanner(
-                            icon: toolIcon(name),
-                            title: toolDisplayName(name),
-                            color: toolColor(name),
-                            content: formatToolContent(name: name, input: input, output: output)
+                            icon: LivestreamParsing.toolIcon(name),
+                            title: LivestreamParsing.toolDisplayName(name),
+                            color: LivestreamParsing.toolColor(name),
+                            content: LivestreamParsing.formatToolContent(name: name, input: input, output: output)
                         )
                     }
                 }
@@ -1410,16 +1415,15 @@ struct LogPopoverView: View {
     @State private var runLogObserver: NSObjectProtocol?
 
     private func hasLiveContent(for name: String) -> Bool {
-        guard let entries = liveEntries[name] else { return false }
-        return !entries.isEmpty
+        !livestream.stream(for: name).isEmpty
     }
 
     private func liveCoalescedText(for name: String) -> String {
-        (liveEntries[name] ?? []).compactMap { if case .liveText(let t) = $0 { return t } else { return nil } }.joined()
+        livestream.stream(for: name).compactMap { if case .text(_, let t) = $0 { return t } else if case .reasoning(_, let t) = $0 { return t } else { return nil } }.joined()
     }
 
     private func liveCoalescedReasoning(for name: String) -> String {
-        (liveEntries[name] ?? []).compactMap { if case .liveReasoning(let t) = $0 { return t } else { return nil } }.joined()
+        livestream.stream(for: name).compactMap { if case .reasoning(_, let t) = $0 { return t } else { return nil } }.joined()
     }
 
     private func appendLiveDelta(for name: String, field: String, delta: String) {
@@ -1655,6 +1659,12 @@ struct LogPopoverView: View {
                         filtered.append(entry)
                     }
                 }
+                if rawMessages.isEmpty && !messages.isEmpty {
+                    hasMoreMessages = false
+                    isLoadingMoreMessages = false
+                    return
+                }
+                self.livestream.mergeHistory(agent: self.subworkerName, sessionId: sessionId, rawMessages: rawMessages)
                 let allParsed = filtered
                 messages = allParsed.count > maxMessages ? Array(allParsed.suffix(maxMessages)) : allParsed
                 var merged = derivedBanners

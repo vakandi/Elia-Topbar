@@ -325,10 +325,12 @@ final class SubworkerManager: ObservableObject {
             if let name = json["name"] as? String,
                let delta = json["text"] as? String {
                 lastActivity[name] = Date()
+                let field = json["field"] as? String ?? "text"
+                Task { @MainActor in LivestreamStore.shared.appendDelta(agent: name, field: field, delta: delta) }
                 NotificationCenter.default.post(
                     name: SubworkerManager.runLogNotification,
                     object: nil,
-                    userInfo: ["name": name, "text": delta, "field": json["field"] as? String ?? "text"]
+                    userInfo: ["name": name, "text": delta, "field": field]
                 )
             }
         case "run_banner":

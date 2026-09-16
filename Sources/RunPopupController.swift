@@ -58,7 +58,7 @@ import SwiftUI
     private func makePanel(hiddenFrame: NSRect, agentName: String) -> NSPanel {
         let p = HoverPanel(contentRect: hiddenFrame, styleMask: [.borderless,.nonactivatingPanel], backing: .buffered, defer: false, agentName: agentName, owner: self)
         p.level = .statusBar; p.collectionBehavior=[.canJoinAllSpaces,.fullScreenAuxiliary,.ignoresCycle]
-        p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false; p.isMovableByWindowBackground = false; p.worksWhenModal = true
+        p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false; p.isMovableByWindowBackground = canDrag(for: agentName); p.isMovable = true; p.worksWhenModal = true
         return p
     }
     func retract(for agentName: String) {
@@ -79,6 +79,24 @@ import SwiftUI
          if hovering { retractTimers[agentName]?.invalidate(); retractTimers[agentName]=nil }
          else if !noAutoClose.contains(agentName) { scheduleRetract(for: agentName, after:1.5) }
      }
+    var isDraggableEnabled: Bool { UserDefaults.standard.bool(forKey:"dropDraggableEnabled") }
+    func isLocked(for name: String) -> Bool { (UserDefaults.standard.dictionary(forKey:"dropLockedStates") as? [String:Bool])?[name] ?? false }
+    func setLocked(_ locked: Bool, for name: String) { var d=(UserDefaults.standard.dictionary(forKey:"dropLockedStates") as? [String:Bool]) ?? [:]; d[name]=locked; UserDefaults.standard.set(d, forKey:"dropLockedStates"); panels[name]?.isMovableByWindowBackground = canDrag(for: name) }
+    func canDrag(for name: String) -> Bool { isDraggableEnabled && !isLocked(for: name) }
+    func panelOrigin(for name: String) -> CGPoint? { panels[name]?.frame.origin }
+    func setPanelOrigin(_ origin: CGPoint, for name: String) { guard let p=panels[name] else { return }; var f=p.frame; f.origin=origin; p.setFrame(f, display:true) }
+    func refreshAllDraggable() { for (name,p) in panels { p.isMovableByWindowBackground = canDrag(for: name) } }
+    func closeAll() {
+        let count = panels.count
+        AppLog.d("closeAll Drops count=\(count)")
+        for (name,p) in panels { p.orderOut(nil) }
+        retractTimers.values.forEach{ $0.invalidate() }
+        retractTimers.removeAll()
+        panels.removeAll()
+        hoverStates.removeAll()
+        durations.removeAll()
+        noAutoClose.removeAll()
+    }
 }
 private class HoverPanel: NSPanel {
     let agentName: String; weak var owner: RunPopupController?
@@ -86,6 +104,18 @@ private class HoverPanel: NSPanel {
     override func mouseEntered(with event: NSEvent){ owner?.setHover(true, for:agentName) }
     override func mouseExited(with event: NSEvent){ owner?.setHover(false, for:agentName) }
     override var canBecomeKey: Bool{ false }
+    override var canBecomeMain: Bool { false }
+    override func mouseDown(with event: NSEvent) {
+        if let o=owner, o.canDrag(for: agentName) {
+            performDrag(with: event)
+            return
+        }
+        super.mouseDown(with: event)
+    }
+    override var isMovableByWindowBackground: Bool {
+        get { super.isMovableByWindowBackground }
+        set { super.isMovableByWindowBackground = newValue }
+    }
 }
 struct PulseGlow: ViewModifier { @State private var pulsing=false; func body(content:Content)->some View{ content.scaleEffect(pulsing ? 1.18:1.0).opacity(pulsing ? 0.3:0.9).animation(.easeInOut(duration:0.9).repeatForever(autoreverses:true),value:pulsing).onAppear{pulsing=true} } }
 
@@ -103,6 +133,41 @@ struct RunPopupView: View {
     @State private var sessions: [RunSessionInfo] = []
     @State private var sessionsLoading = false
     @State private var showSessions = false
+    @State private var isLockedCached: Bool = false
+    @State private var draggableEnabledState: Bool = UserDefaults.standard.bool(forKey:"dropDraggableEnabled")
+    @State private var draggableObserver: NSObjectProtocol?
+    @State private var isPinnedToBottom: Bool = true
+    @State private var pendingBubbleScroll: DispatchWorkItem? = nil
+    @State private var pendingPinnedFalse: DispatchWorkItem? = nil
+    private static let bubbleBottomId = "run-bubble-bottom"
+    private static let bubbleScrollSpace = "run-bubble-scroll"
+    @ObservedObject private var livestream = LivestreamStore.shared
+    @State private var agentRunning: Bool? = nil
+    @State private var agentLastError: String? = nil
+    @State private var agentEnabled: Bool? = nil
+    @State private var trafficInWindow: Int = 0
+    @State private var trafficOutWindow: Int = 0
+    @State private var trafficInRate: Double = 0
+    @State private var trafficOutRate: Double = 0
+    @State private var trafficObserver: NSObjectProtocol?
+    @State private var trafficTimer: Timer? = nil
+    @State private var showStickerPinned: Bool = false
+    @State private var subagentKeys: [LivestreamStore.SubagentKey] = []
+    @State private var subagentPollTimers: [LivestreamStore.SubagentKey: Timer] = [:]
+    @State private var isHoveringLive: Bool = false
+    @State private var pendingHoverOff: DispatchWorkItem? = nil
+    private var showSticker: Bool { showStickerPinned || isHoveringLive }
+    private func setHoverLive(_ hovering: Bool){
+        pendingHoverOff?.cancel()
+        if hovering {
+            pendingHoverOff=nil
+            if !isHoveringLive { withAnimation(.easeInOut(duration:0.15)){ isHoveringLive=true } }
+        } else {
+            let w=DispatchWorkItem{ withAnimation(.easeInOut(duration:0.15)){ isHoveringLive=false } }
+            pendingHoverOff=w
+            DispatchQueue.main.asyncAfter(deadline:.now()+0.12, execute:w)
+        }
+    }
 
     enum RunLiveEntry: Equatable {
         case text(String)
@@ -112,81 +177,255 @@ struct RunPopupView: View {
     struct RunTodoItem: Equatable { let content:String; let status:String; let priority:String }
     struct RunSessionInfo: Codable, Identifiable { let id: String; let title: String? }
 
+    private var dropPosition: String { UserDefaults.standard.string(forKey:"dropIconPosition") ?? "above" }
+    private var draggableEnabled: Bool { draggableEnabledState }
     var body: some View {
-        VStack(spacing:6){
-            photoBadge
-            HStack(alignment:.top, spacing:0){
-                if !verticalTodos.isEmpty {
-                    popupVerticalTodoStripCollapsed
-                        .frame(width: 28, height: 175)
-                        .background(RunRoundedCorner(radius:14, corners:[.topLeft,.bottomLeft]).fill(.regularMaterial))
-                        .overlay(RunRoundedCorner(radius:14, corners:[.topLeft,.bottomLeft]).stroke(Color.primary.opacity(0.12)))
-                        .onHover{ h in withAnimation(.easeInOut(duration:0.18)){ if h { isHoveringTodoModule=true } } }
-                }
-                if showSessions { popupSessionSidebar }
-                bubbleAttached
+        Group {
+            switch dropPosition {
+            case "left":
+                VStack(spacing:6){
+                    if showSticker { stickerHeader.onHover{ setHoverLive($0) }.transition(.opacity.combined(with:.move(edge:.top))) }
+                    HStack(alignment:.center, spacing:8){
+                        photoBadge
+                        mainCard
+                    }
+                    subagentStack
+                }.padding(.top,4)
+            case "right":
+                VStack(spacing:6){
+                    if showSticker { stickerHeader.onHover{ setHoverLive($0) }.transition(.opacity.combined(with:.move(edge:.top))) }
+                    HStack(alignment:.center, spacing:8){
+                        mainCard
+                        photoBadge
+                    }
+                    subagentStack
+                }.padding(.top,4)
+            case "inlineTiny":
+                VStack(spacing:6){ if showSticker { stickerHeader.onHover{ setHoverLive($0) }.transition(.opacity.combined(with:.move(edge:.top))) }; mainCard; subagentStack }.padding(.top,4)
+            default:
+                VStack(spacing:6){
+                    photoBadge
+                    if showSticker { stickerHeader.onHover{ setHoverLive($0) }.transition(.opacity.combined(with:.move(edge:.top))) }
+                    mainCard
+                    subagentStack
+                }.padding(.top,4)
             }
-            .overlay(alignment:.leading){
-                if !verticalTodos.isEmpty && isHoveringTodoModule {
-                    popupVerticalTodoStripExpanded
-                        .frame(width: 180, height: 175)
-                        .background(RunRoundedCorner(radius:14, corners:[.topLeft,.bottomLeft]).fill(.regularMaterial))
-                        .overlay(RunRoundedCorner(radius:14, corners:[.topLeft,.bottomLeft]).stroke(Color.primary.opacity(0.12)))
-                        .shadow(color:.black.opacity(0.22), radius:10, x:3, y:5)
-                        .onHover{ h in withAnimation(.easeInOut(duration:0.18)){ isHoveringTodoModule=h } }
-                        .transition(.opacity.combined(with: .move(edge:.leading)))
-                        .zIndex(20)
+        }
+        .frame(width: showSessions ? 400 : (effectiveTodos.isEmpty ? 264 : 298))
+        .animation(.easeInOut(duration:0.22), value: showSticker)
+        .animation(.easeInOut(duration:0.2), value: effectiveTodos.isEmpty)
+        .onAppear{ showStickerPinned=false; isHoveringLive=false; isLockedCached=RunPopupController.shared.isLocked(for: agentName); draggableEnabledState=UserDefaults.standard.bool(forKey:"dropDraggableEnabled"); observeDraggable(); observeTraffic(); fetchAgentStatus(); fetchRunHistory(); observeLogs(); startTick() }.onDisappear{ if let o=observer{NotificationCenter.default.removeObserver(o)}; if let d=draggableObserver{NotificationCenter.default.removeObserver(d)}; if let t=trafficObserver{NotificationCenter.default.removeObserver(t)}; trafficTimer?.invalidate(); stopAllSubagentPolling() }.onTapGesture{onTap()}.onHover{ h in RunPopupController.shared.setHover(h, for:agentName) }
+        .onReceive(livestream.throttled){ agent in if agent==agentName { refreshSubagentsFromLive() } }
+        .onReceive(livestream.subagentThrottled){ key in if key.parentAgent==agentName { /* subagent updated, no action needed, view auto-refreshes */ } }
+    }
+    private var stickerHeader: some View {
+        let tools = storeEntries.filter{ if case .tool = $0 { return true } else { return false } }.count
+        let msgs = storeEntries.filter{ if case .text = $0 { return true } else if case .reasoning = $0 { return true } else { return false } }.count
+        return HStack(spacing:6){
+            HStack(spacing:4){
+                Image(systemName:"antenna.radiowaves.left.and.right").font(.system(size:7, weight:.bold)).foregroundColor(.secondary)
+                HStack(spacing:2){
+                    Text("↓").font(.system(size:7, weight:.bold)).foregroundColor(.blue)
+                    Text(formatRate(trafficInRate)).font(.system(size:7, weight:.semibold, design:.monospaced)).foregroundColor(.blue)
+                }
+                HStack(spacing:2){
+                    Text("↑").font(.system(size:7, weight:.bold)).foregroundColor(.green)
+                    Text(formatRate(trafficOutRate)).font(.system(size:7, weight:.semibold, design:.monospaced)).foregroundColor(.green)
+                }
+            }.padding(.horizontal,6).padding(.vertical,3).background(Color.primary.opacity(0.07)).cornerRadius(6)
+            Spacer()
+            HStack(spacing:3){ Image(systemName:"wrench.and.screwdriver").font(.system(size:7)); Text("\(tools) tools").font(.system(size:7, weight:.medium)).foregroundColor(.purple) }.padding(.horizontal,5).padding(.vertical,3).background(Color.purple.opacity(0.10)).cornerRadius(6)
+            HStack(spacing:3){ Image(systemName:"bubble.left").font(.system(size:7)); Text("\(msgs) msgs").font(.system(size:7, weight:.medium)).foregroundColor(.blue) }.padding(.horizontal,5).padding(.vertical,3).background(Color.blue.opacity(0.10)).cornerRadius(6)
+        }.padding(.horizontal,6).padding(.vertical,4).frame(maxWidth:.infinity).background(RoundedRectangle(cornerRadius:8).fill(.regularMaterial)).overlay(RoundedRectangle(cornerRadius:8).stroke(Color.primary.opacity(0.12)))
+    }
+    private var subagentStack: some View {
+        Group {
+            if !subagentKeys.isEmpty {
+                VStack(alignment:.leading, spacing:6){
+                    ForEach(subagentKeys, id:\.self){ key in
+                        SubagentBubbleView(key: key, baseURL: baseURL)
+                    }
                 }
             }
         }
-        .padding(.top,4)
-        .frame(width: showSessions ? 400 : (verticalTodos.isEmpty ? 264 : 298))
-        .animation(.easeInOut(duration:0.2), value: verticalTodos.isEmpty)
-        .onAppear{ fetchRunHistory(); observeLogs(); startTick() }.onDisappear{ if let o=observer{NotificationCenter.default.removeObserver(o)} }.onTapGesture{onTap()}.onHover{ h in RunPopupController.shared.setHover(h, for:agentName) }
+    }
+    private var mainCard: some View {
+        let cardH: CGFloat = 175
+        return HStack(alignment:.top, spacing:0){
+            if !effectiveTodos.isEmpty {
+                popupVerticalTodoStripCollapsed
+                    .frame(width: 28, height: cardH)
+                    .background(RunRoundedCorner(radius:14, corners:[.topLeft,.bottomLeft]).fill(.regularMaterial))
+                    .overlay(RunRoundedCorner(radius:14, corners:[.topLeft,.bottomLeft]).stroke(Color.primary.opacity(0.12)))
+                    .onHover{ h in withAnimation(.easeInOut(duration:0.18)){ if h { isHoveringTodoModule=true } } }
+            }
+            if showSessions { popupSessionSidebar }
+            bubbleAttached
+        }
+        .overlay(alignment:.leading){
+            if !effectiveTodos.isEmpty && isHoveringTodoModule {
+                popupVerticalTodoStripExpanded
+                    .frame(width: 180, height: cardH)
+                    .background(RunRoundedCorner(radius:14, corners:[.topLeft,.bottomLeft]).fill(.regularMaterial))
+                    .overlay(RunRoundedCorner(radius:14, corners:[.topLeft,.bottomLeft]).stroke(Color.primary.opacity(0.12)))
+                    .shadow(color:.black.opacity(0.22), radius:10, x:3, y:5)
+                    .onHover{ h in withAnimation(.easeInOut(duration:0.18)){ isHoveringTodoModule=h } }
+                    .transition(.opacity.combined(with: .move(edge:.leading)))
+                    .zIndex(20)
+            }
+        }
     }
     private var bubbleAttached: some View {
-        let hasTodo = !verticalTodos.isEmpty
+        let hasTodo = !effectiveTodos.isEmpty
         let shape: AnyShape = hasTodo ? AnyShape(RunRoundedCorner(radius:14, corners:[.topRight,.bottomRight])) : AnyShape(RoundedRectangle(cornerRadius:14))
         return bubbleContent.background(shape.fill(.regularMaterial)).overlay(shape.stroke(Color.primary.opacity(0.12)))
+    }
+    private var inlineTinyPhoto: some View {
+        Group {
+            if let photo=ProfilePhotos.shared.circularPhoto(for:agentName,size:16){ Image(nsImage:photo).resizable().frame(width:16,height:16).clipShape(Circle()).overlay(Circle().stroke(Color.primary.opacity(0.12),lineWidth:0.5)) } else { ZStack{ Circle().fill(Color.accentColor.opacity(0.22)); Text(agentMonogram).font(.system(size:7,weight:.bold)).foregroundColor(.accentColor) }.frame(width:16,height:16) }
+        }
+    }
+    private struct RunBubbleBottomKey: PreferenceKey { static var defaultValue: CGFloat=0; static func reduce(value:inout CGFloat,nextValue:()->CGFloat){ value=nextValue() } }
+    private func requestBubbleScroll(proxy: ScrollViewProxy, force: Bool=false){
+        guard force || isPinnedToBottom else { return }
+        pendingBubbleScroll?.cancel()
+        let w=DispatchWorkItem{ withAnimation(.easeOut(duration:0.15)){ proxy.scrollTo(Self.bubbleBottomId, anchor:.bottom) } }
+        pendingBubbleScroll=w
+        DispatchQueue.main.asyncAfter(deadline:.now()+0.05, execute:w)
+    }
+    private var storeEntries: [RunLiveEntry] {
+        livestream.stream(for: agentName).map { e in
+            switch e {
+            case .reasoning(_, let t): return .reasoning(t)
+            case .text(_, let t): return .text(t)
+            case .tool(_, let n, let i, let o): return .tool(name: n, input: i, output: o)
+            }
+        }
+    }
+    private var effectiveTodos: [RunTodoItem] {
+        livestream.todo(for: agentName).map { RunTodoItem(content: $0.content, status: $0.status, priority: $0.priority) }
+    }
+    private var liveStatus: (text:String, color:Color, dot:Color?) {
+        if let running = agentRunning {
+            if running { return ("live", .orange, .orange) }
+            if let err=agentLastError, !err.isEmpty { return ("error", .red, .red) }
+            if let en=agentEnabled, !en { return ("disabled", .secondary, nil) }
+            return ("done", .secondary, nil)
+        }
+        return (liveRunning ? "live" : "done", liveRunning ? .orange : .secondary, liveRunning ? .orange : nil)
+    }
+    private func fetchAgentStatus(){
+        guard let url=URL(string:"\(baseURL)/status/\(agentName)") else { return }
+        URLSession.shared.dataTask(with: EliaAuth.authorize(url)){ data,_,_ in
+            guard let data=data, let json=try? JSONSerialization.jsonObject(with:data) as? [String:Any] else { return }
+            DispatchQueue.main.async{
+                agentRunning = json["running"] as? Bool
+                agentLastError = json["last_error"] as? String
+                agentEnabled = json["enabled"] as? Bool
+            }
+        }.resume()
     }
     private var bubbleContent: some View {
         VStack(alignment:.leading,spacing:4){
             HStack(spacing:6){
+                if dropPosition=="inlineTiny" { inlineTinyPhoto }
                 Circle().fill(Color.green).frame(width:6,height:6)
                 Text("\(agentName) running").font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
                 Spacer()
+                if draggableEnabled {
+                    Button(action: { let newLock = !isLockedCached; isLockedCached=newLock; RunPopupController.shared.setLocked(newLock, for: agentName) }){
+                        Image(systemName: isLockedCached ? "lock.fill" : "lock.open.fill").font(.system(size:8,weight:.semibold)).foregroundColor(isLockedCached ? .red.opacity(0.8) : .secondary).frame(width:16,height:16).background(Color.secondary.opacity(isLockedCached ? 0.18 : 0.12)).clipShape(Circle())
+                    }.buttonStyle(.plain).help(isLockedCached ? "Unlock dragging" : "Lock position")
+                }
                 Button(action: { showSessions.toggle(); if showSessions && sessions.isEmpty { fetchSessionSessions() } }) { Image(systemName:"list.bullet").font(.system(size:9,weight:.semibold)).foregroundColor(.secondary).frame(width:16,height:16).background(Color.secondary.opacity(0.12)).clipShape(Circle()) }.buttonStyle(.plain).help("Switch session")
-                Text(liveRunning ? "live" : "done").font(.caption2).foregroundColor(liveRunning ? .orange : .secondary)
-                if liveRunning { Circle().fill(Color.orange).frame(width:5,height:5).opacity(0.9) }
+                Button(action: { withAnimation(.easeInOut(duration:0.18)){ showStickerPinned.toggle() } }){
+                    HStack(spacing:3){
+                        Text(liveStatus.text).font(.caption2).foregroundColor(liveStatus.color)
+                        if let dot=liveStatus.dot { Circle().fill(dot).frame(width:5,height:5).opacity(0.9) }
+                        Image(systemName: showSticker ? "chevron.up" : "chevron.down").font(.system(size:6, weight:.bold)).foregroundColor(.secondary.opacity(0.6))
+                    }.padding(.horizontal,5).padding(.vertical,2).background(Color.primary.opacity(showSticker ? 0.12 : 0.06)).cornerRadius(6)
+                }.buttonStyle(.plain).help(showSticker ? "Hide live details" : "Show live details — hover also shows")
+                .onHover{ setHoverLive($0) }
             }
-            ScrollViewReader{ proxy in
-                ScrollView(showsIndicators:false){
-                    LazyVStack(alignment:.leading, spacing:5){
-                        if liveEntries.isEmpty {
-                            HStack(spacing:6){
-                                if liveRunning { ProgressView().controlSize(.mini).scaleEffect(0.7); Text("Waiting for output\(String(repeating:".", count:(liveTick%3)+1))").font(.system(size:9, design:.monospaced)).foregroundColor(.secondary) } else { Text("No output yet").font(.system(size:9, design:.monospaced)).foregroundColor(.secondary) }
-                                Spacer()
-                            }.padding(.vertical,4)
+            GeometryReader{ outer in
+                ScrollViewReader{ proxy in
+                    ScrollView(showsIndicators:false){
+                        VStack(alignment:.leading, spacing:5){
+                            if storeEntries.isEmpty {
+                                HStack(spacing:6){
+                                    if liveRunning { ProgressView().controlSize(.mini).scaleEffect(0.7); Text("Waiting for output\(String(repeating:".", count:(liveTick%3)+1))").font(.system(size:9, design:.monospaced)).foregroundColor(.secondary) } else { Text("No output yet").font(.system(size:9, design:.monospaced)).foregroundColor(.secondary) }
+                                    Spacer()
+                                }.padding(.vertical,4)
+                            } else {
+                                ForEach(Array(storeEntries.enumerated()), id:\.offset){ _, entry in
+                                    popupEntry(entry)
+                                }
+                            }
+                            Color.clear.frame(height:1).id(Self.bubbleBottomId)
+                                .background(GeometryReader{ g in Color.clear.preference(key: RunBubbleBottomKey.self, value: g.frame(in:.named(Self.bubbleScrollSpace)).maxY) })
+                        }.frame(maxWidth:.infinity, alignment:.leading).padding(.bottom, 24)
+                    }
+                    .coordinateSpace(name: Self.bubbleScrollSpace)
+                    .onPreferenceChange(RunBubbleBottomKey.self){ maxY in
+                        let atBottom = maxY <= outer.size.height + 24
+                        if atBottom {
+                            pendingPinnedFalse?.cancel(); pendingPinnedFalse=nil
+                            if !isPinnedToBottom { isPinnedToBottom = true }
                         } else {
-                            ForEach(Array(liveEntries.enumerated()), id:\.offset){ _, entry in
-                                popupEntry(entry)
+                            if isPinnedToBottom {
+                                pendingPinnedFalse?.cancel()
+                                let work = DispatchWorkItem { isPinnedToBottom = false }
+                                pendingPinnedFalse = work
+                                DispatchQueue.main.asyncAfter(deadline: .now()+0.08, execute: work)
                             }
                         }
-                        Color.clear.frame(height:1).id("run-bubble-bottom")
-                    }.frame(maxWidth:.infinity, alignment:.leading)
-                }.frame(height: 145).onChange(of: liveEntries){ _ in withAnimation(.easeOut(duration:0.15)){ proxy.scrollTo("run-bubble-bottom", anchor:.bottom) } }
-            }
+                    }
+                    .onChange(of: storeEntries){ _ in requestBubbleScroll(proxy: proxy) }
+                    .onAppear{
+                        isPinnedToBottom=true
+                        for d in [0.06,0.18,0.35,0.6] as [Double] {
+                            DispatchQueue.main.asyncAfter(deadline:.now()+d){ requestBubbleScroll(proxy: proxy, force:true) }
+                        }
+                    }
+                    .overlay(alignment:.bottom){
+                        if !isPinnedToBottom && !storeEntries.isEmpty {
+                            Button(action: { pendingPinnedFalse?.cancel(); pendingPinnedFalse=nil; isPinnedToBottom=true; requestBubbleScroll(proxy: proxy, force:true) }){
+                                Image(systemName:"arrow.down").font(.system(size:9, weight:.bold)).foregroundColor(.white).frame(width:22,height:22).background(Circle().fill(Color.accentColor)).shadow(color:.black.opacity(0.22), radius:4, x:0,y:2)
+                            }.buttonStyle(.plain).padding(.bottom,6).transition(.scale.combined(with:.opacity))
+                        }
+                    }
+                }
+            }.frame(height: 145)
         }.padding(10).frame(width: showSessions ? 240 : 264, height: 175)
     }
-
+    private func formatRate(_ koPerSec: Double) -> String {
+        if koPerSec >= 1000 { return String(format: "%.2f Mo/s", koPerSec/1000) }
+        return String(format: "%.1f ko/s", koPerSec)
+    }
+    private func observeTraffic(){
+        trafficObserver = NotificationCenter.default.addObserver(forName: SubworkerManager.runLogNotification, object: nil, queue: .main){ note in
+            guard let name = note.userInfo?["name"] as? String, name==agentName, let delta = note.userInfo?["text"] as? String else { return }
+            trafficInWindow += delta.utf8.count
+        }
+        trafficTimer?.invalidate()
+        trafficTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true){ _ in
+            Task{ @MainActor in
+                trafficInRate = Double(trafficInWindow)/1000.0
+                trafficOutRate = Double(trafficOutWindow)/1000.0
+                trafficInWindow = 0; trafficOutWindow = 0
+                if agentRunning == nil { fetchAgentStatus() }
+            }
+        }
+        RunLoop.main.add(trafficTimer!, forMode: .common)
+    }
     private var popupVerticalTodoStripCollapsed: some View {
         VStack(spacing:6){
             Image(systemName:"checklist").font(.system(size:7, weight:.semibold)).foregroundColor(.purple).padding(.top,6)
             Divider().opacity(0.3).padding(.horizontal,4)
-            ForEach(Array(verticalTodos.prefix(10).enumerated()), id:\.offset){ _,t in
+            ForEach(Array(effectiveTodos.prefix(10).enumerated()), id:\.offset){ _,t in
                 ZStack{ Circle().fill(runTodoDotColor(t.status)).frame(width:7,height:7); if t.status=="in_progress"{ Circle().stroke(Color.blue.opacity(0.45),lineWidth:1.2).frame(width:10,height:10) } }.frame(width:10,height:10)
             }
-            if verticalTodos.count>10{ Text("+\(verticalTodos.count-10)").font(.system(size:6)).foregroundColor(.secondary) }
+            if effectiveTodos.count>10{ Text("+\(effectiveTodos.count-10)").font(.system(size:6)).foregroundColor(.secondary) }
             Spacer(minLength:2)
         }.padding(.vertical,6)
     }
@@ -194,16 +433,16 @@ struct RunPopupView: View {
         VStack(spacing:6){
             HStack(spacing:4){
                 Image(systemName:"checklist").font(.system(size:7, weight:.semibold)).foregroundColor(.purple)
-                Text("TODO").font(.system(size:8, weight:.bold, design:.monospaced)).foregroundColor(.purple); Spacer(); Text("\(verticalTodos.filter{$0.status=="completed"}.count)/\(verticalTodos.count)").font(.system(size:7,weight:.medium, design:.monospaced)).foregroundColor(.secondary).padding(.horizontal,4).padding(.vertical,1).background(Color.purple.opacity(0.12)).cornerRadius(3)
+                Text("TODO").font(.system(size:8, weight:.bold, design:.monospaced)).foregroundColor(.purple); Spacer(); Text("\(effectiveTodos.filter{$0.status=="completed"}.count)/\(effectiveTodos.count)").font(.system(size:7,weight:.medium, design:.monospaced)).foregroundColor(.secondary).padding(.horizontal,4).padding(.vertical,1).background(Color.purple.opacity(0.12)).cornerRadius(3)
             }.padding(.horizontal,6).padding(.top,6)
             Divider().opacity(0.3).padding(.horizontal,4)
-            ForEach(Array(verticalTodos.prefix(10).enumerated()), id:\.offset){ _,t in
+            ForEach(Array(effectiveTodos.prefix(10).enumerated()), id:\.offset){ _,t in
                 HStack(spacing:5){
                     ZStack{ Circle().fill(runTodoDotColor(t.status)).frame(width:7,height:7); if t.status=="in_progress"{ Circle().stroke(Color.blue.opacity(0.45),lineWidth:1.2).frame(width:10,height:10) } }.frame(width:10,height:10)
                     Text(t.content).font(.system(size:8)).lineLimit(1).foregroundColor(t.status=="completed" ? .secondary : .primary).truncationMode(.tail)
                 }.padding(.horizontal,6)
             }
-            if verticalTodos.count>10{ Text("+\(verticalTodos.count-10)").font(.system(size:7)).foregroundColor(.secondary) }
+            if effectiveTodos.count>10{ Text("+\(effectiveTodos.count-10)").font(.system(size:7)).foregroundColor(.secondary) }
             Spacer(minLength:2)
         }.padding(.vertical,6)
     }
@@ -383,9 +622,17 @@ struct RunPopupView: View {
     private var agentMonogram: String { let parts=agentName.split(separator:"-").map(String.init); let initials=parts.prefix(2).compactMap{$0.first.map(String.init)}.joined().uppercased(); if initials.count==2{return initials}; let firstWord=parts.first ?? agentName; return String(firstWord.prefix(2)).uppercased() }
     private func fetchSessionSessions() {
         sessionsLoading = true
-        guard let url = URL(string: "\(baseURL)/sessions") else { sessionsLoading = false; return }
-        var request = URLRequest(url: url); request.addValue("Bearer \(EliaAuth.token)", forHTTPHeaderField: "Authorization")
-        URLSession.shared.dataTask(with: request) { data, _, _ in DispatchQueue.main.async { self.sessionsLoading = false; if let data = data, let sessions = try? JSONDecoder().decode([RunSessionInfo].self, from: data) { self.sessions = sessions } } }.resume()
+        guard let url = URL(string: "\(baseURL)/sessions/\(agentName)/list") else { sessionsLoading = false; return }
+        URLSession.shared.dataTask(with: EliaAuth.authorize(url)) { data, _, _ in
+            DispatchQueue.main.async {
+                self.sessionsLoading = false
+                guard let data=data, let json=try? JSONSerialization.jsonObject(with:data) as? [String:Any], let rawSessions=json["sessions"] as? [[String:Any]] else { return }
+                self.sessions = rawSessions.compactMap{ s in
+                    guard let sid=s["session_id"] as? String, !sid.isEmpty else { return nil }
+                    return RunSessionInfo(id: sid, title: s["title"] as? String)
+                }
+            }
+        }.resume()
     }
 
     private func fetchRunHistory(){
@@ -400,68 +647,74 @@ struct RunPopupView: View {
         guard let url = URL(string: "\(baseURL)/sessions/\(agentName)?session_id=\(sessionId)&limit=30") else { return }
         URLSession.shared.dataTask(with: EliaAuth.authorize(url)){ data,_,_ in
             guard let data=data, let json=try? JSONSerialization.jsonObject(with:data) as? [String:Any], let rawMessages=json["messages"] as? [[String:Any]] else { return }
-            DispatchQueue.main.async{
-                var historyEntries:[RunLiveEntry]=[]
-                var latestTodos:[RunTodoItem]?=nil
-                for raw in rawMessages {
-                    guard let parts=raw["parts"] as? [[String:Any]] else { continue }
-                    for part in parts {
-                        guard let type=part["type"] as? String else { continue }
-                        switch type {
-                        case "text":
-                            if let t=part["text"] as? String, !t.isEmpty { historyEntries.append(.text(t)) }
-                        case "reasoning":
-                            if let t=part["text"] as? String, !t.isEmpty { historyEntries.append(.reasoning(t)) }
-                        case "tool":
-                            let toolName=part["tool"] as? String ?? "tool"
-                            let inputStr:String? = {
-                                if let s=part["input"] as? String { return s }
-                                if let d=part["input"] as? [String:Any], let jd=try? JSONSerialization.data(withJSONObject:d), let s=String(data:jd,encoding:.utf8){ return s }
-                                if let n=part["input"] as? NSNumber { return n.stringValue }
-                                return nil
-                            }()
-                            let outputStr:String? = {
-                                if let s=part["output"] as? String { return s }
-                                if let n=part["output"] as? NSNumber { return n.stringValue }
-                                if let d=part["output"] as? [String:Any], let jd=try? JSONSerialization.data(withJSONObject:d), let s=String(data:jd,encoding:.utf8){ return s }
-                                if let a=part["output"] as? [Any], let jd=try? JSONSerialization.data(withJSONObject:a), let s=String(data:jd,encoding:.utf8){ return s }
-                                return nil
-                            }()
-                            historyEntries.append(.tool(name: toolName, input: inputStr, output: outputStr))
-                            if toolName.lowercased().contains("todo"){
-                                if let todos=runExtractTodos(input: inputStr, output: outputStr, delta: inputStr ?? ""), !todos.isEmpty { latestTodos=todos }
-                                else if let s=inputStr, let todos=runScanTodosFromString(s), !todos.isEmpty { latestTodos=todos }
-                            }
-                        default: break
-                        }
-                    }
-                }
-                if latestTodos == nil {
-                    for raw in rawMessages.reversed(){
-                        guard let parts=raw["parts"] as? [[String:Any]] else { continue }
-                        for part in parts where (part["tool"] as? String)?.lowercased().contains("todo") == true {
-                            let inputStr:String? = {
-                                if let s=part["input"] as? String { return s }
-                                if let d=part["input"] as? [String:Any], let jd=try? JSONSerialization.data(withJSONObject:d), let s=String(data:jd,encoding:.utf8){ return s }
-                                return nil
-                            }()
-                            let outputStr=part["output"] as? String
-                            if let todos=runExtractTodos(input: inputStr, output: outputStr, delta: inputStr ?? ""), !todos.isEmpty { latestTodos=todos; break }
-                        }
-                        if latestTodos != nil { break }
-                    }
-                }
-                if let todos=latestTodos, !todos.isEmpty { self.verticalTodos=todos }
-                if !historyEntries.isEmpty {
-                    let capped = historyEntries.count > 40 ? Array(historyEntries.suffix(40)) : historyEntries
-                    if self.liveEntries.isEmpty { self.liveEntries=capped } else {
-                        var merged=capped
-                        for e in self.liveEntries where !merged.contains(e) { merged.append(e) }
-                        self.liveEntries=Array(merged.suffix(50))
-                    }
-                }
+            Task { @MainActor in
+                LivestreamStore.shared.mergeHistory(agent: self.agentName, sessionId: sessionId, rawMessages: rawMessages)
+                self.updateSubagents(from: rawMessages)
             }
         }.resume()
+    }
+    private func updateSubagents(from rawMessages: [[String: Any]]){
+        let keys = LivestreamStore.shared.extractSubagents(parentAgent: agentName, rawMessages: rawMessages)
+        for k in keys where !subagentKeys.contains(k) {
+            subagentKeys.append(k)
+            startPollingSubagent(k)
+        }
+        // also check live store entries for newly arrived call_omo_agent deltas not yet in history
+        let liveEntries = LivestreamStore.shared.stream(for: agentName)
+        var liveRaw: [[String: Any]] = []
+        for e in liveEntries {
+            if case .tool(_, let name, let input, let output) = e, name.lowercased()=="call_omo_agent" || name.lowercased()=="task" {
+                var part: [String: Any] = ["type":"tool","tool":name]
+                if let i=input { part["input"]=i }
+                if let o=output { part["output"]=o }
+                liveRaw.append(["parts":[part]])
+            }
+        }
+        if !liveRaw.isEmpty {
+            let liveKeys = LivestreamStore.shared.extractSubagents(parentAgent: agentName, rawMessages: liveRaw)
+            for k in liveKeys where !subagentKeys.contains(k) {
+                subagentKeys.append(k)
+                startPollingSubagent(k)
+            }
+        }
+    }
+    private func refreshSubagentsFromLive(){
+        let liveEntries = LivestreamStore.shared.stream(for: agentName)
+        var liveRaw: [[String: Any]] = []
+        for e in liveEntries {
+            if case .tool(_, let name, let input, let output) = e, name.lowercased()=="call_omo_agent" || name.lowercased()=="task" {
+                var part: [String: Any] = ["type":"tool","tool":name]
+                if let i=input { part["input"]=i }
+                if let o=output { part["output"]=o }
+                liveRaw.append(["parts":[part]])
+            }
+        }
+        if liveRaw.isEmpty { return }
+        let liveKeys = LivestreamStore.shared.extractSubagents(parentAgent: agentName, rawMessages: liveRaw)
+        for k in liveKeys where !subagentKeys.contains(k) {
+            subagentKeys.append(k)
+            startPollingSubagent(k)
+        }
+    }
+    private func startPollingSubagent(_ key: LivestreamStore.SubagentKey){
+        guard subagentPollTimers[key]==nil else { return }
+        let t = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true){ _ in
+            Task{ @MainActor in self.pollSubagent(key) }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        subagentPollTimers[key]=t
+        pollSubagent(key)
+    }
+    private func pollSubagent(_ key: LivestreamStore.SubagentKey){
+        guard let url=URL(string:"\(baseURL)/sessions/\(agentName)?session_id=\(key.sessionId)&limit=30") else { return }
+        URLSession.shared.dataTask(with: EliaAuth.authorize(url)){ data,_,_ in
+            guard let data=data, let json=try? JSONSerialization.jsonObject(with:data) as? [String:Any], let raw=json["messages"] as? [[String:Any]] else { return }
+            Task{ @MainActor in LivestreamStore.shared.mergeSubagentHistory(key: key, rawMessages: raw) }
+        }.resume()
+    }
+    private func stopAllSubagentPolling(){
+        for t in subagentPollTimers.values { t.invalidate() }
+        subagentPollTimers.removeAll()
     }
 
     // MARK: - Live streaming — coalesced entries + vertical todos
@@ -475,7 +728,9 @@ struct RunPopupView: View {
             appendLiveDelta(field: field, delta: delta)
         }
     }
-
+    private func observeDraggable(){
+        draggableObserver=NotificationCenter.default.addObserver(forName:.eliaRunPopupDraggableChanged, object:nil, queue:.main){ _ in self.draggableEnabledState=UserDefaults.standard.bool(forKey:"dropDraggableEnabled") }
+    }
     private func appendLiveDelta(field: String, delta: String){
         if delta.isEmpty { return }
         switch field {
@@ -729,6 +984,103 @@ struct RunPopupView: View {
             else{ out.append(RunDiffRow(kind:.added,text:new[j])); j+=1 }
         }
         return out
+    }
+}
+
+struct SubagentBubbleView: View {
+    let key: LivestreamStore.SubagentKey
+    let baseURL: String
+    @ObservedObject private var store = LivestreamStore.shared
+    @State private var isPinned = true
+    @State private var pending: DispatchWorkItem? = nil
+    @State private var pendingFalse: DispatchWorkItem? = nil
+    private let bottomId = "sub-bubble-bottom"
+    private let space = "sub-bubble-space"
+
+    private struct BottomKey: PreferenceKey { static var defaultValue: CGFloat=0; static func reduce(value:inout CGFloat,nextValue:()->CGFloat){ value=nextValue() } }
+
+    private var entries: [LivestreamEntry] { store.subagentStream(for: key) }
+    private var todos: [LivestreamTodoItem] { store.subagentTodo(for: key) }
+
+    var body: some View {
+        VStack(alignment:.leading, spacing:4){
+            HStack(spacing:6){
+                Image(systemName:"person.2.fill").font(.system(size:8)).foregroundColor(.pink)
+                Text(key.description).font(.system(size:8, weight:.semibold)).foregroundColor(.primary).lineLimit(1)
+                Text(key.agent).font(.system(size:6, design:.monospaced)).foregroundColor(.secondary).padding(.horizontal,4).padding(.vertical,1).background(Color.pink.opacity(0.12)).cornerRadius(4)
+                Spacer()
+                Text("\(entries.filter{ if case .tool = $0 { return true } else { return false }}.count) tools").font(.system(size:6)).foregroundColor(.purple)
+                Text("\(entries.filter{ if case .text = $0 { return true } else if case .reasoning = $0 { return true } else { return false }}.count) msgs").font(.system(size:6)).foregroundColor(.blue)
+                Circle().fill(Color.pink).frame(width:6,height:6)
+            }
+            if !todos.isEmpty {
+                HStack(spacing:4){
+                    ForEach(Array(todos.prefix(3).enumerated()), id:\.offset){ _, t in
+                        HStack(spacing:2){ Circle().fill(t.status=="completed" ? Color.green : t.status=="in_progress" ? Color.blue : Color.orange).frame(width:5,height:5); Text(t.content).font(.system(size:6)).lineLimit(1).foregroundColor(.secondary) }.padding(.horizontal,4).padding(.vertical,2).background(Color.primary.opacity(0.06)).cornerRadius(4)
+                    }
+                    if todos.count>3 { Text("+\(todos.count-3)").font(.system(size:6)).foregroundColor(.secondary) }
+                }
+            }
+            GeometryReader{ outer in
+                ScrollViewReader{ proxy in
+                    ScrollView(showsIndicators:false){
+                        VStack(alignment:.leading, spacing:4){
+                            if entries.isEmpty {
+                                HStack{ ProgressView().controlSize(.mini).scaleEffect(0.6); Text("Subagent waiting…").font(.system(size:7, design:.monospaced)).foregroundColor(.secondary); Spacer() }.padding(4)
+                            } else {
+                                ForEach(entries){ e in subEntry(e) }
+                            }
+                            Color.clear.frame(height:1).id(bottomId).background(GeometryReader{ g in Color.clear.preference(key: BottomKey.self, value: g.frame(in:.named(space)).maxY) })
+                        }.frame(maxWidth:.infinity, alignment:.leading).padding(.bottom, 16)
+                    }
+                    .coordinateSpace(name: space)
+                    .onPreferenceChange(BottomKey.self){ maxY in
+                        let atBottom = maxY <= outer.size.height + 16
+                        if atBottom { pendingFalse?.cancel(); pendingFalse=nil; if !isPinned { isPinned=true } }
+                        else if isPinned {
+                            pendingFalse?.cancel()
+                            let w=DispatchWorkItem{ isPinned=false }
+                            pendingFalse=w
+                            DispatchQueue.main.asyncAfter(deadline:.now()+0.12, execute:w)
+                        }
+                    }
+                    .onChange(of: entries){ _ in if isPinned { withAnimation(.easeOut(duration:0.12)){ proxy.scrollTo(bottomId, anchor:.bottom) } } }
+                    .onAppear{
+                        isPinned=true
+                        for d in [0.06,0.18,0.35] as [Double] { DispatchQueue.main.asyncAfter(deadline:.now()+d){ withAnimation(.easeOut(duration:0.12)){ proxy.scrollTo(bottomId, anchor:.bottom) } } }
+                    }
+                    .overlay(alignment:.bottom){
+                        if !isPinned && !entries.isEmpty {
+                            Button(action: { pendingFalse?.cancel(); pendingFalse=nil; isPinned=true; withAnimation(.easeOut(duration:0.12)){ proxy.scrollTo(bottomId, anchor:.bottom) } }){
+                                Image(systemName:"arrow.down").font(.system(size:7, weight:.bold)).foregroundColor(.white).frame(width:18,height:18).background(Circle().fill(Color.pink)).shadow(color:.black.opacity(0.2), radius:3, x:0,y:1)
+                            }.buttonStyle(.plain).padding(.bottom,4).transition(.scale.combined(with:.opacity))
+                        }
+                    }
+                }
+            }.frame(height: 90)
+        }.padding(8).background(RoundedRectangle(cornerRadius:10).fill(.regularMaterial)).overlay(RoundedRectangle(cornerRadius:10).stroke(Color.pink.opacity(0.18)))
+    }
+
+    @ViewBuilder private func subEntry(_ e: LivestreamEntry) -> some View {
+        switch e {
+        case .reasoning(_, let t):
+            HStack(alignment:.top, spacing:4){ Rectangle().fill(Color.purple.opacity(0.3)).frame(width:2).cornerRadius(1); MarkdownView(text: t, baseColor: .secondary).font(.system(size:7)).fixedSize(horizontal:false, vertical:true) }
+        case .text(_, let t):
+            MarkdownView(text: LivestreamParsing.streamingSafeMarkdown(t), baseColor: .primary.opacity(0.85)).font(.system(size:7)).fixedSize(horizontal:false, vertical:true).textSelection(.enabled)
+        case .tool(_, let name, let input, let output):
+            let lname=name.lowercased()
+            if lname=="todowrite", let todos=LivestreamParsing.extractTodos(input: input, output: output, delta: input ?? ""), !todos.isEmpty {
+                HStack(spacing:4){ Image(systemName:"checklist").font(.system(size:7)); Text("\(todos.count) todos").font(.system(size:7)).foregroundColor(.purple) }.padding(4).background(Color.purple.opacity(0.08)).cornerRadius(6)
+            } else if lname=="edit", let inp=input, let d=LivestreamParsing.parseEdit(inp) {
+                HStack(spacing:4){ Image(systemName:"pencil").font(.system(size:7)).foregroundColor(.orange); Text((d.path as NSString).lastPathComponent).font(.system(size:7, design:.monospaced)).foregroundColor(.orange).lineLimit(1); Spacer(); Text("+\(d.new.components(separatedBy:"\n").count) -\(d.old.components(separatedBy:"\n").count)").font(.system(size:6, design:.monospaced)).foregroundColor(.secondary) }.padding(4).background(Color.orange.opacity(0.08)).cornerRadius(6)
+            } else {
+                HStack(spacing:4){ Image(systemName: LivestreamParsing.toolIcon(name)).font(.system(size:7)).foregroundColor(LivestreamParsing.toolColor(name)); Text(LivestreamParsing.toolDisplayName(name)).font(.system(size:7, weight:.semibold)).foregroundColor(LivestreamParsing.toolColor(name)); Spacer() }.padding(4).background(LivestreamParsing.toolColor(name).opacity(0.08)).cornerRadius(6)
+                let c=LivestreamParsing.formatToolContent(name: name, input: input, output: output)
+                if !c.isEmpty {
+                    Text(c).font(.system(size:6, design:.monospaced)).foregroundColor(.secondary).lineLimit(3).padding(.horizontal,4)
+                }
+            }
+        }
     }
 }
 

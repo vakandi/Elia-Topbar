@@ -29,6 +29,9 @@ struct TopbarSettingsView: View {
     @State private var customEnabled: Bool = UserDefaults.standard.bool(forKey: "runPopupCustomEnabled")
     @State private var customDuration: Double = UserDefaults.standard.object(forKey: "runPopupCustomDuration") as? Double ?? 15
     @State private var dropPhotoShape: String = UserDefaults.standard.string(forKey: "dropPhotoShape") ?? "round"
+    @State private var dropIconPosition: String = UserDefaults.standard.string(forKey: "dropIconPosition") ?? "above"
+    @State private var dropDraggableEnabled: Bool = UserDefaults.standard.bool(forKey: "dropDraggableEnabled")
+    @State private var closeDropsOnPrimaryClick: Bool = (UserDefaults.standard.object(forKey: "closeDropsOnPrimaryClick") as? Bool ?? true)
     @State private var viewerChoice: String = UserDefaults.standard.string(forKey: "viewerPreferredUI") ?? "logViewer"
 
     private let defaults = UserDefaults.standard
@@ -175,6 +178,32 @@ struct TopbarSettingsView: View {
                         defaults.set(v, forKey: "dropPhotoShape")
                         onRefresh()
                     }
+                    Picker("Icon position", selection: $dropIconPosition) {
+                        Text("Above bubble").tag("above")
+                        Text("Left of bubble").tag("left")
+                        Text("Right of bubble").tag("right")
+                        Text("Tiny in header").tag("inlineTiny")
+                    }
+                    .onChange(of: dropIconPosition) { v in
+                        defaults.set(v, forKey: "dropIconPosition")
+                        onRefresh()
+                    }
+                    Toggle("Enable draggable Drops", isOn: $dropDraggableEnabled)
+                        .onChange(of: dropDraggableEnabled) { v in
+                            defaults.set(v, forKey: "dropDraggableEnabled")
+                            NotificationCenter.default.post(name: .eliaRunPopupDraggableChanged, object: nil)
+                            Task{ @MainActor in RunPopupController.shared.refreshAllDraggable() }
+                            onRefresh()
+                        }
+                    if dropDraggableEnabled {
+                        Text("Drag any Drop anywhere — it stays where you drop it. Lock button appears in the Drop header.")
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                    Toggle("Close all Drops when opening menu", isOn: $closeDropsOnPrimaryClick)
+                        .onChange(of: closeDropsOnPrimaryClick) { v in
+                            defaults.set(v, forKey: "closeDropsOnPrimaryClick")
+                            onRefresh()
+                        }
                     Text("Photo + live bubble dropping from the icon when an agent starts. Hover to keep open — retracts 1.5s after mouse leaves. Click to dismiss.")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -488,4 +517,5 @@ extension Notification.Name {
     static let eliaShowMiniBubble = Notification.Name("eliaShowMiniBubble")
     static let eliaCloseLogViewer = Notification.Name("eliaCloseLogViewer")
     static let eliaOpenTopbarSettings = Notification.Name("eliaOpenTopbarSettings")
+    static let eliaRunPopupDraggableChanged = Notification.Name("eliaRunPopupDraggableChanged")
 }

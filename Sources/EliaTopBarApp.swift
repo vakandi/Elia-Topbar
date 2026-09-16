@@ -27,6 +27,15 @@ final class SubworkerHoverHandler: NSObject {
     }
 }
 
+private struct CleanupLoadingView: View {
+    var body: some View {
+        HStack(spacing:8){
+            ProgressView().controlSize(.small)
+            Text("Cleaning RAM + Idle Cleaner…").font(.system(size:11, weight:.medium)).foregroundColor(.secondary)
+        }.padding(.horizontal,14).padding(.vertical,10).background(RoundedRectangle(cornerRadius:10).fill(.regularMaterial)).overlay(RoundedRectangle(cornerRadius:10).stroke(Color.primary.opacity(0.12))).shadow(color:.black.opacity(0.15), radius:8, x:0, y:2)
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
@@ -58,6 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isMenuOpen = false
     private weak var openModelMenu: NSMenu?
     private var openModelAgent: String?
+    private var cleanupLoadingPanel: NSPanel?
 
     private func logDrop(_ msg: String) {
         let line = "[\(Date())] \(msg)\n"
@@ -638,21 +648,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        // Refresh
-        let refreshItem = NSMenuItem(title: "Refresh", action: #selector(refreshStatus), keyEquivalent: "r")
-        refreshItem.target = self
-        menu.addItem(refreshItem)
-
-        // Server URL preference
-        addServerURLMenuItems(to: menu)
-
-        // Remote domain via Cloudflare Tunnel — requires local network
-        addTunnelMenuItems(to: menu)
-
-        let launchItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
-        launchItem.target = self
-        launchItem.state = launchAtLoginEnabled ? .on : .off
-        menu.addItem(launchItem)
+        // ── Server Connection Settings (submenu — keeps the main dropdown clean)
+        addServerConnectionSubmenu(to: menu)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -661,12 +658,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsItem.target = self
         menu.addItem(settingsItem)
 
+        let launchItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+        launchItem.target = self
+        launchItem.state = launchAtLoginEnabled ? .on : .off
+        menu.addItem(launchItem)
+
         // Quit
         let quitItem = NSMenuItem(title: "Quit EliaTopBar", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
 
         mainMenu = menu
+    }
+
+    // MARK: - Server Connection Submenu
+
+    private func addServerConnectionSubmenu(to menu: NSMenu) {
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+
+        // Refresh
+        let refreshItem = NSMenuItem(title: "Refresh", action: #selector(refreshStatus), keyEquivalent: "r")
+        refreshItem.target = self
+        submenu.addItem(refreshItem)
+
+        submenu.addItem(NSMenuItem.separator())
+
+        // Server URL preference
+        addServerURLMenuItems(to: submenu)
+
+        submenu.addItem(NSMenuItem.separator())
+
+        // Remote domain via Cloudflare Tunnel — requires local network
+        addTunnelMenuItems(to: submenu)
+
+        let parentItem = NSMenuItem(title: "🔌 Server Connection Settings", action: nil, keyEquivalent: "")
+        parentItem.submenu = submenu
+        menu.addItem(parentItem)
     }
 
     // MARK: - Subworker Server Section
@@ -1145,6 +1173,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
         }
+        let shouldCloseDrops = UserDefaults.standard.object(forKey: "closeDropsOnPrimaryClick") as? Bool ?? true
+        if shouldCloseDrops && RunPopupController.shared.panelCount > 0 {
+            AppLog.d("primaryClick closeAll Drops count=\(RunPopupController.shared.panelCount)")
+            RunPopupController.shared.closeAll()
+        }
         if let menu = mainMenu {
             statusItem.menu = menu
             statusItem.button?.performClick(nil)
@@ -1414,6 +1447,127 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func reconnectServer() {
         subworkerManager.start()
+    }
+
+    @objc private func cleanRamAndIdle(_ sender: NSMenuItem) {
+        sender.isEnabled = false
+        let original = sender.attributedTitle
+        sender.attributedTitle = emojiAwareTitle("🧹 Cleaning…", color: .secondaryLabelColor)
+        AppLog.d("Manual RAM cleanup triggered")
+        showCleanupLoadingPanel()
+        Task { @MainActor [weak self] in
+            defer {
+                sender.isEnabled = true
+                sender.attributedTitle = original
+                self?.hideCleanupLoadingPanel()
+            }
+            guard let self else { return }
+            guard let url = URL(string: "\(self.subworkerManager.currentBaseURL)/server/cleanup") else { return }
+            var request = EliaAuth.authorize(url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try? JSONSerialization.data(withJSONObject: ["restart_opencode": true, "run_idle_cleaner": true])
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      (json["ok"] as? Bool) == true else {
+                    let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+                    self.showCleanupAlert(title: "Cleanup failed", message: "HTTP \(code). See logs for details.")
+                    return
+                }
+                let message: String
+                var detail = ""
+                if let freed = json["freed_mb"] as? Int,
+                   let before = json["rss_before_mb"] as? Int,
+                   let after = json["rss_after_mb"] as? Int {
+                    message = "Freed \(freed) MB (RSS \(before)→\(after)) + idle cleaned."
+                } else {
+                    message = "Cleanup done (RSS unreadable) + idle cleaned."
+                }
+                if let oldPid = json["old_pid"] as? Int, let newPid = json["new_pid"] as? Int {
+                    detail += "opencode pid \(oldPid) → \(newPid)\n"
+                }
+                if let steps = json["steps"] as? [[String: Any]] {
+                    for step in steps {
+                        let name = step["name"] as? String ?? "?"
+                        let ok = (step["ok"] as? Bool) ?? false
+                        let info = step["detail"] as? String ?? ""
+                        let ms = step["duration_ms"] as? Int ?? 0
+                        detail += "\(ok ? "✅" : "❌") \(name) — \(info) (\(ms)ms)\n"
+                    }
+                }
+                if let procs = json["processes"] as? [[String: Any]], !procs.isEmpty {
+                    detail += "\nCleaned processes:\n"
+                    for proc in procs.prefix(20) {
+                        let pid = proc["pid"] as? Int ?? 0
+                        let label = proc["label"] as? String ?? "?"
+                        detail += "  • pid \(pid) [\(label)]\n"
+                    }
+                    if procs.count > 20 {
+                        detail += "  … +\(procs.count - 20) more\n"
+                    }
+                } else {
+                    detail += "\nNo stale processes found — nothing to kill."
+                }
+                if let ms = json["duration_ms"] as? Int {
+                    detail += "\nTotal: \(ms)ms"
+                }
+                AppLog.d("cleanup done: \(message)")
+                self.showCleanupDetailAlert(title: "RAM Cleanup Done", message: message, detail: detail)
+                await self.subworkerManager.fetchServerHealth()
+                await self.subworkerManager.fetchStatus()
+            } catch {
+                self.showCleanupAlert(title: "Cleanup failed", message: error.localizedDescription)
+            }
+        }
+    }
+
+    private func showCleanupDetailAlert(title: String, message: String, detail: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 420, height: 200))
+        scroll.hasVerticalScroller = true
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 420, height: 200))
+        textView.string = detail
+        textView.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        textView.isEditable = false
+        textView.backgroundColor = .clear
+        scroll.documentView = textView
+        alert.accessoryView = scroll
+        alert.runModal()
+    }
+
+    private func showCleanupAlert(title: String, message: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    private func showCleanupLoadingPanel() {
+        if cleanupLoadingPanel != nil { return }
+        guard let screen = NSScreen.main else { return }
+        let width: CGFloat = 260, height: CGFloat = 44
+        let x = menuBarAnchorX() - width/2
+        let y = screen.frame.maxY - NSStatusBar.system.thickness - height - 8
+        let frame = NSRect(x: max(screen.frame.minX+8, min(x, screen.frame.maxX-width-8)), y: y, width: width, height: height)
+        let p = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        p.level = .statusBar; p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = true; p.isMovableByWindowBackground = false
+        p.contentView = NSHostingView(rootView: CleanupLoadingView())
+        p.orderFrontRegardless()
+        p.alphaValue = 0
+        NSAnimationContext.runAnimationGroup({ ctx in ctx.duration=0.22; ctx.timingFunction=CAMediaTimingFunction(name:.easeInEaseOut); p.animator().alphaValue=1 })
+        cleanupLoadingPanel = p
+    }
+
+    private func hideCleanupLoadingPanel() {
+        guard let p = cleanupLoadingPanel else { return }
+        NSAnimationContext.runAnimationGroup({ ctx in ctx.duration=0.18; p.animator().alphaValue=0 }, completionHandler: { p.orderOut(nil); self.cleanupLoadingPanel=nil })
     }
 
     @objc private func setProfilePhoto(_ sender: NSMenuItem) {
@@ -1829,7 +1983,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(noInstancesItem)
         } else {
             // Add each instance
-            for instance in colimaManager.instances {
+            for (index, instance) in colimaManager.instances.enumerated() {
                 let instanceMenu = NSMenu()
                 instanceMenu.autoenablesItems = false
 
@@ -1889,6 +2043,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 deleteItem.representedObject = instance.name
                 deleteItem.isEnabled = !instance.status.isTransitioning
                 instanceMenu.addItem(deleteItem)
+
+                if index == 0 {
+                    instanceMenu.addItem(NSMenuItem.separator())
+                    let cleanupItem = NSMenuItem(title: "", action: #selector(cleanRamAndIdle(_:)), keyEquivalent: "")
+                    cleanupItem.attributedTitle = emojiAwareTitle("🧹 Clean RAM + Idle Cleaner", color: .labelColor)
+                    cleanupItem.target = self
+                    instanceMenu.addItem(cleanupItem)
+                }
 
                 let headerTitle: String
                 if instance.name == "default" && instance.status.isRunning {
