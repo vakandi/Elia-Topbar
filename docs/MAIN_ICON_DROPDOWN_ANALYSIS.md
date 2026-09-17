@@ -218,3 +218,33 @@ private func setupStatusItem() {
 - **Sleep/wake** cycles do not break the menu — `ensureStatusItemAlive` + `healAfterWake` restore state
 - **Settings changes** (agent photos side, padding) are immediately reflected without requiring reopen
 - The "10-20 clicks" problem is eliminated entirely
+
+## Sep 17 2026 — Actual Root Cause Found & Fixed (v2.0.3)
+
+Symptom: clicking a running-agent dot always opened the main menu instead of the
+RunPopup/LogViewer, while auto-Drop popups on run-start worked fine. No crash, no
+error — the click was silently routed to the menu fallback.
+
+Root cause: **stale hit-test cache**. `mainItemClicked` gated the dot zone on the
+cached `iconPhotoCount`/`iconPhotoNames`/`iconPhotosStartX`, which are only written
+inside `updateStatusIcon` composes. Poll/timer interleavings left the cache at
+`count=0 names=[]` while the dots were correctly painted on screen — so every
+dot-click failed the zone check and fell through to the menu. Proven via release
+audit trace (`entry` showed 3–4 running agents, `geom` showed `count=0`).
+
+Fix (in `mainItemClicked`, no behavior change when the cache is fresh): compute the
+hit-test from live data — `currentFleetNames()` + pad/cell/side recomputed with the
+same math as `appendFleetPhotos` (left side: pad-based; right side: bounds-based) —
+and re-sync the cached vars from it. Verified: 3 dot-clicks opened the 3 correct
+agents in RunPopup; banner click still opens the menu.
+
+Also fixed in the same release: the viewer toggle could stick when a `.semitransient`
+popover was dismissed by clicking elsewhere (bypasses app code, name never cleared,
+every later click on that agent silently returned). Fix: `NSPopoverDelegate.popoverDidClose`
+clears the name + toggle only applies when the popover `isShown` (self-healing).
+
+Diagnostics kept in release builds: `logClick` audit in `mainItemClicked` writes to
+`/tmp/EliaTopBar-clicks.log` (`entry` / `state` / `geom` / `freshHit` / `dot` /
+`branch=` lines), mirroring the `RunPopupController.logPopup` precedent in
+`/tmp/EliaTopBar.log`. Release builds strip `AppLog.d`, so these file logs are the
+only click-path telemetry.

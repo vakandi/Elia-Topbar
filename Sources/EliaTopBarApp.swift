@@ -386,6 +386,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Skips redundant menu-bar repaints: composing the icon runs CoreText +
     // fleet-photo blending, so identical states reuse the current NSImage.
     private var lastIconKey = ""
+    private var lastComposeLogSig = ""
     // Static layer cache for the animated primary icon: banner + badge text +
     // fleet photos composited once per content change; each frame only blits
     // the ring overlay on top instead of re-running CoreText and photo decode.
@@ -426,60 +427,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func grokRingOverlay(style: String, barHeight: CGFloat, phase: Double) -> NSImage {
-        let size = barHeight * 0.92
-        let c = CGPoint(x: size/2, y: size/2)
-        return NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in
-            switch style {
-            case "grok", "grokIcon":
-                let sq: CGFloat = style == "grok" ? size * 0.82 : size * 0.92
-                let half = sq/2, rad: CGFloat = sq*0.28
-                let r = NSRect(x: c.x-half, y: c.y-half, width: sq, height: sq)
-                let perim: CGFloat = 4*(sq-2*rad)+2*CGFloat.pi*rad
-                NSColor.labelColor.withAlphaComponent(0.16).setStroke()
-                let t = NSBezierPath(roundedRect: r, xRadius: rad, yRadius: rad); t.lineWidth=1.2; t.stroke()
-                let visLen = perim*0.68, orbitPhase = -CGFloat(phase)*10
-                let head = NSBezierPath(roundedRect: r, xRadius: rad, yRadius: rad); head.lineWidth=2; head.lineCapStyle = .round
-                head.setLineDash([visLen, perim-visLen], count: 2, phase: orbitPhase); NSColor.labelColor.withAlphaComponent(0.95).setStroke(); head.stroke()
-                let tail = NSBezierPath(roundedRect: r, xRadius: rad, yRadius: rad); tail.lineWidth=2; tail.lineCapStyle = .round
-                tail.setLineDash([perim*0.22, perim*0.78], count: 2, phase: orbitPhase+visLen+perim*0.05); NSColor.labelColor.withAlphaComponent(0.35).setStroke(); tail.stroke()
-                if style == "grok" {
-                    let pulse = 0.5-0.5*cos(phase*2.2); let cr: CGFloat = size*0.08+CGFloat(pulse)*size*0.04
-                    NSColor.labelColor.withAlphaComponent(0.95).setFill(); NSBezierPath(ovalIn: NSRect(x:c.x-cr,y:c.y-cr,width:cr*2,height:cr*2)).fill()
-                }
-            case "pulseIcon":
-                let sc = 1+0.38*sin(phase); let rr: CGFloat = size*0.38*sc; let sq: CGFloat = size*0.92, rad: CGFloat = sq*0.27
-                NSColor.systemGreen.withAlphaComponent(0.26).setFill(); NSBezierPath(roundedRect: NSRect(x:c.x-rr*1.45,y:c.y-rr*1.45,width:rr*2.9,height:rr*2.9), xRadius: rad, yRadius: rad).fill()
-                NSColor.systemGreen.setFill(); NSBezierPath(roundedRect: NSRect(x:c.x-rr*0.95,y:c.y-rr*0.95,width:rr*1.9,height:rr*1.9), xRadius: rad*0.7, yRadius: rad*0.7).fill()
-            default: break
-            }
-            return true
-        }
-    }
-
-    // Static square behind the animated ring (banner png, or transparent).
-    // Cached per content key so per-frame work is only the ring blit.
-    private func grokBannerBase(style: String, barHeight: CGFloat) -> NSImage {
-        let size = barHeight * 0.92
-        if style == "grok" {
-            return NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in true }
-        }
-        let base = NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in true }
-        if let icon = Self.runningBannerIcon {
-            let s: CGFloat = size*0.78
-            let sq: CGFloat = size*0.92, rad: CGFloat = sq*0.27
-            let rr = NSRect(x: size/2-s/2, y: size/2-s/2, width: s, height: s)
-            base.lockFocus()
-            let inset=(sq-s)/2; let iconRad=max(0,rad-inset)
-            NSGraphicsContext.saveGraphicsState()
-            NSBezierPath(roundedRect: rr, xRadius: iconRad, yRadius: iconRad).addClip()
-            icon.draw(in: rr, from: NSRect(origin:.zero,size:icon.size), operation:.sourceOver, fraction:1)
-            NSGraphicsContext.restoreGraphicsState()
-            base.unlockFocus()
-        }
-        return base
-    }
-
     // MARK: - Dynamic Icon
 
     private static let runningBannerIcon: NSImage? = {
@@ -496,21 +443,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return image
     }()
 
+    // Content key shared by the paint cache and the click handler: the handler
+    // recomposes when its key disagrees so hit-test geometry always matches
+    // the inputs the icon was (or will be) composed from — never stale cache.
+    private func iconContentKey(runningNames: [String], barHeight: CGFloat) -> String {
+        let defs = UserDefaults.standard
+        return "\(subworkerManager.wsConnected)|\(subworkerManager.runningCount)|\(subworkerManager.serverHealth?.healthStatus ?? "-")|\(primaryStyle)|\(Int((runningPhase * 10).rounded()))|\(runningNames.joined(separator: ","))|\(colimaManager.hasRunningInstance)|\(colimaManager.instances.contains { $0.status.isTransitioning })|\(barHeight)|\(defs.string(forKey: "fleetPhotosSide") ?? "left")|\(defs.object(forKey: "fleetLeftPad") as? Double ?? 3)|\(defs.string(forKey: "dropPhotoShape") ?? "round")"
+    }
+
+    private func currentFleetNames() -> [String] {
+        var names = subworkerManager.sortedRunningNames()
+        for sw in subworkerManager.subworkers where sw.lastError != nil && !names.contains(sw.name) {
+            names.append(sw.name)
+        }
+        return names
+    }
+
     private func updateStatusIcon() {
         guard let button = statusItem.button else { return }
         ensureRunningAnimation()
+        AppLog.d("icon entry self=\(ObjectIdentifier(self)) item=\(ObjectIdentifier(statusItem)) count=\(iconPhotoCount) names=\(iconPhotoNames)")
 
         let barHeight = max(NSStatusBar.system.thickness, 20)
-        var runningNames = subworkerManager.sortedRunningNames()
-        for sw in subworkerManager.subworkers where sw.lastError != nil && !runningNames.contains(sw.name) {
-            runningNames.append(sw.name)
-        }
+        let runningNames = currentFleetNames()
         // Content key for the paint cache: quantized phase keeps animating while
         // duplicate fires inside one bucket skip the full CoreText/fleet compose.
-        let defs = UserDefaults.standard
-        let iconKey = "\(subworkerManager.wsConnected)|\(subworkerManager.runningCount)|\(subworkerManager.serverHealth?.healthStatus ?? "-")|\(primaryStyle)|\(Int((runningPhase * 10).rounded()))|\(runningNames.joined(separator: ","))|\(colimaManager.hasRunningInstance)|\(colimaManager.instances.contains { $0.status.isTransitioning })|\(barHeight)|\(defs.string(forKey: "fleetPhotosSide") ?? "left")|\(defs.object(forKey: "fleetLeftPad") as? Double ?? 3)|\(defs.string(forKey: "dropPhotoShape") ?? "round")"
+        let iconKey = iconContentKey(runningNames: runningNames, barHeight: barHeight)
         if iconKey == lastIconKey { return }
         lastIconKey = iconKey
+        let composeSig = "\(runningNames.count)|\(subworkerManager.runningCount)|\(subworkerManager.wsConnected)|\(subworkerManager.serverHealth?.healthStatus ?? "nil")|\(ObjectIdentifier(self))"
+        if composeSig != lastComposeLogSig {
+            lastComposeLogSig = composeSig
+            logClick("compose self=\(ObjectIdentifier(self)) names=\(runningNames) swRunning=\(subworkerManager.runningCount) ws=\(subworkerManager.wsConnected) health=\(subworkerManager.serverHealth?.healthStatus ?? "nil")")
+        }
+        AppLog.d("icon compose swRunning=\(subworkerManager.runningCount) names=\(runningNames) health=\(subworkerManager.serverHealth?.healthStatus ?? "-") ws=\(subworkerManager.wsConnected) arrRunning=\(subworkerManager.subworkers.filter(\.running).map(\.name))")
 
         iconPhotoCount = 0
         iconPhotoNames = []
@@ -537,21 +503,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if subworkerManager.serverHealth?.healthStatus == "healthy" {
             let style = primaryStyle
             if swRunning > 0 && style != "default" {
-                let staticKey = "\(swDisconnected)|\(swRunning)|\(subworkerManager.serverHealth?.healthStatus ?? "-")|\(style)|\(runningNames.joined(separator: ","))|\(hasRunning)|\(hasTransitioning)|\(barHeight)|\(defs.string(forKey: "fleetPhotosSide") ?? "left")|\(defs.object(forKey: "fleetLeftPad") as? Double ?? 3)|\(defs.string(forKey: "dropPhotoShape") ?? "round")"
+                let staticKey = "\(swDisconnected)|\(swRunning)|\(subworkerManager.serverHealth?.healthStatus ?? "-")|\(style)|\(runningNames.joined(separator: ","))|\(hasRunning)|\(hasTransitioning)|\(barHeight)|\(UserDefaults.standard.string(forKey: "fleetPhotosSide") ?? "left")|\(UserDefaults.standard.object(forKey: "fleetLeftPad") as? Double ?? 3)|\(UserDefaults.standard.string(forKey: "dropPhotoShape") ?? "round")"
                 if staticKey != lastStaticKey || cachedStaticIcon == nil {
                     iconBaseStartX = 0
-                    var base = badgeImage(base: grokBannerBase(style: style, barHeight: barHeight), count: swRunning, barHeight: barHeight)
+                    var base = badgeImage(base: GrokStyles.bannerBase(style: style, barHeight: barHeight), count: swRunning, barHeight: barHeight)
                     if !runningNames.isEmpty {
                         base = appendFleetPhotos(to: base, names: runningNames, barHeight: barHeight)
                     }
                     cachedStaticIcon = base
                     lastStaticKey = staticKey
                 }
-                guard let stat = cachedStaticIcon else { return }
+                guard let stat = cachedStaticIcon else {
+                    // Unreachable in normal flow (built above), but never leave
+                    // a reset-geometry call imageless: compose inline instead.
+                    AppLog.d("icon static cache miss — inline fallback compose")
+                    var fb = badgeImage(base: GrokStyles.bannerBase(style: style, barHeight: barHeight), count: swRunning, barHeight: barHeight)
+                    if !runningNames.isEmpty {
+                        fb = appendFleetPhotos(to: fb, names: runningNames, barHeight: barHeight)
+                    }
+                    button.image = fb
+                    return
+                }
                 let size = barHeight * 0.92
                 let frame = stat.copy() as! NSImage
                 frame.lockFocus()
-                grokRingOverlay(style: style, barHeight: barHeight, phase: runningPhase).draw(
+                GrokStyles.ringOverlay(style: style, barHeight: barHeight, phase: runningPhase).draw(
                     in: NSRect(x: iconBaseStartX, y: (frame.size.height - size) / 2, width: size, height: size),
                     from: NSRect(origin: .zero, size: NSSize(width: size, height: size)),
                     operation: .sourceOver, fraction: 1.0)
@@ -1168,6 +1144,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var viewerPreferredUI: String { UserDefaults.standard.string(forKey: "viewerPreferredUI") ?? "logViewer" }
+    /// Permanent click-path audit (release-safe): 3 lines per click, mirrors
+    /// RunPopupController.logPopup precedent. Diagnoses dot-click routing.
+    private func logClick(_ msg: String) {
+        let line = "[\(Date())] \(msg)\n"
+        guard let data = line.data(using: .utf8) else { return }
+        let url = URL(fileURLWithPath: "/tmp/EliaTopBar-clicks.log")
+        if FileManager.default.fileExists(atPath: url.path) {
+            if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(data); try? h.close() }
+        } else { try? data.write(to: url) }
+    }
     @objc private func showLogs(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
         if viewerPreferredUI == "miniBubble" {
@@ -1178,6 +1164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let popover = NSPopover()
         popover.contentSize = NSSize(width: 500, height: 400)
         popover.behavior = .semitransient
+        popover.delegate = self
 
         let logView = LogPopoverView(subworkerName: name, baseURL: subworkerManager.currentBaseURL)
         popover.contentViewController = NSHostingController(rootView: logView)
@@ -1190,9 +1177,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func mainItemClicked(_ sender: NSStatusBarButton) {
-        AppLog.d("mainItemClicked — button click received buttonNil=\(statusItem.button == nil) windowNil=\(statusItem.button?.window == nil) menuItems=\(mainMenu?.numberOfItems ?? -1)")
+        AppLog.d("mainItemClicked self=\(ObjectIdentifier(self)) senderTarget=\(String(describing: sender.target)) — button click received buttonNil=\(statusItem.button == nil) windowNil=\(statusItem.button?.window == nil) menuItems=\(mainMenu?.numberOfItems ?? -1)")
         if NSApp.currentEvent?.type == .leftMouseDown { return }
-        let wasOpenName = subworkerLogPopoverName
+        // Toggle only when that agent's viewer is actually on screen; a stale
+        // name alone must never swallow the click (self-healing toggle).
+        let wasOpenName = (subworkerLogPopover?.isShown == true) ? subworkerLogPopoverName : nil
+        logClick("entry viewer=\(viewerPreferredUI) wasOpen=\(wasOpenName ?? "nil") popShown=\(subworkerLogPopover?.isShown ?? false)")
+        logClick("state subs=\(subworkerManager.subworkers.count) runningCount=\(subworkerManager.runningCount) ws=\(subworkerManager.wsConnected) health=\(subworkerManager.serverHealth?.healthStatus ?? "nil") statusErr=\(subworkerManager.statusError ?? "nil") arrRunning=\(subworkerManager.subworkers.filter(\.running).map(\.name)) colimaRun=\(colimaManager.hasRunningInstance)")
         closeAllLogPopovers()
         watchdogCheck()
         ensureStatusItemAlive()
@@ -1204,23 +1195,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let mouse = NSApp.currentEvent?.locationInWindow ?? sender.bounds.origin
         let point = sender.convert(mouse, from: nil)
+        logClick("geom x=\(point.x) count=\(iconPhotoCount) startX=\(iconPhotosStartX) cellW=\(iconCellWidth) names=\(iconPhotoNames) boundsW=\(sender.bounds.width) side=\(UserDefaults.standard.string(forKey: "fleetPhotosSide") ?? "left")")
+        // Freshness gate: recompose when cached hit-test geometry lags current
+        // inputs (poll/timer interleavings), so clicks always test live state.
+        let hitNames = currentFleetNames()
+        let hitBarHeight = max(NSStatusBar.system.thickness, 20)
+        if iconContentKey(runningNames: hitNames, barHeight: hitBarHeight) != lastIconKey {
+            AppLog.d("click stale geometry — recomposing before hit-test")
+            updateStatusIcon()
+        }
+        AppLog.d("click geometry x=\(point.x) count=\(iconPhotoCount) startX=\(iconPhotosStartX) cellW=\(iconCellWidth) names=\(iconPhotoNames) boundsW=\(sender.bounds.width)")
 
-        if iconPhotoCount > 0, point.x >= iconPhotosStartX,
-           point.x < iconPhotosStartX + CGFloat(iconPhotoCount) * iconCellWidth {
-            let idx = min(max(Int((point.x - iconPhotosStartX) / iconCellWidth), 0), iconPhotoCount - 1)
-            if idx < iconPhotoNames.count {
-                let name = iconPhotoNames[idx]
+        // Hit-test from live data, not the cached vars: the cache can lag
+        // poll/timer interleavings (dots painted, vars still empty) which
+        // sent every dot-click to the menu fallback. Geometry mirrors
+        // appendFleetPhotos exactly (left: pad-based; right: bounds-based).
+        let freshCount = hitNames.count
+        let freshCell = hitBarHeight - 2
+        let freshPad: CGFloat = CGFloat(UserDefaults.standard.object(forKey: "fleetLeftPad") as? Double ?? 3)
+        let freshSide = UserDefaults.standard.string(forKey: "fleetPhotosSide") ?? "left"
+        let freshStartX: CGFloat = freshSide == "right"
+            ? sender.bounds.width - CGFloat(freshCount) * freshCell
+            : freshPad
+        iconPhotoCount = freshCount
+        iconPhotoNames = hitNames
+        iconPhotosStartX = freshStartX
+        iconCellWidth = freshCell
+        logClick("freshHit count=\(freshCount) startX=\(freshStartX) cellW=\(freshCell) x=\(point.x)")
+        if freshCount > 0, point.x >= freshStartX,
+           point.x < freshStartX + CGFloat(freshCount) * freshCell {
+            let idx = min(max(Int((point.x - freshStartX) / freshCell), 0), freshCount - 1)
+            if idx < hitNames.count {
+                let name = hitNames[idx]
+                AppLog.d("agentDot click name=\(name) idx=\(idx) count=\(iconPhotoCount) startX=\(iconPhotosStartX) cellW=\(iconCellWidth) x=\(point.x) viewer=\(viewerPreferredUI)")
+                logClick("dot name=\(name) idx=\(idx) hasPanel=\(RunPopupController.shared.hasPanel(for: name)) wasOpen=\(wasOpenName ?? "nil") viewer=\(viewerPreferredUI)")
                 if RunPopupController.shared.hasPanel(for: name) {
                     RunPopupController.shared.retract(for: name)
+                    logClick("branch=retract-toggle name=\(name)")
                     return
                 }
                 if wasOpenName == name {
+                    logClick("branch=popover-toggle name=\(name)")
                     return
                 }
                  if viewerPreferredUI == "miniBubble" {
-                     let dropX = menuBarAnchorX(); RunPopupController.shared.show(for: name, dropX: dropX, duration: effectiveRunPopupDuration, baseURL: subworkerManager.currentBaseURL, showSessionSelector: true, disableAutoClose: true); return
+                     let dropX = menuBarAnchorX(); RunPopupController.shared.show(for: name, dropX: dropX, duration: effectiveRunPopupDuration, baseURL: subworkerManager.currentBaseURL, showSessionSelector: true, disableAutoClose: true); logClick("branch=runpopup-show name=\(name)"); return
                  }
                 showSubworkerLogPopover(for: name, button: sender)
+                logClick("branch=logviewer-popover name=\(name)")
                 return
             }
         }
@@ -1230,6 +1252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             RunPopupController.shared.closeAll()
         }
         if let menu = mainMenu {
+            logClick("branch=menu-fallback (geometry miss)")
             statusItem.menu = menu
             statusItem.button?.performClick(nil)
         } else {
@@ -1448,6 +1471,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let popover = NSPopover()
         popover.contentSize = NSSize(width: 520, height: 400)
         popover.behavior = .semitransient
+        popover.delegate = self
         popover.contentViewController = NSHostingController(
             rootView: LogPopoverView(subworkerName: name, baseURL: subworkerManager.currentBaseURL)
         )
@@ -2230,8 +2254,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 // MARK: - Lazy Model Menu Population
 
-extension AppDelegate: NSMenuDelegate {
-    func menuNeedsUpdate(_ menu: NSMenu) {
+// Clears the viewer toggle when the user dismisses the popover by clicking
+// away (.semitransient auto-close bypasses our code). Without this the stuck
+// name makes every later dot-click early-return — both viewers go dead.
+extension AppDelegate: NSPopoverDelegate {
+    func popoverDidClose(_ notification: Notification) {
+        guard let popover = notification.object as? NSPopover else { return }
+        if popover === subworkerLogPopover {
+            subworkerLogPopover = nil
+            subworkerLogPopoverName = nil
+        }
+        if popover === logPopover {
+            logPopover = nil
+        }
+    }
+}
+
+extension AppDelegate: NSMenuDelegate {    func menuNeedsUpdate(_ menu: NSMenu) {
         guard let agentName = menu.identifier?.rawValue else { return }
         openModelMenu = menu
         openModelAgent = agentName

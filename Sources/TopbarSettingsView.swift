@@ -112,10 +112,9 @@ struct TopbarSettingsView: View {
                     }
 
                     Picker("Primary when running", selection: $primaryStyle) {
-                        Text("Default (banner + count)").tag("default")
-                        Text("Grok orbit").tag("grok")
-                        Text("Grok orbit + icon").tag("grokIcon")
-                        Text("Pulse behind icon").tag("pulseIcon")
+                        ForEach(GrokStyles.all, id: \.id) { s in
+                            Text(s.label).tag(s.id)
+                        }
                     }
                     .onChange(of: primaryStyle) { v in
                         defaults.set(v, forKey: "primaryIconStyle")
@@ -516,51 +515,22 @@ struct TopbarSettingsView: View {
 
     private func previewNSImage(for style: String, phase: Double) -> NSImage? {
         let barHeight: CGFloat = 20
-        let size = barHeight * 0.92
-        let c = CGPoint(x: size/2, y: size/2)
         if style == "default" {
             guard let p = Bundle.main.path(forResource: "icon_running_topbar", ofType: "png"), let im = NSImage(contentsOfFile: p) else { return nil }
             im.isTemplate = false
             return im
         }
-        let img = NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in
-            switch style {
-            case "grok":
-                let sq: CGFloat = size*0.82, half=sq/2, rad=sq*0.28
-                let r = NSRect(x: c.x-half, y: c.y-half, width: sq, height: sq)
-                let perim: CGFloat = 4*(sq-2*rad)+2*CGFloat.pi*rad
-                NSColor.labelColor.withAlphaComponent(0.16).setStroke()
-                let t = NSBezierPath(roundedRect: r, xRadius: rad, yRadius: rad); t.lineWidth=1.2; t.stroke()
-                let visLen = perim*0.68, orbitPhase = -CGFloat(phase)*10
-                let head = NSBezierPath(roundedRect: r, xRadius: rad, yRadius: rad); head.lineWidth=2; head.lineCapStyle = .round
-                head.setLineDash([visLen, perim-visLen], count: 2, phase: orbitPhase); NSColor.labelColor.withAlphaComponent(0.95).setStroke(); head.stroke()
-                let tail = NSBezierPath(roundedRect: r, xRadius: rad, yRadius: rad); tail.lineWidth=2; tail.lineCapStyle = .round
-                tail.setLineDash([perim*0.22, perim*0.78], count: 2, phase: orbitPhase+visLen+perim*0.05); NSColor.labelColor.withAlphaComponent(0.35).setStroke(); tail.stroke()
-                let pulse = 0.5-0.5*cos(phase*2.2); let cr: CGFloat = size*0.08+CGFloat(pulse)*size*0.04
-                NSColor.labelColor.withAlphaComponent(0.95).setFill(); NSBezierPath(ovalIn: NSRect(x:c.x-cr,y:c.y-cr,width:cr*2,height:cr*2)).fill()
-            case "grokIcon":
-                let sq: CGFloat = size*0.92, half=sq/2, rad=sq*0.27
-                let r = NSRect(x: c.x-half, y: c.y-half, width: sq, height: sq)
-                let perim: CGFloat = 4*(sq-2*rad)+2*CGFloat.pi*rad
-                NSColor.labelColor.withAlphaComponent(0.16).setStroke()
-                let t = NSBezierPath(roundedRect: r, xRadius: rad, yRadius: rad); t.lineWidth=1.2; t.stroke()
-                let visLen = perim*0.68, orbitPhase = -CGFloat(phase)*10
-                let head = NSBezierPath(roundedRect: r, xRadius: rad, yRadius: rad); head.lineWidth=2; head.lineCapStyle = .round
-                head.setLineDash([visLen, perim-visLen], count: 2, phase: orbitPhase); NSColor.labelColor.withAlphaComponent(0.95).setStroke(); head.stroke()
-                let tail = NSBezierPath(roundedRect: r, xRadius: rad, yRadius: rad); tail.lineWidth=2; tail.lineCapStyle = .round
-                tail.setLineDash([perim*0.22, perim*0.78], count: 2, phase: orbitPhase+visLen+perim*0.05); NSColor.labelColor.withAlphaComponent(0.35).setStroke(); tail.stroke()
-                if let icon = Bundle.main.path(forResource: "icon_running_topbar", ofType: "png").flatMap({ NSImage(contentsOfFile: $0) }) { let s: CGFloat = size*0.78; let rr = NSRect(x:c.x-s/2,y:c.y-s/2,width:s,height:s); let inset=(sq-s)/2; let iconRad=max(0,rad-inset); NSGraphicsContext.saveGraphicsState(); NSBezierPath(roundedRect: rr, xRadius: iconRad, yRadius: iconRad).addClip(); icon.draw(in: rr, from: NSRect(origin:.zero,size:icon.size), operation:.sourceOver, fraction:1); NSGraphicsContext.restoreGraphicsState() }
-            case "pulseIcon":
-                let sc = 1+0.38*sin(phase); let rr: CGFloat = size*0.38*sc; let sq: CGFloat = size*0.92, rad: CGFloat = sq*0.27
-                NSColor.systemGreen.withAlphaComponent(0.26).setFill(); NSBezierPath(roundedRect: NSRect(x:c.x-rr*1.45,y:c.y-rr*1.45,width:rr*2.9,height:rr*2.9), xRadius: rad, yRadius: rad).fill()
-                NSColor.systemGreen.setFill(); NSBezierPath(roundedRect: NSRect(x:c.x-rr*0.95,y:c.y-rr*0.95,width:rr*1.9,height:rr*1.9), xRadius: rad*0.7, yRadius: rad*0.7).fill()
-                if let icon = Bundle.main.path(forResource: "icon_running_topbar", ofType: "png").flatMap({ NSImage(contentsOfFile: $0) }) { let s: CGFloat = size*0.78; let rr2 = NSRect(x:c.x-s/2,y:c.y-s/2,width:s,height:s); let inset=(sq-s)/2; let iconRad=max(0,rad-inset); NSGraphicsContext.saveGraphicsState(); NSBezierPath(roundedRect: rr2, xRadius: iconRad, yRadius: iconRad).addClip(); icon.draw(in: rr2, from: NSRect(origin:.zero,size:icon.size), operation:.sourceOver, fraction:1); NSGraphicsContext.restoreGraphicsState() }
-            default: break
-            }
-            return true
-        }
-        img.isTemplate = false
-        return img
+        // Same renderer as the live menu-bar icon: banner base + ring overlay.
+        let size = barHeight * 0.92
+        let frame = GrokStyles.bannerBase(style: style, barHeight: barHeight).copy() as! NSImage
+        frame.lockFocus()
+        GrokStyles.ringOverlay(style: style, barHeight: barHeight, phase: phase).draw(
+            in: NSRect(x: 0, y: (frame.size.height - size) / 2, width: size, height: size),
+            from: NSRect(origin: .zero, size: NSSize(width: size, height: size)),
+            operation: .sourceOver, fraction: 1.0)
+        frame.unlockFocus()
+        frame.isTemplate = false
+        return frame
     }
 }
 
