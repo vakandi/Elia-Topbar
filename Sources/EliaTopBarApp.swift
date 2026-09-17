@@ -310,6 +310,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         countdownRefreshTimer?.invalidate()
         let t = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
             guard let self, !self.isMenuOpen, self.logPopover?.isShown != true, self.subworkerLogPopover?.isShown != true else { return }
+            self.purgeStaleErrors()
             self.lastMenuHash = 0
             self.setupMenu()
         }
@@ -1287,6 +1288,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             subworkerLogPopover = nil
             subworkerLogPopoverName = nil
         }
+        purgeStaleErrors()
+        updateStatusIcon()
+    }
+
+    /// Drops error badges older than 10 min so the menu/icons always reflect
+    /// the latest server state. Runs on the 30 s timer too, because the
+    /// publish-driven sink can go quiet for hours (equality guards suppress
+    /// no-change publishes) and otherwise the purge would starve.
+    private func purgeStaleErrors() {
         // Never mutate @Published state synchronously inside its own Combine sink:
         // that re-publishes on the same runloop turn and recursed until stack-guard
         // overflow (EXC_BAD_ACCESS, 50k-frame cycle via Published.withMutation).
@@ -1305,7 +1315,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
-        updateStatusIcon()
     }
 
     /// Draw running-agent photos flush against the banner; stuck together.
