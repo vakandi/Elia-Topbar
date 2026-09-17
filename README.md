@@ -234,6 +234,23 @@ EliaTopBar is the same idea pointed at a different target: a **dedicated OpenCod
 
 ---
 
+## 📊 Load Test (v2.0.4)
+
+Stress run on a real machine — 4 agents triggered at once while a 5th was
+already running, all with live Drop livestream panels open:
+
+| Metric | Value |
+|--------|-------|
+| Machine | MacBook Pro, Apple M5, 16 GB RAM, macOS 26.5.2 |
+| App | EliaTopBar v2.0.4, 11 MB bundle, 9 threads |
+| Load | 5 concurrent live panels (`refund-hunter`, `deploymates-watch`, `cve-hunter`, `app-qa-store-gate` + `app-clone-factory`) |
+| CPU idle (panels open, no animation storm) | ~3 % |
+| CPU during 5-panel drop storm | 10–17 % |
+| RAM (RSS) | 50–64 MB |
+| Result | No crash, all panels shown + auto-retracted, dots clickable throughout |
+
+---
+
 ## ✅ Requirements
 
 | Requirement | Detail |
