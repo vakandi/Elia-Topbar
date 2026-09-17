@@ -21,6 +21,11 @@ import SwiftUI
          logPopup("show agent=\(agentName) dropX=\(dropX) duration=\(duration) panelsBefore=\(panels.count) screen=\(String(describing: NSScreen.main?.frame))")
          guard duration > 0, let screen = NSScreen.main else { logPopup("show abort duration<=0 or no screen"); return }
          if panels[agentName] != nil { logPopup("show already has panel for \(agentName) reschedule"); if !disableAutoClose { scheduleRetract(for: agentName, after: duration) }; return }
+         let maxPanels = min(max(1, UserDefaults.standard.object(forKey: "runPopupMaxConcurrent") as? Int ?? 10), 10)
+         if panels.count >= maxPanels, let oldest = panels.keys.sorted().first(where: { $0 != agentName }), let op = panels[oldest] {
+             logPopup("show cap reached — closing oldest \(oldest)")
+             close(for: oldest, panel: op)
+         }
          let width: CGFloat = 340, height: CGFloat = 260, gap: CGFloat = 8
          let barBottom = screen.frame.maxY - NSStatusBar.system.thickness
          let count = panels.count + 1
@@ -65,9 +70,15 @@ import SwiftUI
         guard let panel=panels[agentName], let screen=NSScreen.main else { return }
         retractTimers[agentName]?.invalidate(); retractTimers[agentName]=nil
         let target=NSRect(x:panel.frame.origin.x,y:screen.frame.maxY,width:panel.frame.width,height:panel.frame.height)
-        NSAnimationContext.runAnimationGroup({ ctx in ctx.duration=0.42; ctx.timingFunction=CAMediaTimingFunction(controlPoints:0.4,0,0.6,1); ctx.allowsImplicitAnimation=true; panel.animator().setFrame(target,display:true); panel.animator().alphaValue = 0.85 }, completionHandler:{ [weak self] in self?.close(for:agentName,panel:panel) })
+        NSAnimationContext.runAnimationGroup({ ctx in ctx.duration=0.42; ctx.timingFunction=CAMediaTimingFunction(controlPoints:0.4,0,0.6,1); ctx.allowsImplicitAnimation=true; panel.animator().setFrame(target,display:true); panel.animator().alphaValue = 0.85 }, completionHandler:{ [weak self, weak panel] in guard let self, let panel, self.panels[agentName] === panel else { return }; self.close(for:agentName,panel:panel) })
     }
-     private func close(for name: String, panel: NSPanel) { panel.orderOut(nil); panels[name]=nil; hoverStates[name]=nil; durations[name]=nil; noAutoClose.remove(name) }
+     private func close(for name: String, panel: NSPanel) {
+         panel.orderOut(nil)
+         panel.contentView = nil
+         if panels[name] === panel {
+             panels[name]=nil; hoverStates[name]=nil; durations[name]=nil; noAutoClose.remove(name)
+         }
+     }
     private func scheduleRetract(for agentName: String, after duration: TimeInterval) {
         retractTimers[agentName]?.invalidate()
         retractTimers[agentName]=Timer.scheduledTimer(withTimeInterval: duration, repeats:false){ [weak self] _ in Task{ @MainActor [weak self] in guard let self else{return}; if self.hoverStates[agentName]==true{return}; self.retract(for:agentName) } }

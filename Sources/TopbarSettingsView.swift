@@ -25,7 +25,7 @@ struct TopbarSettingsView: View {
     @State private var previewPhase: Double = 0
     private let previewTimer = Timer.publish(every: 1.0/20.0, on: .main, in: .common).autoconnect()
     @State private var runPopupEnabled: Bool = (UserDefaults.standard.object(forKey: "runPopupDuration") as? Double ?? 10) > 0
-    @State private var maxDrops: Int = UserDefaults.standard.object(forKey: "runPopupMaxConcurrent") as? Int ?? 5
+    @State private var maxDrops: Int = UserDefaults.standard.object(forKey: "runPopupMaxConcurrent") as? Int ?? 10
     @State private var customEnabled: Bool = UserDefaults.standard.bool(forKey: "runPopupCustomEnabled")
     @State private var customDuration: Double = UserDefaults.standard.object(forKey: "runPopupCustomDuration") as? Double ?? 15
     @State private var dropPhotoShape: String = UserDefaults.standard.string(forKey: "dropPhotoShape") ?? "round"

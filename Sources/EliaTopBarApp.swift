@@ -137,6 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var appNapActivity: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        installExceptionTrap()
         // Prevent App Nap from freezing timers when the app is backgrounded for hours.
         appNapActivity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleSystemSleepDisabled], reason: "EliaTopBar status-bar live updates")
 
@@ -198,6 +199,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tunnelPollTimer = t
         startStatusItemWatchdog()
         startCountdownRefresh()
+    }
+
+    /// Logs the exact AppKit complaint on the next NSException before death.
+    /// Swift cannot catch ObjC exceptions, so without this the reason string
+    /// is lost (release builds are silent). See docs/CRASH_PLAN_2026-09-17.md.
+    private func installExceptionTrap() {
+        NSSetUncaughtExceptionHandler { exc in
+            let body = "EXC \(exc.name.rawValue): \(exc.reason ?? "-")\n\(exc.callStackSymbols.prefix(25).joined(separator: "\n"))\n"
+            let url = URL(fileURLWithPath: "/tmp/EliaTopBar-exceptions.log")
+            if let data = body.data(using: .utf8) {
+                if FileManager.default.fileExists(atPath: url.path),
+                   let h = try? FileHandle(forWritingTo: url) {
+                    h.seekToEndOfFile(); h.write(data); try? h.close()
+                } else { try? data.write(to: url) }
+            }
+        }
     }
 
     // MARK: - Wake / Display / Network heal
@@ -401,7 +418,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         return base
     }
-    private var maxConcurrentDrops: Int { UserDefaults.standard.object(forKey: "runPopupMaxConcurrent") as? Int ?? 5 }
+    private var maxConcurrentDrops: Int { min(max(1, UserDefaults.standard.object(forKey: "runPopupMaxConcurrent") as? Int ?? 10), 10) }
     private func menuBarAnchorX() -> CGFloat {
         if let screen = NSScreen.main {
             if let midX = statusItem.button?.window?.frame.midX, midX > screen.frame.minX + 200 {
@@ -1136,9 +1153,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func closeAllLogPopovers() {
-        if let popover = logPopover, popover.isShown { popover.performClose(nil) }
+        if let popover = logPopover, popover.isShown { popover.performClose(nil); popover.contentViewController = nil }
         logPopover = nil
-        if let popover = subworkerLogPopover, popover.isShown { popover.performClose(nil) }
+        if let popover = subworkerLogPopover, popover.isShown { popover.performClose(nil); popover.contentViewController = nil }
         subworkerLogPopover = nil
         subworkerLogPopoverName = nil
     }
@@ -1465,6 +1482,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             popover.performClose(nil)
+            popover.contentViewController = nil
             subworkerLogPopover = nil
             subworkerLogPopoverName = nil
         }
@@ -2260,6 +2278,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 extension AppDelegate: NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         guard let popover = notification.object as? NSPopover else { return }
+        popover.contentViewController = nil
         if popover === subworkerLogPopover {
             subworkerLogPopover = nil
             subworkerLogPopoverName = nil
