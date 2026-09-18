@@ -10,10 +10,12 @@ struct NotchIslandView: View {
     @AppStorage("primaryIconStyle") private var primaryStyle: String = "default"
 
     private var visible: [NotchIslandAgent] {
-        agents.filter { $0.running || $0.hasError }.prefix(8).map { $0 }
+        NotchIslandMetrics.shown(agents)
     }
 
     private var isSquare: Bool { photoShape == "square" }
+
+    private var dot: CGFloat { NotchIslandMetrics.dotSize(count: visible.count) }
 
     private var runningCount: Int { agents.filter(\.running).count }
 
@@ -21,10 +23,10 @@ struct NotchIslandView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            HStack(spacing: 5) {
+            HStack(spacing: NotchIslandMetrics.spacing(count: visible.count)) {
                 ForEach(visible, id: \.name) { agent in
                     Button(action: { onTap(agent.name) }) {
-                        IslandDot(agent: agent, isSquare: isSquare)
+                        IslandDot(agent: agent, isSquare: isSquare, dot: dot)
                     }
                     .buttonStyle(.plain)
                     .help(agent.name)
@@ -35,7 +37,7 @@ struct NotchIslandView: View {
                         .frame(width: 13, height: 13)
                 }
             }
-            .frame(width: 44, alignment: .center)
+            .frame(width: NotchIslandMetrics.leftWidth(count: visible.count), alignment: .trailing)
             Spacer(minLength: 0)
             Button(action: onPrimaryTap) {
                 HStack(spacing: 3) {
@@ -72,8 +74,7 @@ struct NotchIslandView: View {
 private struct IslandDot: View {
     let agent: NotchIslandAgent
     let isSquare: Bool
-
-    private let dot: CGFloat = 16
+    let dot: CGFloat
 
     private var dotShape: AnyShape {
         if isSquare {
@@ -96,7 +97,7 @@ private struct IslandDot: View {
                     .clipShape(dotShape)
             } else {
                 Text(agent.monogram)
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.system(size: dot > 12 ? 8 : 7, weight: .bold))
                     .foregroundColor(.white)
             }
             if agent.hasError {
@@ -106,10 +107,10 @@ private struct IslandDot: View {
                     .frame(width: 10, height: 10)
                     .background(Circle().fill(Color.red))
                     .overlay(Circle().stroke(Color.white, lineWidth: 1))
-                    .offset(x: 7, y: -7)
+                    .offset(x: dot / 2 - 1, y: -(dot / 2 - 1))
             }
         }
-        .frame(width: 22, height: 22)
+        .frame(width: dot + 1, height: dot + 1)
     }
 }
 

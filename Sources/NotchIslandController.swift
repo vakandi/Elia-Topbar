@@ -18,6 +18,26 @@ struct NotchIslandAgent: Equatable {
     }
 }
 
+enum NotchIslandMetrics {
+    static let maxDots = 20
+    static let baseWing: CGFloat = 44
+
+    static func shown(_ agents: [NotchIslandAgent]) -> [NotchIslandAgent] {
+        Array(agents.filter { $0.running || $0.hasError }.prefix(maxDots))
+    }
+
+    static func compact(count: Int) -> Bool { count > 6 }
+    static func dotSize(count: Int) -> CGFloat { compact(count: count) ? 11 : 13 }
+    static func cellSize(count: Int) -> CGFloat { dotSize(count: count) + 1 }
+    static func spacing(count: Int) -> CGFloat { 1 }
+
+    static func leftWidth(count: Int) -> CGFloat {
+        guard count > 0 else { return baseWing }
+        return CGFloat(count) * cellSize(count: count)
+            + CGFloat(count - 1) * spacing(count: count) + 2
+    }
+}
+
 @MainActor
 final class NotchIslandController {
     static let shared = NotchIslandController()
@@ -30,7 +50,7 @@ final class NotchIslandController {
         self.onPrimaryClick = onPrimaryClick
         let panel = self.panel ?? makePanel()
         self.panel = panel
-        positionPanel(panel)
+        positionPanel(panel, agentCount: NotchIslandMetrics.shown(agents).count)
         panel.contentView = NSHostingView(rootView: NotchIslandView(agents: agents, onTap: { [weak self] name in
             self?.onAgentClick?(name)
         }, onPrimaryTap: { [weak self] in
@@ -69,17 +89,16 @@ final class NotchIslandController {
         return p
     }
 
-    private func positionPanel(_ panel: NSPanel) {
+    private func positionPanel(_ panel: NSPanel, agentCount: Int) {
         guard let screen = targetScreen() else { return }
         let notchW = notchWidth(on: screen)
-        let pillW = notchW + 88
+        let base = notchW + 88
+        let leftNeed = NotchIslandMetrics.leftWidth(count: agentCount)
+        let extra = max(0, leftNeed - NotchIslandMetrics.baseWing)
+        let w = base + extra
         let h: CGFloat = 32
-        let frame = NSRect(
-            x: screen.frame.midX - pillW / 2,
-            y: screen.frame.maxY - h,
-            width: pillW,
-            height: h
-        )
+        let rightEdge = screen.frame.midX + base / 2
+        let frame = NSRect(x: rightEdge - w, y: screen.frame.maxY - h, width: w, height: h)
         if panel.frame != frame { panel.setFrame(frame, display: true) }
     }
 
