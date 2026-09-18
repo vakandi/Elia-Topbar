@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import Combine
 import ServiceManagement
+import UserNotifications
 
 @main
 struct EliaTopBarApp: App {
@@ -72,6 +73,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private weak var openModelMenu: NSMenu?
     private var openModelAgent: String?
     private var cleanupLoadingPanel: NSPanel?
+    // MARK: - Overflow → notch island (LEFT of camera)
+    private var isOverflowed = false
+    private var overflowOcclusionObserver: NSObjectProtocol?
+    private var overflowPollTimer: Timer?
+    private var overflowDebounceWork: DispatchWorkItem?
+    private var lastOverflowNotifyAt: Date = .distantPast
+    private var agentIconsPlacement: String {
+        get {
+            let v = UserDefaults.standard.string(forKey: "agentIconsPlacement")
+            return (v == nil || v!.isEmpty) ? "left" : v!
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "agentIconsPlacement") }
+    }
+    private var useNotchIsland: Bool {
+        agentIconsPlacement == "left" || (agentIconsPlacement == "auto" && isOverflowed)
+    }
 
     private func logDrop(_ msg: String) {
         let line = "[\(Date())] \(msg)\n"
@@ -176,6 +193,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.updateStatusIcon()
             self.throttledSetupMenu()
             self.reconcileSubworkerStatusItems()
+            self.refreshNotchIsland()
             // Drop was never firing: defined but never called. Real agent runs
             // arrive here via $subworkers/$runningCount — Test button bypasses this.
             self.detectNewlyRunningAgents()
@@ -198,6 +216,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         RunLoop.main.add(t, forMode: .common)
         tunnelPollTimer = t
         startStatusItemWatchdog()
+        startOverflowMonitor()
         startCountdownRefresh()
     }
 
@@ -234,6 +253,108 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ensureStatusItemAlive()
         throttledSetupMenu()
         updateStatusIcon()
+        evaluateOverflow()
+    }
+
+    private func startOverflowMonitor() {
+        if let w = statusItem.button?.window {
+            overflowOcclusionObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification,
+                object: w, queue: .main
+            ) { [weak self] _ in self?.overflowOcclusionFired() }
+        }
+        overflowPollTimer?.invalidate()
+        let t = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            self?.evaluateOverflow()
+        }
+        RunLoop.main.add(t, forMode: .common)
+        overflowPollTimer = t
+        evaluateOverflow()
+    }
+
+    private func overflowOcclusionFired() {
+        overflowDebounceWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.evaluateOverflow() }
+        overflowDebounceWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+    }
+
+    private func evaluateOverflow() {
+        guard statusItem.button?.window != nil else { return }
+        if overflowOcclusionObserver == nil, let w = statusItem.button?.window {
+            overflowOcclusionObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification,
+                object: w, queue: .main
+            ) { [weak self] _ in self?.overflowOcclusionFired() }
+        }
+        var hidden = false
+        if statusItem.isVisible, let win = statusItem.button?.window {
+            hidden = !win.occlusionState.contains(.visible)
+            if !hidden, win.frame.height < 24, win.frame.origin.y < 0 { hidden = true }
+        }
+        if hidden != isOverflowed { setOverflowed(hidden) }
+        refreshNotchIsland()
+    }
+
+    private func setOverflowed(_ hidden: Bool) {
+        isOverflowed = hidden
+        logDrop("overflow changed hidden=\(hidden) placement=\(agentIconsPlacement)")
+        throttledSetupMenu()
+        refreshNotchIsland()
+        guard hidden else { return }
+        if Date().timeIntervalSince(lastOverflowNotifyAt) < 3600 { return }
+        lastOverflowNotifyAt = Date()
+        notifyOverflow()
+    }
+
+    private func notifyOverflow() {
+        let n = subworkerManager.subworkers.filter(\.running).count
+        let content = UNMutableNotificationContent()
+        content.title = "EliaTopBar icons hidden"
+        content.body = "Menu bar is full — \(n) agent(s) moved LEFT of the notch."
+        let req = UNNotificationRequest(identifier: "elia-topbar-overflow", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(req)
+    }
+
+    private func notchCenterX() -> CGFloat {
+        guard let screen = NSScreen.main else { return menuBarAnchorX() }
+        return screen.frame.midX
+    }
+
+    private func refreshNotchIsland() {
+        let agents = subworkerManager.subworkers.map {
+            NotchIslandAgent(name: $0.name, running: $0.running, hasError: $0.lastError != nil, photo: ProfilePhotos.shared.photo(for: $0.name))
+        }
+        if useNotchIsland {
+            NotchIslandController.shared.show(
+                agents: agents,
+                onAgentClick: { [weak self] name in self?.openAgentFromIsland(name) },
+                onPrimaryClick: { [weak self] in self?.openMainMenuFromIsland() }
+            )
+        } else {
+            NotchIslandController.shared.hide()
+        }
+        syncPrimaryVisibility()
+    }
+
+    private func syncPrimaryVisibility() {
+        if statusItem.isVisible == useNotchIsland {
+            statusItem.isVisible = !useNotchIsland
+        }
+    }
+
+    private func openMainMenuFromIsland() {
+        if mainMenu == nil || (mainMenu?.numberOfItems ?? 0) == 0 { setupMenu() }
+        guard let menu = mainMenu,
+              let pt = NotchIslandController.shared.primaryMenuPoint() else { return }
+        isMenuOpen = true
+        menu.popUp(positioning: nil, at: pt, in: nil)
+    }
+
+    private func openAgentFromIsland(_ name: String) {
+        NotificationCenter.default.post(
+            name: .eliaShowMiniBubble, object: nil, userInfo: ["name": name]
+        )
     }
 
     @objc private func handleSystemWake(_ note: Notification) {
@@ -386,6 +507,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.sendAction(on: [.leftMouseUp, .leftMouseDown])
         // Re-apply icon in case the backing store was purged.
         updateStatusIcon()
+        syncPrimaryVisibility()
     }
 
     private func setupStatusItem() {
@@ -466,12 +588,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // the inputs the icon was (or will be) composed from — never stale cache.
     private func iconContentKey(runningNames: [String], barHeight: CGFloat) -> String {
         let defs = UserDefaults.standard
-        return "\(subworkerManager.wsConnected)|\(subworkerManager.runningCount)|\(subworkerManager.serverHealth?.healthStatus ?? "-")|\(primaryStyle)|\(Int((runningPhase * 10).rounded()))|\(runningNames.joined(separator: ","))|\(colimaManager.hasRunningInstance)|\(colimaManager.instances.contains { $0.status.isTransitioning })|\(barHeight)|\(defs.string(forKey: "fleetPhotosSide") ?? "left")|\(defs.object(forKey: "fleetLeftPad") as? Double ?? 3)|\(defs.string(forKey: "dropPhotoShape") ?? "round")"
+        let errorNames = subworkerManager.subworkers.filter { $0.lastError != nil }.map(\.name).sorted().joined(separator: ",")
+        return "\(subworkerManager.wsConnected)|\(subworkerManager.runningCount)|\(subworkerManager.serverHealth?.healthStatus ?? "-")|\(primaryStyle)|\(Int((runningPhase * 10).rounded()))|\(runningNames.joined(separator: ","))|\(errorNames)|\(colimaManager.hasRunningInstance)|\(colimaManager.instances.contains { $0.status.isTransitioning })|\(barHeight)|\(defs.string(forKey: "fleetPhotosSide") ?? "left")|\(defs.object(forKey: "fleetLeftPad") as? Double ?? 3)|\(defs.string(forKey: "dropPhotoShape") ?? "round")"
     }
 
     private func currentFleetNames() -> [String] {
+        if useNotchIsland { return [] }
         var names = subworkerManager.sortedRunningNames()
+        let now = Date()
         for sw in subworkerManager.subworkers where sw.lastError != nil && !names.contains(sw.name) {
+            // Pin only recent errors (<10 min, same window as purgeStaleErrors) so
+            // idle red dots expire instead of sticking in the menu bar forever.
+            if let at = sw.lastErrorAt, now.timeIntervalSince(at) > 600 { continue }
             names.append(sw.name)
         }
         return names
@@ -521,7 +649,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if subworkerManager.serverHealth?.healthStatus == "healthy" {
             let style = primaryStyle
             if swRunning > 0 && style != "default" {
-                let staticKey = "\(swDisconnected)|\(swRunning)|\(subworkerManager.serverHealth?.healthStatus ?? "-")|\(style)|\(runningNames.joined(separator: ","))|\(hasRunning)|\(hasTransitioning)|\(barHeight)|\(UserDefaults.standard.string(forKey: "fleetPhotosSide") ?? "left")|\(UserDefaults.standard.object(forKey: "fleetLeftPad") as? Double ?? 3)|\(UserDefaults.standard.string(forKey: "dropPhotoShape") ?? "round")"
+                let errSig = subworkerManager.subworkers.filter { $0.lastError != nil }.map(\.name).sorted().joined(separator: ",")
+                let staticKey = "\(swDisconnected)|\(swRunning)|\(subworkerManager.serverHealth?.healthStatus ?? "-")|\(style)|\(runningNames.joined(separator: ","))|\(errSig)|\(hasRunning)|\(hasTransitioning)|\(barHeight)|\(UserDefaults.standard.string(forKey: "fleetPhotosSide") ?? "left")|\(UserDefaults.standard.object(forKey: "fleetLeftPad") as? Double ?? 3)|\(UserDefaults.standard.string(forKey: "dropPhotoShape") ?? "round")"
                 if staticKey != lastStaticKey || cachedStaticIcon == nil {
                     iconBaseStartX = 0
                     var base = badgeImage(base: GrokStyles.bannerBase(style: style, barHeight: barHeight), count: swRunning, barHeight: barHeight)
@@ -667,6 +796,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             errorItem.attributedTitle = emojiAwareTitle("⚠ \(actionError)", color: .secondaryLabelColor)
             errorItem.isEnabled = false
             menu.addItem(errorItem)
+            menu.addItem(NSMenuItem.separator())
+        }
+
+        if isOverflowed {
+            let warnItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            warnItem.attributedTitle = emojiAwareTitle("⚠️ Icons hidden — agents moved LEFT of notch", color: .systemOrange)
+            warnItem.isEnabled = false
+            menu.addItem(warnItem)
             menu.addItem(NSMenuItem.separator())
         }
 
@@ -1313,6 +1450,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.subworkerManager.subworkers[i].lastError = nil
                     self.subworkerManager.subworkers[i].lastErrorAt = nil
                 }
+                self.lastIconKey = ""
+                self.updateStatusIcon()
             }
         }
     }

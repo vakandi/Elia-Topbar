@@ -76,6 +76,27 @@ enum GrokStyles {
         }
     }
 
+    static func composed(style: String, barHeight: CGFloat, phase: Double) -> NSImage {
+        if style == "default" {
+            if let p = Bundle.main.path(forResource: "icon_running_topbar", ofType: "png"),
+               let im = NSImage(contentsOfFile: p) {
+                im.isTemplate = false
+                return im
+            }
+            return NSImage(size: NSSize(width: barHeight, height: barHeight), flipped: false) { _ in true }
+        }
+        let size = barHeight * 0.92
+        let frame = bannerBase(style: style, barHeight: barHeight).copy() as! NSImage
+        frame.lockFocus()
+        ringOverlay(style: style, barHeight: barHeight, phase: phase).draw(
+            in: NSRect(x: 0, y: (frame.size.height - size) / 2, width: size, height: size),
+            from: NSRect(origin: .zero, size: NSSize(width: size, height: size)),
+            operation: .sourceOver, fraction: 1.0)
+        frame.unlockFocus()
+        frame.isTemplate = false
+        return frame
+    }
+
     static func bannerBase(style: String, barHeight: CGFloat) -> NSImage {
         let size = barHeight * 0.92
         let base = NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in true }

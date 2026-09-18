@@ -35,6 +35,10 @@ struct TopbarSettingsView: View {
     @State private var dropDraggableEnabled: Bool = UserDefaults.standard.bool(forKey: "dropDraggableEnabled")
     @State private var closeDropsOnPrimaryClick: Bool = (UserDefaults.standard.object(forKey: "closeDropsOnPrimaryClick") as? Bool ?? true)
     @State private var viewerChoice: String = UserDefaults.standard.string(forKey: "viewerPreferredUI") ?? "logViewer"
+    @State private var agentIconsPlacement: String = {
+        let v = UserDefaults.standard.string(forKey: "agentIconsPlacement")
+        return (v == nil || v!.isEmpty) ? "left" : v!
+    }()
     @State private var profile: String = UserDefaults.standard.string(forKey: "eliaProfile") ?? "developer"
     @State private var showSticker: Bool = (UserDefaults.standard.object(forKey: "dropShowSticker") as? Bool ?? true)
     @State private var showTodo: Bool = (UserDefaults.standard.object(forKey: "dropShowTodo") as? Bool ?? true)
@@ -118,6 +122,16 @@ struct TopbarSettingsView: View {
                     }
                     .onChange(of: primaryStyle) { v in
                         defaults.set(v, forKey: "primaryIconStyle")
+                        onRefresh()
+                    }
+
+                    Picker("Agent icons", selection: $agentIconsPlacement) {
+                        Text("Left of notch").tag("left")
+                        Text("Auto on overflow").tag("auto")
+                        Text("Right (menu bar)").tag("right")
+                    }
+                    .onChange(of: agentIconsPlacement) { v in
+                        defaults.set(v, forKey: "agentIconsPlacement")
                         onRefresh()
                     }
                 }
