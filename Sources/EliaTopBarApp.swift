@@ -793,8 +793,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let actionError = colimaManager.actionError {
             let errorItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-            errorItem.attributedTitle = emojiAwareTitle("⚠ \(actionError)", color: .secondaryLabelColor)
+            errorItem.attributedTitle = emojiAwareTitle("⚠ \(truncatedMenuText(actionError))", color: .secondaryLabelColor)
             errorItem.isEnabled = false
+            errorItem.toolTip = actionError
             menu.addItem(errorItem)
             menu.addItem(NSMenuItem.separator())
         }
@@ -813,9 +814,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             loadingItem.isEnabled = false
             menu.addItem(loadingItem)
         case .error(let message):
-            let errorItem = NSMenuItem(title: message, action: nil, keyEquivalent: "")
-            errorItem.isEnabled = false
-            menu.addItem(errorItem)
+            menu.addItem(errorMenuItem(text: "Error: \(message)"))
         case .loaded, .loading:
             addInstanceItems(to: menu)
         }
@@ -932,10 +931,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if let error = subworkerManager.lastError {
-            let errorItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-            errorItem.attributedTitle = emojiAwareTitle("  ⚠ Last: \(error)", color: .secondaryLabelColor)
-            errorItem.isEnabled = false
-            menu.addItem(errorItem)
+            let parts = error.components(separatedBy: ": ")
+            let agentName = parts.first ?? "agent"
+            let parent = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            parent.attributedTitle = emojiAwareTitle("  ⚠ Last error: \(truncatedMenuText(agentName, limit: 24))", color: .secondaryLabelColor)
+            parent.toolTip = error
+            let detail = NSMenu()
+            detail.autoenablesItems = false
+            let fullItem = NSMenuItem(title: truncatedMenuText(error, limit: 100), action: nil, keyEquivalent: "")
+            fullItem.isEnabled = false
+            fullItem.toolTip = error
+            detail.addItem(fullItem)
+            let copyItem = NSMenuItem(title: "", action: #selector(copyErrorText(_:)), keyEquivalent: "")
+            copyItem.attributedTitle = emojiAwareTitle("📋 Copy error", color: .labelColor)
+            copyItem.target = self
+            copyItem.representedObject = error
+            detail.addItem(copyItem)
+            parent.submenu = detail
+            menu.addItem(parent)
         }
 
         if !subworkerManager.wsConnected {
@@ -1136,9 +1149,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let error = sw.lastError {
             let errItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-            errItem.attributedTitle = emojiAwareTitle("❌ Error: \(error)", color: .secondaryLabelColor)
+            errItem.attributedTitle = emojiAwareTitle("❌ Error: \(truncatedMenuText(error, limit: 80))", color: .secondaryLabelColor)
             errItem.isEnabled = false
+            errItem.toolTip = error
             submenu.addItem(errItem)
+            let copyItem = NSMenuItem(title: "", action: #selector(copyErrorText(_:)), keyEquivalent: "")
+            copyItem.attributedTitle = emojiAwareTitle("📋 Copy error", color: .labelColor)
+            copyItem.target = self
+            copyItem.representedObject = error
+            submenu.addItem(copyItem)
         }
 
         if let completed = sw.lastCompleted {
@@ -2218,11 +2237,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return item
     }
 
-    private func errorMenuItem(text: String) -> NSMenuItem {
-        let item = NSMenuItem(title: text, action: nil, keyEquivalent: "")
+    private func errorMenuItem(text: String, limit: Int = 64) -> NSMenuItem {
+        let item = NSMenuItem(title: truncatedMenuText(text, limit: limit), action: nil, keyEquivalent: "")
         item.isEnabled = false
         item.toolTip = text
         return item
+    }
+
+    private func truncatedMenuText(_ text: String, limit: Int = 64) -> String {
+        let singleLine = text
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard singleLine.count > limit else { return singleLine }
+        return String(singleLine.prefix(limit - 1)).trimmingCharacters(in: .whitespaces) + "…"
+    }
+
+    @objc private func copyErrorText(_ sender: NSMenuItem) {
+        guard let text = sender.representedObject as? String, !text.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     private func disabledItem(_ text: String) -> NSMenuItem {
