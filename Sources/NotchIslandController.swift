@@ -27,7 +27,9 @@ enum NotchIslandMetrics {
     }
 
     static func compact(count: Int) -> Bool { count > 6 }
-    static func dotSize(count: Int) -> CGFloat { compact(count: count) ? 11 : 13 }
+    // Match the menu-bar (Auto → right) agent dots: top bar uses
+    // diameter = barHeight * 0.86 ≈ 19pt on a ~22pt status bar.
+    static func dotSize(count: Int) -> CGFloat { compact(count: count) ? 17 : 19 }
     static func cellSize(count: Int) -> CGFloat { dotSize(count: count) + 1 }
     static func spacing(count: Int) -> CGFloat { 1 }
 
