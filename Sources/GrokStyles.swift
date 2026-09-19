@@ -78,9 +78,11 @@ enum GrokStyles {
 
     static func composed(style: String, barHeight: CGFloat, phase: Double) -> NSImage {
         if style == "default" {
+            if let cached = defaultIcon { return cached }
             if let p = Bundle.main.path(forResource: "icon_running_topbar", ofType: "png"),
                let im = NSImage(contentsOfFile: p) {
                 im.isTemplate = false
+                defaultIcon = im
                 return im
             }
             return NSImage(size: NSSize(width: barHeight, height: barHeight), flipped: false) { _ in true }
@@ -97,10 +99,28 @@ enum GrokStyles {
         return frame
     }
 
+    private static var baseCache: [String: NSImage] = [:]
+    private static var frameCache: [String: NSImage] = [:]
+    private static var defaultIcon: NSImage?
+
+    static func islandFrame(style: String, barHeight: CGFloat, phase: Double) -> NSImage {
+        let bucket = Int(phase * 15) % 512
+        let key = "\(style)|\(barHeight)|\(bucket)"
+        if let hit = frameCache[key] { return hit }
+        let frame = composed(style: style, barHeight: barHeight, phase: phase)
+        frameCache[key] = frame
+        return frame
+    }
+
     static func bannerBase(style: String, barHeight: CGFloat) -> NSImage {
+        let key = "\(style)|\(barHeight)"
+        if let cached = baseCache[key] { return cached }
         let size = barHeight * 0.92
         let base = NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in true }
-        guard style == "grokIcon" || style == "pulseIcon" else { return base }
+        guard style == "grokIcon" || style == "pulseIcon" else {
+            baseCache[key] = base
+            return base
+        }
         if let icon = Bundle.main.path(forResource: "icon_running_topbar", ofType: "png").flatMap({ NSImage(contentsOfFile: $0) }) {
             let s: CGFloat = size * 0.78
             let sq: CGFloat = size * 0.92, rad: CGFloat = sq * 0.27
@@ -113,6 +133,7 @@ enum GrokStyles {
             NSGraphicsContext.restoreGraphicsState()
             base.unlockFocus()
         }
+        baseCache[key] = base
         return base
     }
 }

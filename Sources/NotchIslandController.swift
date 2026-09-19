@@ -42,6 +42,7 @@ enum NotchIslandMetrics {
 final class NotchIslandController {
     static let shared = NotchIslandController()
     private var panel: NSPanel?
+    private var lastAgents: [NotchIslandAgent]?
     private var onAgentClick: ((String) -> Void)?
     private var onPrimaryClick: (() -> Void)?
 
@@ -51,6 +52,8 @@ final class NotchIslandController {
         let panel = self.panel ?? makePanel()
         self.panel = panel
         positionPanel(panel, agentCount: NotchIslandMetrics.shown(agents).count)
+        if panel.isVisible, let last = lastAgents, last == agents { return }
+        lastAgents = agents
         panel.contentView = NSHostingView(rootView: NotchIslandView(agents: agents, onTap: { [weak self] name in
             self?.onAgentClick?(name)
         }, onPrimaryTap: { [weak self] in
@@ -69,6 +72,7 @@ final class NotchIslandController {
     func hide() {
         panel?.orderOut(nil)
         panel?.contentView = nil
+        lastAgents = nil
     }
 
     private func makePanel() -> NSPanel {

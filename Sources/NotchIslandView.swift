@@ -48,7 +48,7 @@ struct NotchIslandView: View {
                             .frame(width: 22, height: 22)
                     } else {
                         TimelineView(.animation(minimumInterval: 1.0 / 15.0)) { timeline in
-                            Image(nsImage: GrokStyles.composed(
+                            Image(nsImage: GrokStyles.islandFrame(
                                 style: primaryStyle,
                                 barHeight: 20,
                                 phase: timeline.date.timeIntervalSinceReferenceDate * 2.6
