@@ -3,6 +3,7 @@ import AppKit
 
 struct NotchIslandView: View {
     let agents: [NotchIslandAgent]
+    let server: NotchIslandServerState
     let onTap: (String) -> Void
     let onPrimaryTap: () -> Void
 
@@ -21,6 +22,12 @@ struct NotchIslandView: View {
 
     private var hasError: Bool { agents.contains(where: { $0.hasError }) }
     private var hasRunning: Bool { visible.contains(where: \.running) }
+    private static let notRunningServerIcon: NSImage? = {
+        guard let path = Bundle.main.path(forResource: "icon_not_running_server", ofType: "png"),
+              let image = NSImage(contentsOfFile: path) else { return nil }
+        image.isTemplate = false
+        return image
+    }()
 
     var body: some View {
         HStack(spacing: 0) {
@@ -37,36 +44,59 @@ struct NotchIslandView: View {
             Spacer(minLength: 0)
             Button(action: onPrimaryTap) {
                 HStack(spacing: 3) {
-                    if hasError {
-                        // Failed visual mirrors the menu-bar error badge (red
-                        // circle + white "!", same as IslandDot and the error
-                        // fleet photos): static base, no running animation.
-                        // Count text stays.
-                        ZStack(alignment: .topTrailing) {
+                    if !server.wsConnected {
+                        Image(systemName: "circle.slash")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.red)
+                            .frame(width: 22, height: 22)
+                    } else if server.serverHealthy {
+                        if hasError {
+                            // Failed visual mirrors the menu-bar error badge (red
+                            // circle + white "!", same as IslandDot and the error
+                            // fleet photos): static base, no running animation.
+                            // Count text stays.
+                            ZStack(alignment: .topTrailing) {
+                                Image(nsImage: GrokStyles.composed(style: "default", barHeight: 20, phase: 0))
+                                    .resizable()
+                                    .scaledToFit()
+                                Text("!")
+                                    .font(.system(size: 8, weight: .black))
+                                    .foregroundColor(.white)
+                                    .frame(width: 10, height: 10)
+                                    .background(Circle().fill(Color.red))
+                                    .overlay(Circle().stroke(Color.white, lineWidth: 1))
+                            }
+                            .frame(width: 22, height: 22)
+                        } else if primaryStyle == "default" || !hasRunning {
                             Image(nsImage: GrokStyles.composed(style: "default", barHeight: 20, phase: 0))
                                 .resizable()
                                 .scaledToFit()
-                            Text("!")
-                                .font(.system(size: 8, weight: .black))
-                                .foregroundColor(.white)
-                                .frame(width: 10, height: 10)
-                                .background(Circle().fill(Color.red))
-                                .overlay(Circle().stroke(Color.white, lineWidth: 1))
+                                .frame(width: 22, height: 22)
+                        } else {
+                            // GPU-composited animation: static base blitted once, ring
+                            // rotates on the render server at display refresh. No
+                            // per-frame NSImage alloc/lockFocus, no TimelineView
+                            // re-renders, no Image(nsImage:) texture re-uploads.
+                            IslandPrimaryIcon(style: primaryStyle)
+                                .frame(width: 22, height: 22)
+                                .id(primaryStyle)
                         }
-                        .frame(width: 22, height: 22)
-                    } else if primaryStyle == "default" || !hasRunning {
+                    } else if server.colimaRunning {
+                        if let failedIcon = Self.notRunningServerIcon {
+                            Image(nsImage: failedIcon)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 22, height: 22)
+                        } else {
+                            Image(systemName: "xmark.octagon.fill")
+                                .foregroundColor(.red)
+                                .frame(width: 22, height: 22)
+                        }
+                    } else {
                         Image(nsImage: GrokStyles.composed(style: "default", barHeight: 20, phase: 0))
                             .resizable()
                             .scaledToFit()
                             .frame(width: 22, height: 22)
-                    } else {
-                        // GPU-composited animation: static base blitted once, ring
-                        // rotates on the render server at display refresh. No
-                        // per-frame NSImage alloc/lockFocus, no TimelineView
-                        // re-renders, no Image(nsImage:) texture re-uploads.
-                        IslandPrimaryIcon(style: primaryStyle)
-                            .frame(width: 22, height: 22)
-                            .id(primaryStyle)
                     }
                     Text("\(runningCount)")
                         .font(.system(size: 11, weight: .bold))

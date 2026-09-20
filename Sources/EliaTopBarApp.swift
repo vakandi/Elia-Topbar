@@ -325,9 +325,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let agents = subworkerManager.subworkers.map {
             NotchIslandAgent(name: $0.name, running: $0.running, hasError: $0.lastError != nil, photo: ProfilePhotos.shared.photo(for: $0.name))
         }
+        let server = NotchIslandServerState(
+            wsConnected: subworkerManager.wsConnected,
+            serverHealthy: subworkerManager.serverHealth?.healthStatus == "healthy",
+            colimaRunning: colimaManager.hasRunningInstance
+        )
         if useNotchIsland {
             NotchIslandController.shared.show(
                 agents: agents,
+                server: server,
                 onAgentClick: { [weak self] name in self?.openAgentFromIsland(name) },
                 onPrimaryClick: { [weak self] in self?.openMainMenuFromIsland() }
             )

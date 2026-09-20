@@ -1,6 +1,12 @@
 import AppKit
 import SwiftUI
 
+struct NotchIslandServerState: Equatable {
+    let wsConnected: Bool
+    let serverHealthy: Bool
+    let colimaRunning: Bool
+}
+
 struct NotchIslandAgent: Equatable {
     let name: String
     let running: Bool
@@ -45,18 +51,20 @@ final class NotchIslandController {
     static let shared = NotchIslandController()
     private var panel: NSPanel?
     private var lastAgents: [NotchIslandAgent]?
+    private var lastServer: NotchIslandServerState?
     private var onAgentClick: ((String) -> Void)?
     private var onPrimaryClick: (() -> Void)?
 
-    func show(agents: [NotchIslandAgent], onAgentClick: @escaping (String) -> Void, onPrimaryClick: @escaping () -> Void) {
+    func show(agents: [NotchIslandAgent], server: NotchIslandServerState, onAgentClick: @escaping (String) -> Void, onPrimaryClick: @escaping () -> Void) {
         self.onAgentClick = onAgentClick
         self.onPrimaryClick = onPrimaryClick
         let panel = self.panel ?? makePanel()
         self.panel = panel
         positionPanel(panel, agentCount: NotchIslandMetrics.shown(agents).count)
-        if panel.isVisible, let last = lastAgents, last == agents { return }
+        if panel.isVisible, let last = lastAgents, let lastSrv = lastServer, last == agents, lastSrv == server { return }
         lastAgents = agents
-        panel.contentView = NSHostingView(rootView: NotchIslandView(agents: agents, onTap: { [weak self] name in
+        lastServer = server
+        panel.contentView = NSHostingView(rootView: NotchIslandView(agents: agents, server: server, onTap: { [weak self] name in
             self?.onAgentClick?(name)
         }, onPrimaryTap: { [weak self] in
             self?.onPrimaryClick?()
