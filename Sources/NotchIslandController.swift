@@ -34,7 +34,7 @@ enum NotchIslandMetrics {
     static func spacing(count: Int) -> CGFloat { 1 }
 
     static func leftWidth(count: Int) -> CGFloat {
-        guard count > 0 else { return baseWing }
+        guard count > 0 else { return 0 }
         return CGFloat(count) * cellSize(count: count)
             + CGFloat(count - 1) * spacing(count: count) + 2
     }

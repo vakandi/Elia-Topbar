@@ -19,6 +19,7 @@ struct NotchIslandView: View {
 
     private var runningCount: Int { agents.filter(\.running).count }
 
+    private var hasError: Bool { agents.contains(where: { $0.hasError }) }
     private var hasRunning: Bool { visible.contains(where: \.running) }
 
     var body: some View {
@@ -31,17 +32,29 @@ struct NotchIslandView: View {
                     .buttonStyle(.plain)
                     .help(agent.name)
                 }
-                if visible.isEmpty {
-                    Circle()
-                        .fill(Color.secondary.opacity(0.35))
-                        .frame(width: dot, height: dot)
-                }
             }
             .frame(width: NotchIslandMetrics.leftWidth(count: visible.count), alignment: .trailing)
             Spacer(minLength: 0)
             Button(action: onPrimaryTap) {
                 HStack(spacing: 3) {
-                    if primaryStyle == "default" || !hasRunning {
+                    if hasError {
+                        // Failed visual mirrors the menu-bar error badge (red
+                        // circle + white "!", same as IslandDot and the error
+                        // fleet photos): static base, no running animation.
+                        // Count text stays.
+                        ZStack(alignment: .topTrailing) {
+                            Image(nsImage: GrokStyles.composed(style: "default", barHeight: 20, phase: 0))
+                                .resizable()
+                                .scaledToFit()
+                            Text("!")
+                                .font(.system(size: 8, weight: .black))
+                                .foregroundColor(.white)
+                                .frame(width: 10, height: 10)
+                                .background(Circle().fill(Color.red))
+                                .overlay(Circle().stroke(Color.white, lineWidth: 1))
+                        }
+                        .frame(width: 22, height: 22)
+                    } else if primaryStyle == "default" || !hasRunning {
                         Image(nsImage: GrokStyles.composed(style: "default", barHeight: 20, phase: 0))
                             .resizable()
                             .scaledToFit()
@@ -64,7 +77,8 @@ struct NotchIslandView: View {
             .frame(minWidth: 44, alignment: .center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.opacity(0.85))
+        .background(Color.black)
+        .shadow(color: .clear, radius: 0, x: 0, y: 0)
     }
 }
 
