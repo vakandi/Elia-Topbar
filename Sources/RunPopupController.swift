@@ -3,19 +3,16 @@ import SwiftUI
  @MainActor final class RunPopupController {
      static let shared = RunPopupController()
      private var panels: [String: NSPanel] = [:]
+    /// @State storage is reference-backed, so holding a copy lets us reach a
+    /// panel's timers after its NSHostingView is gone.
+    private var panelViews: [String: RunPopupView] = [:]
      private var retractTimers: [String: Timer] = [:]
      private var hoverStates: [String: Bool] = [:]
      private var durations: [String: TimeInterval] = [:]
      private var noAutoClose: Set<String> = []
     private func logPopup(_ msg: String) {
-        let line = "[\(Date())] \(msg)\n"
-        if let data = line.data(using: .utf8) {
-            let url = URL(fileURLWithPath: "/tmp/EliaTopBar.log")
-            if FileManager.default.fileExists(atPath: url.path) {
-                if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(data); try? h.close() }
-            } else { try? data.write(to: url) }
-        }
-        print("[EliaDrop] \(msg)")
+        BoundedLogWriter.sharedDrop.log(msg)
+        AppLog.d(msg)
     }
      func show(for agentName: String, dropX: CGFloat, duration: TimeInterval, baseURL: String = "http://localhost:5656", showSessionSelector: Bool = false, disableAutoClose: Bool = false) {
          logPopup("show agent=\(agentName) dropX=\(dropX) duration=\(duration) panelsBefore=\(panels.count) screen=\(String(describing: NSScreen.main?.frame))")
@@ -37,8 +34,9 @@ import SwiftUI
          let finalFrame = NSRect(x: x, y: barBottom-height, width: width, height: height)
          let hiddenFrame = NSRect(x: x, y: screen.frame.maxY, width: width, height: height)
          let panel = makePanel(hiddenFrame: hiddenFrame, agentName: agentName)
-         panel.contentView = NSHostingView(rootView: RunPopupView(agentName: agentName, onTap: { [weak self] in self?.retract(for: agentName) }, baseURL: baseURL, showSessionSelector: showSessionSelector, disableAutoClose: disableAutoClose))
-          panels[agentName]=panel; durations[agentName]=duration; hoverStates[agentName]=false
+let popupView = RunPopupView(agentName: agentName, onTap: { [weak self] in self?.retract(for: agentName) }, baseURL: baseURL, showSessionSelector: showSessionSelector, disableAutoClose: disableAutoClose)
+        panel.contentView = NSHostingView(rootView: popupView)
+         panels[agentName]=panel; panelViews[agentName]=popupView; durations[agentName]=duration; hoverStates[agentName]=false
           if disableAutoClose { noAutoClose.insert(agentName) } else { noAutoClose.remove(agentName) }
           repositionAll(dropX: dropX)
           panel.orderFrontRegardless()
@@ -74,6 +72,10 @@ import SwiftUI
     }
     private func close(for name: String, panel: NSPanel) {
         panel.orderOut(nil)
+        // contentView = nil does NOT fire onDisappear, so release the view's
+        // timers here or they outlive the panel forever.
+        panelViews[name]?.releaseTimers()
+        panelViews[name] = nil
         panel.contentView = nil
         retractTimers[name]?.invalidate(); retractTimers[name]=nil
         if panels[name] === panel {
@@ -200,6 +202,7 @@ struct RunPopupView: View {
     @State private var trafficObserver: NSObjectProtocol?
     @State private var trafficTimer: Timer? = nil
     @State private var statusTimer: Timer? = nil
+    @State private var liveTickTimer: Timer? = nil
     @State private var showDoneOverlay = false
     @State private var doneCloseScheduled = false
     @State private var doneCloseTimer: Timer? = nil
@@ -297,7 +300,7 @@ struct RunPopupView: View {
         .animation(.easeInOut(duration:0.22), value: showSticker)
         .animation(.easeInOut(duration:0.2), value: effectiveTodos.isEmpty)
         .animation(.easeInOut(duration:0.2), value: subagentKeys.isEmpty)
-        .onAppear{ showStickerPinned=false; isHoveringLive=false; historyReady=false; verticalTodos=[]; subagentKeys=[]; expandedSubagent=nil; isLockedCached=RunPopupController.shared.isLocked(for: agentName); draggableEnabledState=UserDefaults.standard.bool(forKey:"dropDraggableEnabled"); observeDraggable(); observeTraffic(); fetchAgentStatus(); fetchRunHistory(); observeLogs(); startTick(); startStatusRefresh() }.onDisappear{ if let o=observer{NotificationCenter.default.removeObserver(o)}; if let d=draggableObserver{NotificationCenter.default.removeObserver(d)}; if let t=trafficObserver{NotificationCenter.default.removeObserver(t)}; trafficTimer?.invalidate(); statusTimer?.invalidate(); stopAllSubagentPolling() }.onHover{ h in RunPopupController.shared.setHover(h, for:agentName) }
+        .onAppear{ showStickerPinned=false; isHoveringLive=false; historyReady=false; verticalTodos=[]; subagentKeys=[]; expandedSubagent=nil; isLockedCached=RunPopupController.shared.isLocked(for: agentName); draggableEnabledState=UserDefaults.standard.bool(forKey:"dropDraggableEnabled"); observeDraggable(); observeTraffic(); fetchAgentStatus(); fetchRunHistory(); observeLogs(); startTick(); startStatusRefresh() }.onDisappear{ if let o=observer{NotificationCenter.default.removeObserver(o)}; if let d=draggableObserver{NotificationCenter.default.removeObserver(d)}; if let t=trafficObserver{NotificationCenter.default.removeObserver(t)}; releaseTimers() }.onHover{ h in RunPopupController.shared.setHover(h, for:agentName) }
         .onChange(of: showStickerPinned){ _ in updatePanelForSubagents() }
         .onChange(of: isHoveringLive){ _ in updatePanelForSubagents() }
         .onReceive(livestream.throttled){ agent in if agent==agentName { refreshSubagentsFromLive() } }
@@ -1026,7 +1029,24 @@ struct RunPopupView: View {
 
     // MARK: - Live streaming — coalesced entries + vertical todos
 
-    private func startTick(){ Timer.scheduledTimer(withTimeInterval:1.0, repeats:true){ _ in if liveRunning { liveTick+=1 } } }
+    private func startTick(){
+        // Must stay stored: an unreferenced repeating Timer can never be invalidated.
+        liveTickTimer?.invalidate()
+        let running = $liveRunning, tick = $liveTick
+        let t = Timer(timeInterval: 1.0, repeats: true){ _ in
+            Task { @MainActor in if running.wrappedValue { tick.wrappedValue += 1 } }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        liveTickTimer = t
+    }
+    /// Panels are also released via `contentView = nil`, which skips onDisappear.
+    func releaseTimers(){
+        liveTickTimer?.invalidate(); liveTickTimer = nil
+        trafficTimer?.invalidate(); trafficTimer = nil
+        statusTimer?.invalidate(); statusTimer = nil
+        doneCloseTimer?.invalidate(); doneCloseTimer = nil
+        stopAllSubagentPolling()
+    }
 
     private func observeLogs(){
         observer=NotificationCenter.default.addObserver(forName:SubworkerManager.runLogNotification, object:nil, queue:.main){ note in

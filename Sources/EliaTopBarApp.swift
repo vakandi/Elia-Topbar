@@ -46,6 +46,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var subworkerManager: SubworkerManager!
     private var cancellables = Set<AnyCancellable>()
     private var logPopover: NSPopover?
+    /// Nil-ing an NSHostingController can skip SwiftUI onDisappear, so we hold
+    /// the view to release its timers explicitly on every close path.
+    private var logPopoverView: LogPopoverView?
     private var mainMenu: NSMenu?
     private var topbarSettingsWindow: NSWindow?
     /// Hit-test geometry for the merged icon: photos zone + banner zone.
@@ -58,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var iconPhotoCount: Int = 0
     private var iconPhotoNames: [String] = []
     private var subworkerLogPopover: NSPopover?
+    private var subworkerLogPopoverView: LogPopoverView?
     private var subworkerLogPopoverName: String?
     /// Invisible 1pt anchor panel for notch-centered log popovers. MUST stay
     /// alive + ordered in while the popover is shown (see showLogPopoverBelowNotch).
@@ -95,16 +99,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func logDrop(_ msg: String) {
-        let line = "[\(Date())] \(msg)\n"
-        if let data = line.data(using: .utf8) {
-            let url = URL(fileURLWithPath: "/tmp/EliaTopBar.log")
-            if FileManager.default.fileExists(atPath: url.path) {
-                if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(data); try? h.close() }
-            } else {
-                try? data.write(to: url)
-            }
-        }
-        print("[EliaDrop] \(msg)")
+        BoundedLogWriter.sharedDrop.log(msg)
+        AppLog.d(msg)
     }
 
     private func detectNewlyRunningAgents() {
@@ -1412,9 +1408,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func closeAllLogPopovers() {
-        if let popover = logPopover, popover.isShown { popover.performClose(nil); popover.contentViewController = nil }
+        if let popover = logPopover, popover.isShown { popover.performClose(nil) }
+        logPopoverView?.releaseTimers(); logPopoverView = nil
+        logPopover?.contentViewController = nil
         logPopover = nil
-        if let popover = subworkerLogPopover, popover.isShown { popover.performClose(nil); popover.contentViewController = nil }
+        if let popover = subworkerLogPopover, popover.isShown { popover.performClose(nil) }
+        subworkerLogPopoverView?.releaseTimers(); subworkerLogPopoverView = nil
+        subworkerLogPopover?.contentViewController = nil
         subworkerLogPopover = nil
         subworkerLogPopoverName = nil
         notchLogAnchorPanel?.orderOut(nil)
@@ -1434,12 +1434,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Permanent click-path audit (release-safe): 3 lines per click, mirrors
     /// RunPopupController.logPopup precedent. Diagnoses dot-click routing.
     private func logClick(_ msg: String) {
-        let line = "[\(Date())] \(msg)\n"
-        guard let data = line.data(using: .utf8) else { return }
-        let url = URL(fileURLWithPath: "/tmp/EliaTopBar-clicks.log")
-        if FileManager.default.fileExists(atPath: url.path) {
-            if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(data); try? h.close() }
-        } else { try? data.write(to: url) }
+        BoundedLogWriter.sharedClick.log(msg)
     }
     @objc private func showLogs(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
@@ -1454,6 +1449,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.delegate = self
 
         let logView = LogPopoverView(subworkerName: name, baseURL: subworkerManager.currentBaseURL)
+        logPopoverView = logView
         popover.contentViewController = NSHostingController(rootView: logView)
 
         logPopover = popover
@@ -1768,6 +1764,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             popover.performClose(nil)
+            subworkerLogPopoverView?.releaseTimers(); subworkerLogPopoverView = nil
             popover.contentViewController = nil
             subworkerLogPopover = nil
             subworkerLogPopoverName = nil
@@ -1776,9 +1773,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.contentSize = NSSize(width: 520, height: 400)
         popover.behavior = .semitransient
         popover.delegate = self
-        popover.contentViewController = NSHostingController(
-            rootView: LogPopoverView(subworkerName: name, baseURL: subworkerManager.currentBaseURL)
-        )
+        let sv = LogPopoverView(subworkerName: name, baseURL: subworkerManager.currentBaseURL)
+        subworkerLogPopoverView = sv
+        popover.contentViewController = NSHostingController(rootView: sv)
         subworkerLogPopover = popover
         subworkerLogPopoverName = name
         NSApp.activate(ignoringOtherApps: true)
@@ -2725,14 +2722,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 extension AppDelegate: NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         guard let popover = notification.object as? NSPopover else { return }
-        popover.contentViewController = nil
         if popover === subworkerLogPopover {
+            subworkerLogPopoverView?.releaseTimers(); subworkerLogPopoverView = nil
             subworkerLogPopover = nil
             subworkerLogPopoverName = nil
         }
         if popover === logPopover {
+            logPopoverView?.releaseTimers(); logPopoverView = nil
             logPopover = nil
         }
+        popover.contentViewController = nil
         retireNotchLogAnchorIfIdle()
     }
 }

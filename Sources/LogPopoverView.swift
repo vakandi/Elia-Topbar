@@ -138,6 +138,7 @@ struct LogPopoverView: View {
     @State private var subagentPollTimers: [LivestreamStore.SubagentKey: Timer] = [:]
     @State private var isHoveringSubagentStrip = false
     @State private var liveMessagesPollTimer: Timer?
+    @State private var liveTickTimer: Timer?
     @State private var messageFetchLimit = 20
     @State private var hasMoreMessages = true
     @State private var isLoadingMoreMessages = false
@@ -210,6 +211,7 @@ struct LogPopoverView: View {
             stopObservingRunBanners()
             stopObservingLiveLifecycle()
             stopLiveMessagesPolling()
+            stopLiveTick()
             stopAllSubagentPolling()
         }
         .onReceive(livestream.$todos) { map in
@@ -1092,10 +1094,30 @@ struct LogPopoverView: View {
     }
 
      private func startLiveTick() {
-        let timer = Timer(timeInterval: 1.0, repeats: true) { _ in
-            if self.liveRunning { self.liveTick += 1 }
+        stopLiveTick()
+        // Bindings, not `self`: capturing self would also capture liveTickTimer's
+        // own box, and the run loop would hold a live timer forever.
+        let running = $liveRunning, tick = $liveTick
+        let t = Timer(timeInterval: 1.0, repeats: true) { _ in
+            Task { @MainActor in
+                if running.wrappedValue { tick.wrappedValue += 1 }
+            }
         }
-        RunLoop.main.add(timer, forMode: .common)
+        RunLoop.main.add(t, forMode: .common)
+        liveTickTimer = t
+    }
+
+    private func stopLiveTick() {
+        liveTickTimer?.invalidate()
+        liveTickTimer = nil
+    }
+
+    /// @State storage is reference-backed, so the delegate can reach these even
+    /// after `contentViewController = nil` skipped onDisappear.
+    func releaseTimers() {
+        stopLiveTick()
+        stopLiveMessagesPolling()
+        stopAllSubagentPolling()
     }
 
     private func startLiveMessagesPolling() {
