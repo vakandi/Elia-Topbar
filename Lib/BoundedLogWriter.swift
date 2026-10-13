@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Off-main-thread, size-capped, coalescing append-only log writer.
 ///
@@ -19,10 +20,10 @@ import Foundation
 /// The writer is a `final class` guarded by an `NSLock` rather than an actor so
 /// it can be called from any isolation domain without `await`, including from
 /// the main actor inside a synchronous callback.
-final class BoundedLogWriter {
+public final class BoundedLogWriter {
 
-    static let sharedDrop = BoundedLogWriter(path: "/tmp/EliaTopBar.log", byteLimit: 2 * 1024 * 1024)
-    static let sharedClick = BoundedLogWriter(path: "/tmp/EliaTopBar-clicks.log", byteLimit: 512 * 1024)
+public static let sharedDrop = BoundedLogWriter(path: "/tmp/EliaTopBar.log", byteLimit: 2 * 1024 * 1024)
+public static let sharedClick = BoundedLogWriter(path: "/tmp/EliaTopBar-clicks.log", byteLimit: 512 * 1024)
 
     /// Flush at most this often. Coalescing window: a burst of N lines costs
     /// 1 write, not N.
@@ -35,42 +36,43 @@ final class BoundedLogWriter {
     private static let maxBufferBytes = 256 * 1024
 
     private let path: String
-    private let byteLimit: Int
+    public let byteLimit: Int
     private let queue = DispatchQueue(label: "com.elia.topbar.boundedlog", qos: .utility)
+    var pathURL: URL { URL(fileURLWithPath: path) }
 
     private let lock = NSLock()
     private var buffer = Data()
     private var flushScheduled = false
 
     /// Test hook: number of bytes currently waiting to be flushed.
-    var pendingBytes: Int {
+    public var pendingBytes: Int {
         lock.lock(); defer { lock.unlock() }
         return buffer.count
     }
 
-    init(path: String, byteLimit: Int) {
+    public init(path: String, byteLimit: Int) {
         self.path = path
         self.byteLimit = byteLimit
     }
 
     /// Append one line. Thread-safe and non-blocking; never touches the file.
-    func log(_ msg: String) {
+    public func log(_ msg: String) {
+        let line = Data("[\(Date())] \(msg)\n".utf8)
         var dropped = false
         lock.lock()
-        if buffer.count < Self.maxBufferBytes {
-            buffer.append(Data("[\(Date())] \(msg)\n".utf8))
-        } else {
-            // Buffer full: drop the oldest half rather than grow forever.
-            buffer.removeFirst(buffer.count / 2)
-            buffer.append(Data("[\(Date())] \(msg)\n".utf8))
+        // Discard the backlog rather than grow. Keeping capacity would let the
+        // next append share storage with an in-flight flush payload (COW race).
+        if buffer.count + line.count > Self.maxBufferBytes {
+            buffer = Data()
             dropped = true
         }
+        buffer.append(line)
         let needsFlush = !flushScheduled || buffer.count >= Self.flushByteThreshold
         if !flushScheduled { flushScheduled = true }
         lock.unlock()
 
         if dropped {
-            AppLog.d("BoundedLogWriter \(path) buffer overflow, dropped oldest half")
+            os_log("BoundedLogWriter %{public}@ buffer overflow, backlog dropped", log: .default, type: .info, path)
         }
         if needsFlush { scheduleFlush() }
     }
@@ -82,10 +84,12 @@ final class BoundedLogWriter {
     }
 
     /// Drain the buffer to disk on the background queue, then enforce the cap.
-    func flush() {
+    public func flush() {
         lock.lock()
         let payload = buffer
-        buffer.removeAll(keepingCapacity: true)
+        // Fresh storage (not keepingCapacity) so `payload` is uniquely
+        // referenced and the next append cannot mutate it under us.
+        buffer = Data()
         flushScheduled = false
         lock.unlock()
 

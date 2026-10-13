@@ -3,6 +3,7 @@ import AppKit
 import Combine
 import ServiceManagement
 import UserNotifications
+import EliaTopBarKit
 
 @main
 struct EliaTopBarApp: App {

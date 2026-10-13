@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import EliaTopBarKit
  @MainActor final class RunPopupController {
      static let shared = RunPopupController()
      private var panels: [String: NSPanel] = [:]
