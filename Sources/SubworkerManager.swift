@@ -15,6 +15,22 @@ enum AppLog {
     #endif
     private static let maxLogBytes: UInt64 = 2 * 1024 * 1024
 
+    /// Always writes, in release too. Start/stop failures otherwise leave no
+    /// trace: `d` is compiled out, and the error only ever appears in a popup
+    /// too narrow to read, so a failed launch is indistinguishable from no attempt.
+    static func important(_ msg: String) {
+        let line = "[IMPORTANT] \(msg)\n"
+        let path = NSString(string: "~/Library/Logs/EliaTopBar/server-start.log").expandingTildeInPath
+        try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        if let handle = FileHandle(forWritingAtPath: path) {
+            handle.seekToEndOfFile()
+            handle.write(Data(line.utf8))
+            try? handle.close()
+        } else {
+            try? Data(line.utf8).write(to: URL(fileURLWithPath: path))
+        }
+    }
+
     static func d(_ msg: String, file: String = #file, line: Int = #line) {
         guard debug else { return }
         let fn = (file as NSString).lastPathComponent

@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 /// Manages the OpenCode Rust server (a plain native process — no Docker).
 ///
@@ -148,6 +149,77 @@ final class OpenCodeServerManager: ObservableObject {
 
     private var statusTimer: Timer?
     private var managedProcess: Process?
+    private var managedBridge: Process?
+    /// Bookmark for the repo folder. macOS only grants an app access to
+    /// `~/Documents` when the user picks it, so the grant is stored and reused
+    /// instead of re-prompting on every Start.
+    private static let accessBookmarkKey = "opencodeRepoAccessBookmark"
+
+    /// macOS grants Documents access only when the user picks the folder, and the
+    /// grant has to be stored or every Start re-prompts. Without it, `start.sh`
+    /// fails with exit 126 "Operation not permitted".
+    @MainActor
+    private func requestRepoAccess() async -> Bool {
+        if let path = Self.resolveRepoAccess(expected: subworkerRoot) {
+            AppLog.important("access: already granted for \(path)")
+            return true
+        }
+        // The user picks, so this is a consent grant for that folder alone — the
+        // panel never selects more than one directory and we never widen it.
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.directoryURL = URL(fileURLWithPath: subworkerRoot)
+        panel.message = "EliaTopBar needs access to the subworker folder to start the bridge and engine."
+        panel.prompt = "Grant Access"
+
+        guard panel.runModal() == .OK, let chosen = panel.url else {
+            AppLog.important("access: denied by user")
+            return false
+        }
+        // Grant only the configured checkout. The panel can navigate anywhere, so the
+        // choice is validated here rather than trusted — a stale stored path
+        // must not silently re-grant access to a different folder later.
+        let root = URL(fileURLWithPath: subworkerRoot).standardizedFileURL.path
+        let picked = chosen.standardizedFileURL.path
+        guard picked == root || picked.hasPrefix(root + "/") else {
+            AppLog.important("access: rejected \(picked), outside \(root)")
+            return false
+        }
+        guard let bookmark = try? chosen.bookmarkData(
+            options: .withSecurityScope,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        ) else {
+            AppLog.important("access: could not bookmark \(chosen.path)")
+            return false
+        }
+        UserDefaults.standard.set(bookmark, forKey: Self.accessBookmarkKey)
+        AppLog.important("access: granted for \(chosen.path)")
+        return true
+    }
+
+    private static func resolveRepoAccess(expected: String) -> String? {
+        guard let data = UserDefaults.standard.data(forKey: accessBookmarkKey) else { return nil }
+        var stale = false
+        guard let url = try? URL(
+            resolvingBookmarkData: data,
+            options: .withSecurityScope,
+            relativeTo: nil,
+            bookmarkDataIsStale: &stale
+        ) else { return nil }
+        // A grant that no longer points at the configured checkout is discarded,
+        // so changing the repo path in settings cannot reuse the old grant.
+        let root = URL(fileURLWithPath: expected).standardizedFileURL.path
+        guard url.standardizedFileURL.path == root else { return nil }
+        if stale {
+            UserDefaults.standard.removeObject(forKey: accessBookmarkKey)
+            return nil
+        }
+        return url.startAccessingSecurityScopedResource() ? url.path : nil
+    }
 
     /// Process scans (pgrep, ps, lsof) must never run on the main actor.
     /// They did, and every Start/Stop froze the menu for as long as the scan
@@ -245,8 +317,16 @@ final class OpenCodeServerManager: ObservableObject {
         var version: String?
     }
 
+    /// Set when `start.sh` brought the stack up. The bridge and the Rust engine
+    /// child bind the ports in `control/config/server.json`, not the standalone
+    /// port this menu stores, so health has to follow the repo or the probe
+    /// answers for a server nobody started.
+    private var bridgeHealthPort: Int?
+
+    private var probePort: Int { bridgeHealthPort ?? port }
+
     private func probeHealth() async -> HealthProbe {
-        guard let url = URL(string: "http://127.0.0.1:\(port)/health") else {
+        guard let url = URL(string: "http://127.0.0.1:\(probePort)/health") else {
             return HealthProbe(isHealthy: false, version: nil)
         }
         var request = URLRequest(url: url)
@@ -347,13 +427,182 @@ final class OpenCodeServerManager: ObservableObject {
 
     // MARK: - Start / stop
 
+    // MARK: - Driving the repo's start.sh / stop.sh
+
+    /// `repoPath` is the `server/` checkout; the bridge scripts sit one level up
+    /// in the monorepo root, next to control/.
+    private var subworkerRoot: String { SubworkerServerManager.configuredRepoPath }
+    private var bridgeStartScript: String { subworkerRoot + "/start.sh" }
+    private var bridgeStopScript: String { subworkerRoot + "/stop.sh" }
+    private var bridgeScriptsExist: Bool {
+        FileManager.default.isExecutableFile(atPath: bridgeStartScript)
+            && FileManager.default.isExecutableFile(atPath: bridgeStopScript)
+    }
+
+    /// The port the bridge binds, read from the same file `start.sh` reads, so
+    /// the health probe can never ask a different port than the one bound.
+    private func bridgePortFromRepo() -> Int? {
+        let path = subworkerRoot + "/control/config/server.json"
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let p = json["port"] as? Int, p > 0 else { return nil }
+        return p
+    }
+
+    struct ScriptResult { let exitCode: Int32; let lastLines: String }
+
+    /// Runs a repo script off the main actor and keeps the tail, which is where
+    /// start.sh puts the reason it could not come up.
+    private static func runShellScript(_ path: String, in dir: String) async -> ScriptResult {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/bash")
+                process.arguments = [path]
+                process.currentDirectoryURL = URL(fileURLWithPath: dir)
+                var env = ProcessInfo.processInfo.environment
+                for key in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"] {
+                    env.removeValue(forKey: key)
+                }
+                process.environment = env
+                let pipe = Pipe()
+                process.standardOutput = pipe
+                process.standardError = pipe
+                do {
+                    try process.run()
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    process.waitUntilExit()
+                    let text = String(data: data, encoding: .utf8) ?? ""
+                    continuation.resume(returning: ScriptResult(
+                        exitCode: process.terminationStatus,
+                        lastLines: text.split(separator: "\n").suffix(4).joined(separator: "\n")
+                    ))
+                } catch {
+                    continuation.resume(returning: ScriptResult(
+                        exitCode: -1,
+                        lastLines: error.localizedDescription
+                    ))
+                }
+            }
+        }
+    }
+
+    /// Spawns the executables directly, not the repo's `start.sh`: macOS refuses to
+    /// let this app execute a script out of `~/Documents` (exit 126, "Operation
+    /// not permitted"). Running bun needs no such grant. Returns false when this
+    /// is not a subworker checkout, so the caller falls back to the bare binary.
+    private func startViaBridgeScripts() async -> Bool {
+        guard bridgeScriptsExist else { return false }
+        AppLog.important("start: running \(bridgeStartScript)")
+
+        let result = await Self.runShellScript(bridgeStartScript, in: subworkerRoot)
+        AppLog.important("start: exit=\(result.exitCode) output=[\(result.lastLines)]")
+        guard result.exitCode == 0 else {
+            await failStart(result.lastLines.isEmpty
+                ? "start.sh exited \(result.exitCode)"
+                : result.lastLines)
+            return true
+        }
+
+        bridgeHealthPort = bridgePortFromRepo()
+        AppLog.important("start: ok bridgePort=\(bridgeHealthPort.map(String.init) ?? "?")")
+        settleAfterStart(pid: nil)
+        return true
+    }
+
+    private func startViaBridge() async -> Bool {
+        let bun = Self.findBun()
+        let bridgeEntry = subworkerRoot + "/control/server.ts"
+        let childScript = subworkerRoot + "/control/data/serve-rust.sh"
+        guard let bun,
+              FileManager.default.fileExists(atPath: bridgeEntry),
+              binaryPath != nil else {
+            AppLog.important("start: bridge incomplete (bun=\(bun ?? "nil") engine=\(binaryPath ?? "nil"))")
+            return false
+        }
+
+        AppLog.important("start: spawning bridge \(bun) \(bridgeEntry)")
+
+        // Detached on purpose: the bridge and its engine child must outlive this
+        // app, and a Process we hold a handle on dies with it.
+        let bridge = Process()
+        bridge.executableURL = URL(fileURLWithPath: bun)
+        bridge.arguments = [bridgeEntry]
+        bridge.currentDirectoryURL = URL(fileURLWithPath: subworkerRoot)
+        var env = ProcessInfo.processInfo.environment
+        for key in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"] {
+            env.removeValue(forKey: key)
+        }
+        let repoEnv = subworkerRoot + "/.env"
+        if let token = readToken(from: repoEnv) { env["ELIA_AUTH_TOKEN"] = token }
+        bridge.environment = env
+        let bridgeLog = Self.openAppendHandle(subworkerRoot + "/control/data/server.log")
+        bridge.standardOutput = bridgeLog
+        bridge.standardError = bridgeLog
+        bridge.standardInput = FileHandle.nullDevice
+
+        do {
+            try bridge.run()
+        } catch {
+            await failStart("Failed to start bridge: \(error.localizedDescription)")
+            return true
+        }
+        AppLog.important("start: bridge pid=\(bridge.processIdentifier)")
+
+        // The bridge owns the engine child through its watchdog, so starting the
+        // bridge is what brings up both ports. spawn the child only if the
+        // watchdog has not done it within a moment.
+        bridgeHealthPort = bridgePortFromRepo()
+        if FileManager.default.isExecutableFile(atPath: childScript) {
+            AppLog.important("start: bridge watchdog owns the engine child; \(childScript) is its launcher")
+        }
+        AppLog.important("start: ok bridgePort=\(bridgeHealthPort.map(String.init) ?? "?")")
+        settleAfterStart(pid: nil)
+        return true
+    }
+
+    private static func findBun() -> String? {
+        let candidates = [
+            "/Users/vakandi/.bun/bin/bun",
+            "/opt/homebrew/bin/bun",
+            "/usr/local/bin/bun",
+            "/usr/bin/env",
+        ]
+        for path in candidates where FileManager.default.isExecutableFile(atPath: path) {
+            if path.hasSuffix("/bun") { return path }
+        }
+        return Self.runSync("/usr/bin/which", ["bun"])?
+            .split(separator: "\n").first.map(String.init)
+    }
+
+    private func readToken(from path: String) -> String? {
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        for line in text.split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("ELIA_AUTH_TOKEN=") else { continue }
+            var value = String(trimmed.dropFirst("ELIA_AUTH_TOKEN=".count))
+            value = value.trimmingCharacters(in: CharacterSet(charactersIn: "\"' "))
+            return value.isEmpty ? nil : value
+        }
+        return nil
+    }
+
+    /// stdout/stderr appended, so the bridge's own log stays where an operator
+    /// running start.sh by hand would leave it.
+    private static func openAppendHandle(_ path: String) -> FileHandle {
+        try? FileManager.default.createDirectory(
+            atPath: (path as NSString).deletingLastPathComponent,
+            withIntermediateDirectories: true)
+        if !FileManager.default.fileExists(atPath: path) {
+            FileManager.default.createFile(atPath: path, contents: nil)
+        }
+        guard let handle = FileHandle(forWritingAtPath: path) else { return FileHandle.nullDevice }
+        handle.seekToEndOfFile()
+        return handle
+    }
+
     func start() {
         guard !isBusy else { return }
-
-        guard let binary = binaryPath else {
-            actionError = "opencode binary not built. Run ./install.sh in \(Self.repoPath)"
-            return
-        }
 
         status = .starting
         actionError = nil
@@ -362,29 +611,48 @@ final class OpenCodeServerManager: ObservableObject {
 
         Task { [weak self] in
             guard let self else { return }
-            // Refuse rather than fight: a second server on the same port fails in a
-            // way that is far harder to diagnose than an explicit refusal.
-            let existing = await Self.detectServersOffMain()
-            if !existing.isEmpty {
-                // A healthy server already on our port is not a conflict, it is
-                // the desired end state. Reporting an error here made Start look
-                // broken whenever the app was already doing its job.
-                let probe = await self.probeHealth()
-                if probe.isHealthy, existing.count == 1 {
-                    await self.adoptRunningServer()
-                    return
-                }
-                let pids = existing.map { String($0.pid) }.joined(separator: ", ")
-                let plural = existing.count == 1 ? "" : "s"
-                await self.failStart("\(existing.count) opencode server\(plural) already running (pid \(pids)) — stop them first")
-                return
-            }
-            if await Self.portOccupiedOffMain(self.port) {
-                await self.failStart("Port \(self.port) is already in use by another program")
-                return
-            }
-            await self.spawn(binary: binary)
+            // Ask macOS first: the repo lives in ~/Documents, so the launch fails with
+            // exit 126 until the user grants access. A stored grant skips the panel.
+            let granted = await self.requestRepoAccess()
+            if granted, await self.startViaBridgeScripts() { return }
+            AppLog.important("start: falling back to bare binary at \(Self.repoPath)")
+            await self.startStandalone()
         }
+    }
+
+    /// The pre-existing path: launch the raw engine as a child of this app. Kept
+    /// for checkouts with no bridge scripts, where the binary genuinely is the
+    /// whole product.
+    private func startStandalone() async {
+        guard let binary = binaryPath else {
+            actionError = "opencode binary not built. Run ./install.sh in \(Self.repoPath)"
+            status = .stopped
+            startBeganAt = nil
+            return
+        }
+
+        // Refuse rather than fight: a second server on the same port fails in a
+        // way that is far harder to diagnose than an explicit refusal.
+        let existing = await Self.detectServersOffMain()
+        if !existing.isEmpty {
+            // A healthy server already on our port is not a conflict, it is
+            // the desired end state. Reporting an error here made Start look
+            // broken whenever the app was already doing its job.
+            let probe = await self.probeHealth()
+            if probe.isHealthy, existing.count == 1 {
+                self.adoptRunningServer()
+                return
+            }
+            let pids = existing.map { String($0.pid) }.joined(separator: ", ")
+            let plural = existing.count == 1 ? "" : "s"
+            await self.failStart("\(existing.count) opencode server\(plural) already running (pid \(pids)) — stop them first")
+            return
+        }
+        if await Self.portOccupiedOffMain(self.port) {
+            await self.failStart("Port \(self.port) is already in use by another program")
+            return
+        }
+        self.spawn(binary: binary)
     }
 
     private func adoptRunningServer() {
@@ -438,14 +706,17 @@ final class OpenCodeServerManager: ObservableObject {
     /// The old code waited a fixed 1.5s and asked `applyHealth`, which refused
     /// to run while the status was still `.starting` — so the menu sat on
     /// "Starting…" indefinitely whether or not the server came up.
-    private func settleAfterStart(pid: pid_t) {
+    ///
+    /// `pid` is nil when `start.sh` drove the launch: the stack is detached behind
+    /// the repo's own pidfile, so there is no child of this app to watch.
+    private func settleAfterStart(pid: pid_t?) {
         Task { [weak self] in
             guard let self else { return }
             let deadline = Date().addingTimeInterval(self.settleTimeout)
             while Date() < deadline {
                 try? await Task.sleep(nanoseconds: UInt64(self.settleInterval * 1_000_000_000))
                 guard !Task.isCancelled else { return }
-                if kill(pid, 0) != 0 {
+                if let pid, kill(pid, 0) != 0 {
                     self.status = .stopped
                     self.actionError = "Server exited immediately after starting — see ~/Library/Logs/EliaTopBar/debug.log"
                     self.startBeganAt = nil
@@ -472,6 +743,32 @@ final class OpenCodeServerManager: ObservableObject {
 
     func stop() {
         guard !isBusy else { return }
+
+        // We spawned the bridge, so we own it and its engine child. Kill the
+        // process group: the bridge is the parent of the engine, and stopping
+        // only the bridge leaves the child holding :4096.
+        if let bridge = managedBridge {
+            status = .stopping
+            actionError = nil
+            let pid = bridge.processIdentifier
+            Task { [weak self] in
+                guard let self else { return }
+                AppLog.important("stop: killing bridge pid=\(pid)")
+                kill(pid, SIGTERM)
+                let deadline = Date().addingTimeInterval(5)
+                while Date() < deadline, kill(pid, 0) == 0 {
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                }
+                if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+                self.managedBridge = nil
+                self.managedProcess = nil
+                self.bridgeHealthPort = nil
+                self.status = .stopped
+                self.startBeganAt = nil
+                self.refresh()
+            }
+            return
+        }
 
         var pids: [pid_t] = []
         if let managed = managedProcess {
