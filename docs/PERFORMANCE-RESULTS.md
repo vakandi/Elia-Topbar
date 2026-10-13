@@ -1,9 +1,15 @@
-# Performance results — v2.1.9
+# Performance results — v2.2
 
 Every number below was observed on this machine. Where something could not be
 measured, it says so rather than estimating.
 
-Baseline is `PERFORMANCE-BASELINE.md` (commit `4c7c2c3`).
+Baseline is `PERFORMANCE-BASELINE.md` (commit `4c7c2c3`). The burst fix
+described below shipped as v2.2; the earlier findings shipped as v2.1.9.
+
+The headline numbers were re-confirmed against the **installed**
+`/Applications/EliaTopBar.app` (the `brew install --cask` artifact, v2.2), not
+only the build tree: 6 x 30-bursts held 31.9 MB -> 32.8 MB with zero binding
+mismatches.
 
 ## Idle
 
