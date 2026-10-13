@@ -80,10 +80,10 @@ import EliaTopBarKit
     }
     private func makePanel(hiddenFrame: NSRect, agentName: String) -> NSPanel {
         let p = HoverPanel(contentRect: hiddenFrame, styleMask: [.borderless,.nonactivatingPanel], backing: .buffered, defer: false, agentName: agentName, owner: self)
-        // NSPanel defaults isReleasedWhenClosed to false, so close() left every
-        // panel alive: a 30-popup burst grew NSApp.windows 2 -> 32 -> 62 -> 92
-        // -> 122 across 4 bursts, +25 MB each, never reclaimed.
-        p.isReleasedWhenClosed = true
+        // Must stay false. With true, close() destroys the window, so pooling a
+        // closed panel hands out freed memory and the next setFrame segfaults.
+        // Pooling already caps the live panel count, so nothing is lost.
+        p.isReleasedWhenClosed = false
         p.level = .statusBar; p.collectionBehavior=[.canJoinAllSpaces,.fullScreenAuxiliary,.ignoresCycle]
         p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false; p.isMovableByWindowBackground = canDrag(for: agentName); p.isMovable = true; p.worksWhenModal = true
         return p
@@ -103,6 +103,9 @@ import EliaTopBarKit
     private func retire(_ panel: NSPanel) {
         panel.orderOut(nil)
         guard panelPool.count < Self.maxPooledPanels else { return }
+        // Only pool a panel AppKit still owns. Pooling one whose window was
+        // released hands out freed memory on the next reuse.
+        guard !panel.isReleasedWhenClosed, panel.contentView != nil else { return }
         panelPool.append(panel as! HoverPanel)
     }
     private static let maxPooledPanels = 12
