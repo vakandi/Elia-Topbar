@@ -151,13 +151,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async { [weak self] in self?.openTopbarSettings(NSMenuItem()) }
     }
 
-    /// Keeps App Nap from throttling our timers — status-bar apps are background by definition.
+    /// Held only while something needs live updates. Held 24/7 from
+    /// launch this was the top battery consumer macOS energy diagnostics flagged.
     private var appNapActivity: NSObjectProtocol?
+
+    private func anyLiveUIVisible() -> Bool {
+        isMenuOpen
+            || RunPopupController.shared.panelCount > 0
+            || logPopover?.isShown == true
+            || subworkerLogPopover?.isShown == true
+            || (topbarSettingsWindow?.isVisible ?? false)
+            || (scheduleWindow?.isVisible ?? false)
+            || (tunnelProgressController != nil)
+            || subworkerManager.runningCount > 0
+    }
+
+    private func updateNapAssertion() {
+        if anyLiveUIVisible() {
+            guard appNapActivity == nil else { return }
+            appNapActivity = ProcessInfo.processInfo.beginActivity(
+                options: [.userInitiated, .idleSystemSleepDisabled],
+                reason: "EliaTopBar status-bar live updates"
+            )
+        } else if let activity = appNapActivity {
+            ProcessInfo.processInfo.endActivity(activity)
+            appNapActivity = nil
+        }
+    }
+
+    /// App Nap throttles timers while we hold no assertion, so refresh the
+    /// status item the moment the user comes back to the app.
+    func applicationDidBecomeActive(_ notification: Notification) {
+        updateNapAssertion()
+        ensureStatusItemAlive()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installExceptionTrap()
-        // Prevent App Nap from freezing timers when the app is backgrounded for hours.
-        appNapActivity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleSystemSleepDisabled], reason: "EliaTopBar status-bar live updates")
 
         colimaManager = ColimaManager()
         opencodeServerManager = OpenCodeServerManager()
@@ -362,6 +392,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         closeAllLogPopovers()
         RunPopupController.shared.closeAllUnlocked()
         isMenuOpen = true
+        updateNapAssertion()
         menu.popUp(positioning: nil, at: pt, in: nil)
     }
 
@@ -445,6 +476,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func menuDidClose(_ menu: NSMenu) {
         isMenuOpen = false
+        updateNapAssertion()
         if openModelMenu === menu {
             openModelMenu = nil
             openModelAgent = nil
@@ -502,13 +534,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let path = NSString(string: "~/Library/Logs/EliaTopBar/health.log").expandingTildeInPath
                 try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
                 let line = "\(Date()): watchdog heal buttonNil=\(buttonNil) windowNil=\(windowNil) superviewNil=\(superviewNil) menuEmpty=\(menuEmpty) targetWrong=\(targetWrong) actionWrong=\(actionWrong) ws=\(subworkerManager.wsConnected) subs=\(subworkerManager.subworkers.count) running=\(subworkerManager.runningCount) hasError=\(subworkerManager.hasError) statusError=\(subworkerManager.statusError ?? "-") lastError=\(subworkerManager.lastError ?? "-")\n"
-                if let handle = FileHandle(forWritingAtPath: path) {
-                    handle.seekToEndOfFile()
-                    handle.write(Data(line.utf8))
-                    handle.closeFile()
-                } else {
-                    try? line.write(toFile: path, atomically: true, encoding: .utf8)
-                }
+                BoundedLogWriter.sharedHealth.log(line)
             }
             ensureStatusItemAlive()
             setupMenu()
@@ -586,6 +612,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func ensureRunningAnimation() {
+        updateNapAssertion()
         let shouldAnimate = (subworkerManager.runningCount > 0 && primaryStyle != "default")
         if shouldAnimate && runningIconTimer == nil {
             // Frames are cheap now (cached static + one ring blit), so 15fps
@@ -1420,6 +1447,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         subworkerLogPopoverName = nil
         notchLogAnchorPanel?.orderOut(nil)
         notchLogAnchorPanel = nil
+        updateNapAssertion()
     }
 
     /// Retires the notch anchor panel, but only when no log popover is on
@@ -2734,6 +2762,7 @@ extension AppDelegate: NSPopoverDelegate {
         }
         popover.contentViewController = nil
         retireNotchLogAnchorIfIdle()
+        updateNapAssertion()
     }
 }
 

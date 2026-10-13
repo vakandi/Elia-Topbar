@@ -24,6 +24,10 @@ public final class BoundedLogWriter {
 
 public static let sharedDrop = BoundedLogWriter(path: "/tmp/EliaTopBar.log", byteLimit: 2 * 1024 * 1024)
 public static let sharedClick = BoundedLogWriter(path: "/tmp/EliaTopBar-clicks.log", byteLimit: 512 * 1024)
+    public static let sharedHealth = BoundedLogWriter(
+        path: NSString(string: "~/Library/Logs/EliaTopBar/health.log").expandingTildeInPath,
+        byteLimit: 512 * 1024
+    )
 
     /// Flush at most this often. Coalescing window: a burst of N lines costs
     /// 1 write, not N.
@@ -35,10 +39,10 @@ public static let sharedClick = BoundedLogWriter(path: "/tmp/EliaTopBar-clicks.l
     /// rather than allowed to accumulate.
     private static let maxBufferBytes = 256 * 1024
 
-    private let path: String
     public let byteLimit: Int
     private let queue = DispatchQueue(label: "com.elia.topbar.boundedlog", qos: .utility)
-    var pathURL: URL { URL(fileURLWithPath: path) }
+    public var pathURL: URL { URL(fileURLWithPath: path) }
+    public let path: String
 
     private let lock = NSLock()
     private var buffer = Data()

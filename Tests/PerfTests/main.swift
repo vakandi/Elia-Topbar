@@ -94,6 +94,9 @@ do {
 
 check("shared drop writer capped at 2 MB", BoundedLogWriter.sharedDrop.byteLimit <= 2 * 1024 * 1024)
 check("shared click writer capped at 512 KB", BoundedLogWriter.sharedClick.byteLimit <= 512 * 1024)
+check("shared health writer capped at 512 KB", BoundedLogWriter.sharedHealth.byteLimit <= 512 * 1024)
+check("health log path is the one watchdogCheck writes",
+      BoundedLogWriter.sharedHealth.path.hasSuffix("Library/Logs/EliaTopBar/health.log"))
 
 // --- Timer ownership: the pattern the two timer leaks violated --------------
 // A repeating Timer with no stored reference can never be invalidated, which
