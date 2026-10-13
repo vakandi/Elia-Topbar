@@ -129,11 +129,51 @@ lives on the server, and the menu bar just renders it.
 
 ## 🚀 Quick Start
 
+### Install with Homebrew (recommended)
+
+```bash
+brew tap vakandi/tap
+brew install --cask eliatopbar
+```
+
+That installs **EliaTopBar.app** into `/Applications` and removes the quarantine
+flag, so there is no Gatekeeper warning to click through.
+
+To upgrade:
+
+```bash
+brew update && brew upgrade --cask eliatopbar
+```
+
+To uninstall:
+
+```bash
+brew uninstall --cask eliatopbar
+```
+
+That leaves your agent photos alone. Add `--zap` to also remove
+`~/Library/Application Support/EliaTopBar`:
+
+```bash
+brew uninstall --zap --cask eliatopbar
+```
+
+EliaTopBar is a menu bar app (`LSUIElement`), so there is no Dock icon — it
+appears in the menu bar next to the system status items.
+
 ### Download
 
-Grab the latest DMG or ZIP from the
+Prefer Homebrew? Otherwise grab the DMG from the
 [releases page](https://github.com/vakandi/Elia-Topbar/releases/latest):
-download `EliaTopBar-vX.Y.Z-arm64.dmg`, open it, drag **EliaTopBar** to Applications.
+download `EliaTopBar-vX.Y.Z.dmg`, open it, drag **EliaTopBar** to Applications.
+
+It is ad-hoc signed and not notarized, so macOS may ask you to confirm the
+first launch — right-click the app, choose **Open**, then confirm. If macOS
+still refuses:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/EliaTopBar.app
+```
 
 ### Build from Source
 
@@ -147,8 +187,22 @@ open EliaTopBar.app
 To create a distributable DMG:
 
 ```bash
-./build-dmg.sh
+./build-dmg.sh v2.1.9
 ```
+
+### Releasing
+
+The Homebrew cask is versioned in this repo (`Casks/eliatopbar.rb`) so it is
+reviewed alongside the code it ships. Homebrew only installs casks from inside a
+tap, so after publishing the release, sync it:
+
+```bash
+gh release create vX.Y.Z EliaTopBar-vX.Y.Z.dmg --title "vX.Y.Z" --notes-file notes.md
+./scripts/sync-brew-tap.sh
+```
+
+The script refuses to publish if the `sha256` in the cask does not match the
+DMG, so the tap can never ship a cask that fails verification.
 
 ### Run against your Elia server
 
