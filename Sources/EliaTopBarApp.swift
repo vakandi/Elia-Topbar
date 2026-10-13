@@ -194,6 +194,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         colimaManager = ColimaManager()
         opencodeServerManager = OpenCodeServerManager()
         subworkerManager = SubworkerManager()
+        // Touch the bridge singleton at launch. Its health poll starts in init(),
+        // and until something referenced it the timer never ran, so the server
+        // state stayed .stopped and Stop stayed greyed out while the server was
+        // actually up. Opening the menu was the only thing that started it.
+        SubworkerServerManager.shared.refresh()
 
         // Restore persisted server URL
         if let savedURL = UserDefaults.standard.string(forKey: "subworkerServerURL") {
@@ -524,7 +529,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // nextRun is a live countdown that changes every poll — including it here
         // rebuilt the whole 40-item menu every 5s (AppKit layout storm, 55% CPU).
         // Countdown labels already refresh on the 30s countdown timer.
-        let currentHash = subworkerManager.subworkers.map { "\($0.name):\($0.enabled):\($0.running):\(subworkerManager.wsConnected):\(subworkerManager.hasError):\(subworkerManager.statusError ?? ""):\(subworkerManager.serverHealth?.healthStatus ?? "")" }.joined().hashValue ^ colimaManager.instances.count
+        //
+        // The bridge and the engine are polled independently of the subworker
+        // roster, so their state has to be part of the key. Leaving them out
+        // froze the Start/Stop enablement at whatever it was during the last
+        // rebuild, which showed a healthy server with Stop greyed out.
+        let bridge = SubworkerServerManager.shared
+        let engine = self.opencodeServerManager
+        let serverHash = "\(bridge.status):\(bridge.port):\(bridge.actionError ?? ""):\(bridge.repoPath)"
+        let engineHash = "\(engine?.status.label ?? "none"):\(engine?.port ?? 0):\(engine?.actionError ?? ""):\(engine?.otherServers.count ?? 0)"
+        let currentHash = subworkerManager.subworkers.map { "\($0.name):\($0.enabled):\($0.running):\(subworkerManager.wsConnected):\(subworkerManager.hasError):\(subworkerManager.statusError ?? ""):\(subworkerManager.serverHealth?.healthStatus ?? "")" }.joined().hashValue
+            ^ colimaManager.instances.count
+            ^ serverHash.hashValue
+            ^ engineHash.hashValue
         if currentHash == lastMenuHash && mainMenu != nil && (mainMenu?.numberOfItems ?? 0) > 0 { return }
         lastMenuHash = currentHash
         menuRebuildThrottleWorkItem?.cancel()
