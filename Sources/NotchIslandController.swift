@@ -72,6 +72,22 @@ final class NotchIslandController {
         if !panel.isVisible { panel.orderFrontRegardless() }
     }
 
+    func isShowing() -> Bool { panel?.isVisible == true }
+
+    func notchCenterX() -> CGFloat? {
+        if let panel, panel.isVisible { return panel.frame.midX }
+        guard let screen = targetScreen() else { return nil }
+        return screen.frame.midX
+    }
+
+    func logViewerAnchorPoint() -> NSPoint? {
+        if let panel, panel.isVisible {
+            return NSPoint(x: panel.frame.midX, y: panel.frame.minY)
+        }
+        guard let screen = targetScreen() else { return nil }
+        return NSPoint(x: screen.frame.midX, y: screen.frame.maxY - 32)
+    }
+
     func primaryMenuPoint() -> NSPoint? {
         guard let panel else { return nil }
         let f = panel.frame

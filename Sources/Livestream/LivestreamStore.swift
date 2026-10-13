@@ -103,8 +103,22 @@ import SwiftUI
                 throttle(agent)
                 return
             }
+            if let last = entries.last, case .tool(let lid, let lname, let li, let lo) = last,
+               ["bash", "shell", "interactive_bash", "background_output"].contains(lname.lowercased()) {
+                let tlines = delta.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                let tjoined = tlines.prefix(6).joined(separator: "\n")
+                let slashy = tlines.filter { $0.contains("/") || $0.hasSuffix(".swift") || $0.hasSuffix(".md") || $0.hasSuffix(".json") || $0.hasSuffix(".ts") || $0.hasSuffix(".py") }.count
+                let isTermOut = tlines.count >= 2 && !tjoined.contains("```") && !tjoined.contains("##") && (slashy >= 2 || (tlines.count >= 4 && tlines.allSatisfy { $0.count < 80 }))
+                if isTermOut {
+                    let merged = ((lo ?? "").isEmpty ? "" : (lo! + "\n")) + delta
+                    entries[entries.count - 1] = .tool(id: lid, name: lname, input: li, output: String(merged.suffix(textKeep)))
+                    streams[agent]?.entries = entries
+                    streams[agent]?.version += 1
+                    throttle(agent)
+                    return
+                }
+            }
             if let last = entries.last, case .text(let id, let cur) = last {
-                if delta == cur { return }
                 if delta.count < 80 && cur.contains(delta) { return }
                 if cur.hasSuffix(delta) { return }
                 var next: String
@@ -236,6 +250,7 @@ import SwiftUI
         var seen: Set<String> = []
         var out: [SubagentKey] = []
         AppLog.d("extractSubagents parent=\(parentAgent) rawCount=\(rawMessages.count)")
+        AppLog.d("extractSubagents tools seen=\(Set(rawMessages.flatMap { ($0["parts"] as? [[String: Any]] ?? []).compactMap { p -> String? in guard (p["type"] as? String) == "tool" else { return nil }; let t = (p["tool"] as? String ?? "?"); let hasIn = p["input"] != nil; let hasOut = (p["output"] as? String ?? "").isEmpty == false; return "\(t){in:\(hasIn),out:\(hasOut)}" } }))")
         for raw in rawMessages {
             guard let parts = raw["parts"] as? [[String: Any]] else { continue }
             for part in parts where part["type"] as? String == "tool" {
@@ -285,7 +300,7 @@ import SwiftUI
                     }
                     continue
                 }
-                guard tool == "call_omo_agent" || tool == "task" else { continue }
+                guard ["call_omo_agent", "task", "subtask", "hub"].contains(tool) else { continue }
                 let input = part["input"]
                 var desc = ""
                 var agent = "explore"

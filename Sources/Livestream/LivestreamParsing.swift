@@ -163,14 +163,26 @@ enum LivestreamParsing {
             let t = raw.trimmingCharacters(in: .whitespacesAndNewlines); if t == "{}" || t == "()" || t.isEmpty { return "" }; return String(raw.prefix(500))
         }
         if obj.isEmpty { return "" }
-        func fp(_ o: [String: Any]) -> String? { (o["filePath"] as? String ?? o["file_path"] as? String ?? o["path"] as? String ?? o["filepath"] as? String) }
+        func deep(_ v: Any, depth: Int = 0) -> String? {
+            guard depth < 4 else { return nil }
+            if let s = v as? String, !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return s }
+            if let o = v as? [String: Any] {
+                for k in ["filePath", "file_path", "path", "filepath", "pattern", "file", "filename", "target", "dir", "directory"] {
+                    if let s = o[k] as? String, !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return s }
+                }
+                for (_, vv) in o { if let s = deep(vv, depth: depth + 1) { return s } }
+            }
+            if let a = v as? [Any] { for vv in a { if let s = deep(vv, depth: depth + 1) { return s } } }
+            return nil
+        }
+        func fp(_ o: [String: Any]) -> String? { deep(o) }
         switch name.lowercased() {
         case "bash", "shell", "interactive_bash": if let c = obj["command"] as? String { return "$ \(c)" }
         case "read": if let p = fp(obj) { return hostPath(p) }
         case "write": if let p = fp(obj) { let hp = hostPath(p); if let c = obj["content"] as? String, !c.isEmpty { return "\(hp)\n\(c.prefix(200))" }; return hp }
         case "edit": if let p = fp(obj) { return hostPath(p) }
         case "grep": if let pat = obj["pattern"] as? String { return pat }
-        case "glob": if let pat = obj["pattern"] as? String { return pat }
+        case "glob": if let pat = obj["pattern"] as? String { if let p = fp(obj), p != pat { return "\(p) — \(pat)" }; return pat }
         case "task": if let pr = obj["prompt"] as? String { return String(pr.prefix(300)) }; if let d = obj["description"] as? String { return d }
         case "websearch", "web_search_exa": if let q = obj["query"] as? String { return q }
         case "webfetch": if let u = obj["url"] as? String { return u }

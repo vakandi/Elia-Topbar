@@ -54,12 +54,14 @@ struct SessionItem: Identifiable {
     let timeCreated: TimeInterval?
 }
 
-/// Reports the bottom edge (maxY) of the scroll content's true-end marker,
-/// in the scroll view's own coordinate space, so we can tell whether the
-/// user is currently at/near the bottom without any macOS 14+ scroll APIs.
-private struct BottomAnchorPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+/// Reports the scroll content's full frame in the scroll view's own
+/// coordinate space. Tracking the whole frame (not just the bottom edge)
+/// tells user scrolls apart from content growth: rows appended at the
+/// bottom move maxY but leave minY alone, while a real scroll-up by the
+/// user moves minY down. No macOS 14+ scroll APIs needed.
+private struct ScrollContentFrameKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) { value = nextValue() }
 }
 
 enum DisplayItem: Identifiable {
@@ -110,6 +112,16 @@ struct LogPopoverView: View {
     // Pin-to-bottom scroll state — true unless the user has manually scrolled up.
     @State private var isPinnedToBottom = true
     @State private var pendingScrollWork: DispatchWorkItem?
+    /// Trailing load-burst scroll work. Cancelled the moment the user scrolls
+    /// up, so late layout retries can never yank the view back down.
+    @State private var pendingBurstWork: [DispatchWorkItem] = []
+    /// minY of the scroll content (in scroll space) last seen while pinned at
+    /// the bottom — the reference for telling user scroll-ups apart from rows
+    /// appended underneath a pinned view.
+    @State private var pinnedTopMinY: CGFloat = 0
+    /// Fingerprint of the first message. Changes only when older history is
+    /// prepended above — never on live appends below.
+    @State private var firstMessageFingerprint: String? = nil
     private let maxMessages = 200
 
     @State private var banners: [RunBanner] = []
@@ -121,6 +133,10 @@ struct LogPopoverView: View {
     @State private var liveTick = 0
     @State private var verticalTodos: [TodoItem] = []
     @State private var isHoveringTodoModule = false
+    @State private var subagentKeys: [LivestreamStore.SubagentKey] = []
+    @State private var expandedSubagent: LivestreamStore.SubagentKey? = nil
+    @State private var subagentPollTimers: [LivestreamStore.SubagentKey: Timer] = [:]
+    @State private var isHoveringSubagentStrip = false
     @State private var liveMessagesPollTimer: Timer?
     @State private var messageFetchLimit = 20
     @State private var hasMoreMessages = true
@@ -162,6 +178,22 @@ struct LogPopoverView: View {
                 Divider()
                 messagesPanel
             }
+            .overlay(alignment: .trailing) {
+                HStack(spacing: 4) {
+                    Spacer()
+                    if let exp = expandedSubagent, subagentKeys.contains(exp) {
+                        SubagentBubbleView(key: exp, baseURL: baseURL, onClose: { expandedSubagent = nil })
+                            .frame(width: 250, height: 320)
+                            .background(.regularMaterial)
+                            .cornerRadius(10)
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.pink.opacity(0.3), lineWidth: 1))
+                            .shadow(radius: 6)
+                            .padding(.trailing, 26)
+                    }
+                    subagentStrip
+                }
+                .allowsHitTesting(expandedSubagent != nil || !subagentKeys.isEmpty)
+            }
         }
         .frame(width: 760, height: 560)
         .onAppear {
@@ -178,10 +210,14 @@ struct LogPopoverView: View {
             stopObservingRunBanners()
             stopObservingLiveLifecycle()
             stopLiveMessagesPolling()
+            stopAllSubagentPolling()
         }
         .onReceive(livestream.$todos) { map in
             let todos = map[subworkerName] ?? []
             verticalTodos = todos.map { TodoItem(content: $0.content, status: $0.status, priority: $0.priority) }
+        }
+        .onReceive(livestream.subagentThrottled) { key in
+            if key.parentAgent == subworkerName { refreshSubagentsFromLive() }
         }
     }
 
@@ -295,6 +331,9 @@ struct LogPopoverView: View {
             hasMoreMessages = true
             isLoadingMoreMessages = false
             resetLiveBuffer(for: subworkerName)
+            subagentKeys = []
+            expandedSubagent = nil
+            stopAllSubagentPolling()
             fetchMessages(sessionId: session.id)
         }) {
             VStack(alignment: .leading, spacing: 2) {
@@ -369,7 +408,7 @@ struct LogPopoverView: View {
         GeometryReader { outerGeo in
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 6) {
                         if messagesLoading {
                             HStack(spacing: 8) {
                                 ProgressView().controlSize(.small)
@@ -429,28 +468,44 @@ struct LogPopoverView: View {
                         Color.clear
                             .frame(height: 1)
                             .id(Self.bottomAnchorId)
-                            .background(
-                                GeometryReader { anchorGeo in
-                                    Color.clear.preference(
-                                        key: BottomAnchorPreferenceKey.self,
-                                        value: anchorGeo.frame(in: .named(Self.scrollCoordinateSpace)).maxY
-                                    )
-                                }
-                            )
                     }
                     .padding(8)
+                    .background(
+                        GeometryReader { contentGeo in
+                            Color.clear.preference(
+                                key: ScrollContentFrameKey.self,
+                                value: contentGeo.frame(in: .named(Self.scrollCoordinateSpace))
+                            )
+                        }
+                    )
                 }
                 .coordinateSpace(name: Self.scrollCoordinateSpace)
-                .onPreferenceChange(BottomAnchorPreferenceKey.self) { anchorMaxY in
-                    // Anchor's maxY relative to the scroll container: near/inside the
-                    // visible height means we're at the bottom; far past it means the
-                    // user has scrolled up to read history.
-                    let atBottom = anchorMaxY <= outerGeo.size.height + 48
-                    if atBottom != isPinnedToBottom {
-                        isPinnedToBottom = atBottom
+                .onPreferenceChange(ScrollContentFrameKey.self) { frame in
+                    let atBottom = frame.maxY <= outerGeo.size.height + 48
+                    if atBottom {
+                        pinnedTopMinY = frame.minY
+                        if !isPinnedToBottom { isPinnedToBottom = true }
+                    } else if frame.minY > pinnedTopMinY + 24 {
+                        // Genuine user scroll-up: the top of the content moved
+                        // down. Rows appended below a pinned view move maxY
+                        // only, so follow-scrolls never trip this branch.
+                        pendingScrollWork?.cancel()
+                        pendingScrollWork = nil
+                        pendingBurstWork.forEach { $0.cancel() }
+                        pendingBurstWork = []
+                        if isPinnedToBottom { isPinnedToBottom = false }
                     }
+                    // Else: content grew beneath the pinned view while a
+                    // follow-scroll is landing — hold the pin, change nothing.
                 }
                 .onChange(of: messages.count) { _ in
+                    // History pagination prepends older messages above (first
+                    // message changes); live traffic only appends below. Never
+                    // yank a history reader to the bottom.
+                    let fp = Self.messageFingerprint(messages.first)
+                    defer { firstMessageFingerprint = fp }
+                    if fp == nil { return }
+                    if let prev = firstMessageFingerprint, prev != fp { return }
                     requestScroll(proxy: proxy)
                 }
                 .onChange(of: banners) { _ in
@@ -463,24 +518,33 @@ struct LogPopoverView: View {
                     guard changed else { return }
                     selectedSessionChanged = false
                     isPinnedToBottom = true
-                    for delay in [0.05, 0.2, 0.45, 0.8, 1.2] {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                            withAnimation(.easeOut(duration: 0.15)) {
-                                proxy.scrollTo(Self.bottomAnchorId, anchor: .bottom)
-                            }
-                        }
-                    }
+                    scrollBurst(proxy: proxy)
                 }
                 .onChange(of: messagesLoading) { isLoading in
                     if !isLoading && !messages.isEmpty {
                         isPinnedToBottom = true
-                        for delay in [0.05, 0.2, 0.45, 0.8, 1.2] {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                                withAnimation(.easeOut(duration: 0.15)) {
-                                    proxy.scrollTo(Self.bottomAnchorId, anchor: .bottom)
-                                }
-                            }
+                        scrollBurst(proxy: proxy)
+                    }
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    if !isPinnedToBottom {
+                        Button {
+                            isPinnedToBottom = true
+                            requestScroll(proxy: proxy, force: true)
+                        } label: {
+                            Image(systemName: "arrow.down.to.line")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(width: 30, height: 30)
+                                .background(Color.accentColor)
+                                .clipShape(Circle())
+                                .shadow(radius: 3)
                         }
+                        .buttonStyle(.plain)
+                        .help("Scroll to latest")
+                        .padding(.trailing, 12)
+                        .padding(.bottom, 12)
+                        .transition(.opacity.combined(with: .scale))
                     }
                 }
             }
@@ -506,13 +570,41 @@ struct LogPopoverView: View {
     private func requestScroll(proxy: ScrollViewProxy, force: Bool = false, delay: TimeInterval = 0.05) {
         guard force || isPinnedToBottom else { return }
         pendingScrollWork?.cancel()
+        // Follow-scrolls land instantly (no ease): during a live run this
+        // fires per message and animations would stack into lag. Explicit
+        // jumps (arrow, session switch) keep their ease in scrollBurst.
         let work = DispatchWorkItem {
-            withAnimation(.easeOut(duration: 0.15)) {
-                proxy.scrollTo(Self.bottomAnchorId, anchor: .bottom)
-            }
+            proxy.scrollTo(Self.bottomAnchorId, anchor: .bottom)
         }
         pendingScrollWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// Stable identity of the list head. History pagination prepends older
+    /// messages (head changes); live traffic appends below (head stable).
+    private static func messageFingerprint(_ msg: SessionLogEntry?) -> String? {
+        guard let msg else { return nil }
+        let head = msg.entries.first?.displayText.prefix(64) ?? ""
+        return "\(msg.timestamp?.timeIntervalSince1970 ?? 0)-\(head)"
+    }
+
+    /// Settles the view at the true bottom after an explicit load (session
+    /// switch / initial fetch). The immediate hop lands at once; trailing
+    /// retries cover late layout passes. All trailing work is tracked so that
+    /// scrolling up cancels it — it can never drag the user back down.
+    private func scrollBurst(proxy: ScrollViewProxy) {
+        pendingBurstWork.forEach { $0.cancel() }
+        pendingBurstWork = []
+        requestScroll(proxy: proxy, force: true)
+        for delay in [0.2, 0.45, 0.8, 1.2] {
+            let work = DispatchWorkItem {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    proxy.scrollTo(Self.bottomAnchorId, anchor: .bottom)
+                }
+            }
+            pendingBurstWork.append(work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        }
     }
 
     private func messageRow(_ msg: SessionLogEntry) -> some View {
@@ -561,7 +653,7 @@ struct LogPopoverView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         case .tool(let name, let input, let output):
-            if name.lowercased() == "todowrite", let todos = parseTodoWritePayload(input, output: output) {
+            if name.lowercased().contains("todo"), let todos = extractTodosForLive(input: input, output: output, delta: input ?? ""), !todos.isEmpty {
                 todoWriteBanner(todos: todos)
             } else if name.lowercased() == "edit", let input, !input.isEmpty,
                let diff = parseEditPayload(input) {
@@ -570,12 +662,8 @@ struct LogPopoverView: View {
                       let wp = parseWritePayload(input) {
                 writeFileBanner(filePath: wp.path, contentPreview: wp.preview, output: output)
             } else {
-                toolBanner(
-                    icon: toolIcon(name),
-                    title: toolDisplayName(name),
-                    color: toolColor(name),
-                    content: formatToolContent(name: name, input: input, output: output)
-                )
+                ToolJSONDisplay(name: name, input: input, output: output)
+                    .font(.system(size: 10))
             }
         }
     }
@@ -612,16 +700,6 @@ struct LogPopoverView: View {
     }
 
     private struct TodoItem { let content: String; let status: String; let priority: String }
-    private func parseTodoWritePayload(_ input: String?, output: String?) -> [TodoItem]? {
-        let raw = (input?.isEmpty == false ? input : output) ?? ""
-        guard !raw.isEmpty, let data = raw.data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let arr = obj["todos"] as? [[String: Any]], !arr.isEmpty else { return nil }
-        return arr.compactMap { d in
-            guard let c = d["content"] as? String, !c.isEmpty else { return nil }
-            return TodoItem(content: c, status: (d["status"] as? String ?? "pending").lowercased(), priority: (d["priority"] as? String ?? "medium").lowercased())
-        }
-    }
     private func todoDotColor(_ status: String) -> Color {
         switch status {
         case "completed": return .green
@@ -710,6 +788,131 @@ struct LogPopoverView: View {
                 .onHover { hovering in withAnimation(.easeOut(duration: 0.2)) { isHoveringTodoModule = hovering } }
             }
         }
+    }
+
+    // MARK: - Subagents (mirrors RunPopupController)
+    private var subagentStrip: some View {
+        Group {
+            if !subagentKeys.isEmpty {
+                VStack(spacing: 6) {
+                    Image(systemName: "person.2.fill").font(.system(size: 8)).foregroundColor(.pink)
+                    ForEach(subagentKeys.prefix(12), id: \.self) { k in
+                        Button {
+                            withAnimation(.easeOut(duration: 0.15)) { expandedSubagent = (expandedSubagent == k) ? nil : k }
+                        } label: {
+                            HStack(spacing: 5) {
+                                Circle().fill(subagentDotColor(k)).frame(width: 7, height: 7)
+                                if isHoveringSubagentStrip {
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(k.description).font(.system(size: 9)).foregroundColor(.primary).lineLimit(1)
+                                        Text(k.kind).font(.system(size: 8)).foregroundColor(.secondary).lineLimit(1)
+                                    }
+                                }
+                            }
+                        }.buttonStyle(.plain)
+                    }
+                    if subagentKeys.count > 12 { Text("+\(subagentKeys.count - 12)").font(.caption2).foregroundColor(.secondary) }
+                }
+                .padding(.vertical, 8).padding(.horizontal, 4)
+                .background(Color(nsColor: .controlBackgroundColor).opacity(0.96))
+                .cornerRadius(8)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.pink.opacity(0.28), lineWidth: 1))
+                .shadow(color: .black.opacity(0.08), radius: 4, x: -1, y: 2)
+                .frame(width: isHoveringSubagentStrip ? 190 : 18)
+                .onHover { hovering in withAnimation(.easeOut(duration: 0.2)) { isHoveringSubagentStrip = hovering } }
+                .padding(.trailing, 3)
+            }
+        }
+    }
+
+    private func subagentDotColor(_ k: LivestreamStore.SubagentKey) -> Color {
+        if isSubagentComplete(k) { return .green }
+        if liveRunning { return .blue }
+        return .orange
+    }
+
+    private func isSubagentComplete(_ k: LivestreamStore.SubagentKey) -> Bool {
+        for e in livestream.stream(for: subworkerName) {
+            if case .tool(_, let name, _, let output) = e, name.lowercased() == "background_output",
+               let o = output, o.contains("Task Result"), o.contains(k.sessionId) { return true }
+        }
+        return false
+    }
+
+    private func updateSubagents(from rawMessages: [[String: Any]]) {
+        let keys = LivestreamStore.shared.extractSubagents(parentAgent: subworkerName, rawMessages: rawMessages)
+        var liveRaw: [[String: Any]] = []
+        for e in livestream.stream(for: subworkerName) {
+            if case .tool(_, let name, let input, let output) = e, ["call_omo_agent", "task", "subtask", "hub", "team_create"].contains(name.lowercased()) {
+                var part: [String: Any] = ["type": "tool", "tool": name]
+                if let i = input { part["input"] = i }
+                if let o = output { part["output"] = o }
+                liveRaw.append(["parts": [part]])
+            }
+        }
+        var liveKeys: [LivestreamStore.SubagentKey] = []
+        if !liveRaw.isEmpty {
+            liveKeys = LivestreamStore.shared.extractSubagents(parentAgent: subworkerName, rawMessages: liveRaw)
+        }
+        var merged = keys
+        for k in liveKeys where !merged.contains(k) { merged.append(k) }
+        let hasReal = merged.contains { $0.sessionId.hasPrefix("ses_") }
+        if hasReal { merged.removeAll { $0.sessionId.hasPrefix("pending:team") } }
+        let oldKeys = subagentKeys
+        subagentKeys = merged
+        if let exp = expandedSubagent, !merged.contains(exp) { expandedSubagent = nil }
+        for k in merged where !oldKeys.contains(k) && !k.sessionId.hasPrefix("pending:") && !k.sessionId.hasPrefix("task:") {
+            startPollingSubagent(k)
+        }
+        for k in oldKeys where !merged.contains(k) {
+            subagentPollTimers[k]?.invalidate()
+            subagentPollTimers.removeValue(forKey: k)
+        }
+    }
+
+    private func refreshSubagentsFromLive() {
+        var liveRaw: [[String: Any]] = []
+        for e in livestream.stream(for: subworkerName) {
+            if case .tool(_, let name, let input, let output) = e, ["call_omo_agent", "task", "subtask", "hub", "team_create"].contains(name.lowercased()) {
+                var part: [String: Any] = ["type": "tool", "tool": name]
+                if let i = input { part["input"] = i }
+                if let o = output { part["output"] = o }
+                liveRaw.append(["parts": [part]])
+            }
+        }
+        if liveRaw.isEmpty { return }
+        let liveKeys = LivestreamStore.shared.extractSubagents(parentAgent: subworkerName, rawMessages: liveRaw)
+        let hasReal = liveKeys.contains { $0.sessionId.hasPrefix("ses_") }
+        if hasReal { subagentKeys.removeAll { $0.sessionId.hasPrefix("pending:team") } }
+        for k in liveKeys where !subagentKeys.contains(k) {
+            subagentKeys.append(k)
+            if !k.sessionId.hasPrefix("pending:") { startPollingSubagent(k) }
+        }
+    }
+
+    private func startPollingSubagent(_ key: LivestreamStore.SubagentKey) {
+        guard subagentPollTimers[key] == nil else { return }
+        let t = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { _ in
+            Task { @MainActor in self.pollSubagent(key) }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        subagentPollTimers[key] = t
+        pollSubagent(key)
+    }
+
+    private func pollSubagent(_ key: LivestreamStore.SubagentKey) {
+        guard let url = URL(string: "\(baseURL)/sessions/\(subworkerName)?session_id=\(key.sessionId)&limit=30") else { return }
+        URLSession.shared.dataTask(with: EliaAuth.authorize(url)) { data, _, _ in
+            guard let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let raw = json["messages"] as? [[String: Any]] else { return }
+            Task { @MainActor in LivestreamStore.shared.mergeSubagentHistory(key: key, rawMessages: raw) }
+        }.resume()
+    }
+
+    private func stopAllSubagentPolling() {
+        for t in subagentPollTimers.values { t.invalidate() }
+        subagentPollTimers.removeAll()
     }
 
     private func systemBanner(_ b: RunBanner) -> some View {
@@ -814,12 +1017,8 @@ struct LogPopoverView: View {
                     } else if lname == "write", let input, let wp = LivestreamParsing.parseWrite(input) {
                         writeFileBanner(filePath: wp.path, contentPreview: wp.preview, output: output)
                     } else {
-                        toolBanner(
-                            icon: LivestreamParsing.toolIcon(name),
-                            title: LivestreamParsing.toolDisplayName(name),
-                            color: LivestreamParsing.toolColor(name),
-                            content: LivestreamParsing.formatToolContent(name: name, input: input, output: output)
-                        )
+                        ToolJSONDisplay(name: name, input: input, output: output)
+                            .font(.system(size: 8))
                     }
                 }
             }
@@ -1484,7 +1683,7 @@ struct LogPopoverView: View {
             if (liveEntries[name]?.count ?? 0) > 40 {
                 liveEntries[name] = Array(liveEntries[name]!.suffix(40))
             }
-            if parsed.0.lowercased() == "todowrite", name == subworkerName {
+            if parsed.0.lowercased().contains("todo"), name == subworkerName {
                 if let todos = extractTodosForLive(input: parsed.1, output: parsed.2, delta: delta), !todos.isEmpty {
                     verticalTodos = todos
                 }
@@ -1521,26 +1720,11 @@ struct LogPopoverView: View {
     }
 
     private func extractTodosForLive(input: String?, output: String?, delta: String) -> [TodoItem]? {
-        if let t = parseTodoWritePayload(input, output: output), !t.isEmpty { return t }
-        if let t = parseTodoWritePayload(delta, output: nil), !t.isEmpty { return t }
-        if let data = delta.data(using: .utf8),
-           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            if let inputDict = obj["input"] as? [String: Any], let arr = inputDict["todos"] as? [[String: Any]], !arr.isEmpty {
-                let todos = arr.compactMap { d -> TodoItem? in
-                    guard let c = d["content"] as? String, !c.isEmpty else { return nil }
-                    return TodoItem(content: c, status: (d["status"] as? String ?? "pending").lowercased(), priority: (d["priority"] as? String ?? "medium").lowercased())
-                }
-                if !todos.isEmpty { return todos }
-            }
-            if let arr = obj["todos"] as? [[String: Any]], !arr.isEmpty {
-                let todos = arr.compactMap { d -> TodoItem? in
-                    guard let c = d["content"] as? String, !c.isEmpty else { return nil }
-                    return TodoItem(content: c, status: (d["status"] as? String ?? "pending").lowercased(), priority: (d["priority"] as? String ?? "medium").lowercased())
-                }
-                if !todos.isEmpty { return todos }
-            }
-        }
-        return nil
+        // Single funnel for both runtimes (OpenCode `todowrite`, OMP todo
+        // tools): the shared parser every viewer uses. The old local
+        // exact-match parsing missed OMP payloads here.
+        guard let items = LivestreamParsing.extractTodos(input: input, output: output, delta: delta), !items.isEmpty else { return nil }
+        return items.map { TodoItem(content: $0.content, status: $0.status, priority: $0.priority) }
     }
 
     private func observeRunLogs() {
@@ -1665,6 +1849,7 @@ struct LogPopoverView: View {
                     return
                 }
                 self.livestream.mergeHistory(agent: self.subworkerName, sessionId: sessionId, rawMessages: rawMessages)
+                updateSubagents(from: rawMessages)
                 let allParsed = filtered
                 messages = allParsed.count > maxMessages ? Array(allParsed.suffix(maxMessages)) : allParsed
                 var merged = derivedBanners
@@ -1677,31 +1862,42 @@ struct LogPopoverView: View {
                 }
                 banners = merged.sorted { ($0.timestamp ?? .distantPast) < ($1.timestamp ?? .distantPast) }
                 messagesError = nil
+                // History todo scan mirrors LivestreamStore.mergeHistory (which
+                // ingested the same payload above): any tool whose name
+                // contains "todo" (OpenCode `todowrite`, OMP todo tools),
+                // newest first, with the same input/output normalization. Only
+                // fills the strip synchronously — never clears on a miss (the
+                // store remains source of truth via onReceive).
                 var latestTodos: [TodoItem]? = nil
                 for raw in rawMessages.reversed() {
                     for part in (raw["parts"] as? [[String: Any]] ?? []) {
-                        if (part["tool"] as? String)?.lowercased() == "todowrite" {
-                            var todos: [TodoItem]? = nil
-                            if let inputDict = part["input"] as? [String: Any], let arr = inputDict["todos"] as? [[String: Any]] {
-                                todos = arr.compactMap { d in guard let c = d["content"] as? String, !c.isEmpty else { return nil }; return TodoItem(content: c, status: (d["status"] as? String ?? "pending").lowercased(), priority: (d["priority"] as? String ?? "medium").lowercased()) }
-                            } else {
-                                let inputStr: String? = {
-                                    if let s = part["input"] as? String { return s }
-                                    if let obj = part["input"] as? [String: Any], let data = try? JSONSerialization.data(withJSONObject: obj) { return String(data: data, encoding: .utf8) }
-                                    return nil
-                                }()
-                                todos = parseTodoWritePayload(inputStr, output: part["output"] as? String)
-                            }
-                            if let t = todos, !t.isEmpty { latestTodos = t; break }
-                        }
+                        guard (part["tool"] as? String)?.lowercased().contains("todo") == true else { continue }
+                        let inputStr: String? = {
+                            if let s = part["input"] as? String { return s }
+                            if let d = part["input"] as? [String: Any], let jd = try? JSONSerialization.data(withJSONObject: d), let s = String(data: jd, encoding: .utf8) { return s }
+                            if let n = part["input"] as? NSNumber { return n.stringValue }
+                            return nil
+                        }()
+                        let outputStr: String? = {
+                            if let s = part["output"] as? String { return s }
+                            if let n = part["output"] as? NSNumber { return n.stringValue }
+                            if let d = part["output"] as? [String: Any], let jd = try? JSONSerialization.data(withJSONObject: d), let s = String(data: jd, encoding: .utf8) { return s }
+                            if let a = part["output"] as? [Any], let jd = try? JSONSerialization.data(withJSONObject: a), let s = String(data: jd, encoding: .utf8) { return s }
+                            return nil
+                        }()
+                        if let t = extractTodosForLive(input: inputStr, output: outputStr, delta: inputStr ?? ""), !t.isEmpty { latestTodos = t; break }
                     }
                     if latestTodos != nil { break }
                 }
-                verticalTodos = latestTodos ?? []
+                if let t = latestTodos, !t.isEmpty { verticalTodos = t }
                 hasMoreMessages = rawMessages.count >= messageFetchLimit
                 isLoadingMoreMessages = false
 
-                selectedSessionChanged = true
+                // Only explicit loads (session switch / initial fetch, i.e.
+                // showSpinner) re-pin and jump to the bottom. Silent background
+                // refreshes — live polls, history pagination — must never steal
+                // the user's scroll position.
+                if showSpinner { selectedSessionChanged = true }
             }
         }.resume()
     }

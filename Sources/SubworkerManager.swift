@@ -84,6 +84,19 @@ struct ModelOption: Identifiable {
     let name: String
     let provider: String
     let variants: [String] // reasoning effort levels (low/medium/high/max…)
+    // Dynamic roster flags (plan §2): default false when the server omits
+    // them, so old servers without is_new/deprecated keep working badge-free.
+    let isNew: Bool
+    let isDeprecated: Bool
+    init(id: String, name: String, provider: String, variants: [String],
+         isNew: Bool = false, isDeprecated: Bool = false) {
+        self.id = id
+        self.name = name
+        self.provider = provider
+        self.variants = variants
+        self.isNew = isNew
+        self.isDeprecated = isDeprecated
+    }
 }
 
 enum EliaAuth {
@@ -131,6 +144,11 @@ final class SubworkerManager: ObservableObject {
     @Published var modelVariants: [String: String] = [:]
     @Published var availableModels: [ModelOption] = []
     @Published var mainAgentName = "elia"
+    /// Roster generation counter from the server (plan §2). nil until the
+    /// first payload that carries `models_version`; old servers never send
+    /// it and simply never trigger a version refetch. Not persisted, not in
+    /// UserDefaults — session-only by assignment constraint.
+    private var lastSeenModelsVersion: Int?
 
     var hasError: Bool { wsError != nil || lastError != nil }
     var allIdle: Bool { runningCount == 0 && !hasError }
@@ -143,6 +161,11 @@ final class SubworkerManager: ObservableObject {
     private var wsReconnectTimer: Timer?
     private var pongWatchdog: Timer?
     private var awaitingPong = false
+    /// Consecutive unanswered pings. First miss is tolerated (slow Docker/SSH-mux
+    /// path), second consecutive miss tears the WS down. Reset on any pong.
+    private var missedPongs = 0
+    /// RTT of the last answered ping, for connection telemetry.
+    private var lastPingAt: Date?
 
     // HTTP polling
     private var pollTimer: Timer?
@@ -271,13 +294,13 @@ final class SubworkerManager: ObservableObject {
         wsTask = task
         task.resume()
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
             guard let self else { return }
             if self.wsConnected {
                 AppLog.d("WS connected successfully")
                 return
             }
-            AppLog.d("WS connection timeout")
+            AppLog.d("WS connection timeout (5s) — Docker/Colima path can be slow")
             self.handleDisconnect()
         }
 
@@ -357,7 +380,8 @@ final class SubworkerManager: ObservableObject {
                 )
             }
         case "pong":
-            AppLog.d("Received pong")
+            if let sent = lastPingAt { AppLog.d("Received pong rtt=\(Int(Date().timeIntervalSince(sent) * 1000))ms") } else { AppLog.d("Received pong") }
+            missedPongs = 0
             clearPongState()
             if !wsConnected {
                 wsConnected = true
@@ -435,6 +459,7 @@ final class SubworkerManager: ObservableObject {
         subworkers = parsed
         recalculateCounts()
         AppLog.d("status_update total=\(parsed.count) running=\(runningCount) ws=\(wsConnected) hasError=\(hasError) statusError=\(statusError ?? "-") lastError=\(lastError ?? "-")")
+        noteModelsVersion(from: json)
     }
 
     private func handleInitialStatus(_ json: [String: Any]) {
@@ -478,6 +503,7 @@ final class SubworkerManager: ObservableObject {
         isLoading = false
         statusError = nil
         lastError = nil
+        noteModelsVersion(from: json)
 
         if !wsConnected {
             wsConnected = true
@@ -579,8 +605,9 @@ final class SubworkerManager: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self, let task = self.wsTask else { return }
                 if self.awaitingPong {
-                    AppLog.d("Previous ping never answered — treating WS as dead")
-                    self.handleDisconnect()
+                    AppLog.d("Previous ping never answered (1/2) — tolerating, next ping decides")
+                    self.awaitingPong = false
+                    self.missedPongs += 1
                     return
                 }
                 let ping = URLSessionWebSocketTask.Message.string("{\"type\":\"ping\"}")
@@ -592,6 +619,7 @@ final class SubworkerManager: ObservableObject {
                             self.handleDisconnect()
                         } else {
                             self.awaitingPong = true
+                            self.lastPingAt = Date()
                             self.startPongWatchdog()
                         }
                     }
@@ -605,8 +633,15 @@ final class SubworkerManager: ObservableObject {
         pongWatchdog = scheduleTimer(interval: 10.0, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, self.awaitingPong else { return }
-                AppLog.d("No pong within 10s — reconnecting WS")
-                self.handleDisconnect()
+                self.awaitingPong = false
+                self.missedPongs += 1
+                if self.missedPongs >= 2 {
+                    AppLog.d("No pong 2x in a row — reconnecting WS")
+                    self.missedPongs = 0
+                    self.handleDisconnect()
+                } else {
+                    AppLog.d("No pong within 10s (1/2) — tolerating, next ping decides")
+                }
             }
         }
     }
@@ -729,6 +764,7 @@ final class SubworkerManager: ObservableObject {
             isLoading = false
             statusError = nil
             AppLog.d("Status updated: \(parsed.count) subworkers")
+            noteModelsVersion(from: json)
         } catch {
             statusError = error.localizedDescription
             isLoading = false
@@ -891,13 +927,53 @@ final class SubworkerManager: ObservableObject {
 
     // MARK: - Model Selection
 
+    /// Plan §2.3 reader: accepts BOTH the legacy bare-string shape
+    /// `{agent: "provider/model"}` and the new object shape
+    /// `{agent: {model, variant}}`. Unknown shapes are skipped, never crash.
     func loadModelSelections() {
         guard let data = FileManager.default.contents(atPath: SubworkerModels.selectionsPath),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             modelSelections = [:]
             return
         }
-        modelSelections = json
+        var models: [String: String] = [:]
+        var variants: [String: String] = [:]
+        for (agent, value) in json {
+            if let model = value as? String {
+                models[agent] = model
+            } else if let obj = value as? [String: Any] {
+                if let model = obj["model"] as? String { models[agent] = model }
+                if let variant = obj["variant"] as? String { variants[agent] = variant }
+            }
+        }
+        modelSelections = models
+        // Only overwrite variant state when the file actually carries variants;
+        // a legacy bare-string file must not wipe in-memory variant state.
+        if !variants.isEmpty {
+            for (agent, variant) in variants { modelVariants[agent] = variant }
+        }
+    }
+
+    /// Plan §2.2: the server bumps `models_version` on every roster flip
+    /// (GET /status + status_update). A bump means the /models snapshot we
+    /// hold is stale → refetch, which re-fires modelsLoadedNotification so
+    /// open menus rebuild live. No polling loop: this only runs on payloads
+    /// the app already receives. Absent key (old server) → no-op.
+    private func noteModelsVersion(from json: [String: Any]) {
+        let version: Int? = {
+            if let v = json["models_version"] as? Int { return v }
+            if let v = json["models_version"] as? NSNumber { return v.intValue }
+            return nil
+        }()
+        guard let version else { return }
+        guard let last = lastSeenModelsVersion else {
+            lastSeenModelsVersion = version
+            return
+        }
+        guard version > last else { return }
+        lastSeenModelsVersion = version
+        AppLog.d("models_version bumped \(last) → \(version), refetching /models")
+        fetchModels()
     }
 
     func fetchModels() {
@@ -907,13 +983,15 @@ final class SubworkerManager: ObservableObject {
                 guard let self, let data,
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let raw = json["models"] as? [[String: Any]] else { return }
-                let options: [ModelOption] = raw.compactMap { m in
+                let options: [ModelOption] = raw.compactMap { m -> ModelOption? in
                     guard let id = m["id"] as? String else { return nil }
                     return ModelOption(
                         id: id,
                         name: m["name"] as? String ?? id,
                         provider: m["provider"] as? String ?? "",
-                        variants: m["variants"] as? [String] ?? []
+                        variants: m["variants"] as? [String] ?? [],
+                        isNew: m["is_new"] as? Bool ?? false,
+                        isDeprecated: m["deprecated"] as? Bool ?? false
                     )
                 }
                 let favoriteProvider = "opencode"
@@ -950,7 +1028,14 @@ final class SubworkerManager: ObservableObject {
             subworkers[idx].variant = variant.isEmpty ? nil : variant
         }
 
-        guard let data = try? JSONSerialization.data(withJSONObject: updated, options: [.prettyPrinted, .sortedKeys]) else {
+        // Plan §2.3 writer: persist {agent: {model, variant}} so the thinking
+        // level survives restarts. Built from the full in-memory maps so one
+        // save keeps every agent's selection, not just the edited one.
+        var fileShape: [String: [String: String]] = [:]
+        for (agent, model) in updated {
+            fileShape[agent] = ["model": model, "variant": updatedVariants[agent] ?? ""]
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: fileShape, options: [.prettyPrinted, .sortedKeys]) else {
             lastError = "Model selection: invalid payload"
             return
         }

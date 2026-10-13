@@ -72,13 +72,14 @@ import SwiftUI
         let target=NSRect(x:panel.frame.origin.x,y:screen.frame.maxY,width:panel.frame.width,height:panel.frame.height)
         NSAnimationContext.runAnimationGroup({ ctx in ctx.duration=0.42; ctx.timingFunction=CAMediaTimingFunction(controlPoints:0.4,0,0.6,1); ctx.allowsImplicitAnimation=true; panel.animator().setFrame(target,display:true); panel.animator().alphaValue = 0.85 }, completionHandler:{ [weak self, weak panel] in guard let self, let panel, self.panels[agentName] === panel else { return }; self.close(for:agentName,panel:panel) })
     }
-     private func close(for name: String, panel: NSPanel) {
-         panel.orderOut(nil)
-         panel.contentView = nil
-         if panels[name] === panel {
-             panels[name]=nil; hoverStates[name]=nil; durations[name]=nil; noAutoClose.remove(name)
-         }
-     }
+    private func close(for name: String, panel: NSPanel) {
+        panel.orderOut(nil)
+        panel.contentView = nil
+        retractTimers[name]?.invalidate(); retractTimers[name]=nil
+        if panels[name] === panel {
+            panels[name]=nil; hoverStates[name]=nil; durations[name]=nil; noAutoClose.remove(name)
+        }
+    }
     private func scheduleRetract(for agentName: String, after duration: TimeInterval) {
         retractTimers[agentName]?.invalidate()
         retractTimers[agentName]=Timer.scheduledTimer(withTimeInterval: duration, repeats:false){ [weak self] _ in Task{ @MainActor [weak self] in guard let self else{return}; if self.hoverStates[agentName]==true{return}; self.retract(for:agentName) } }
@@ -119,6 +120,14 @@ import SwiftUI
         hoverStates.removeAll()
         durations.removeAll()
         noAutoClose.removeAll()
+    }
+    @MainActor func closeAllUnlocked() {
+        let names = panels.keys.filter { !isLocked(for: $0) }
+        for name in names {
+            if let panel = panels[name] {
+                close(for: name, panel: panel)
+            }
+        }
     }
 }
 private class HoverPanel: NSPanel {
@@ -191,6 +200,9 @@ struct RunPopupView: View {
     @State private var trafficObserver: NSObjectProtocol?
     @State private var trafficTimer: Timer? = nil
     @State private var statusTimer: Timer? = nil
+    @State private var showDoneOverlay = false
+    @State private var doneCloseScheduled = false
+    @State private var doneCloseTimer: Timer? = nil
     private func startStatusRefresh(){ statusTimer?.invalidate(); let t = Timer.scheduledTimer(withTimeInterval: 4.0, repeats: true){ _ in Task{ @MainActor in self.fetchAgentStatus() } }; RunLoop.main.add(t, forMode: .common); statusTimer = t }
     @State private var showStickerPinned: Bool = false
     @State private var subagentKeys: [LivestreamStore.SubagentKey] = []
@@ -285,11 +297,12 @@ struct RunPopupView: View {
         .animation(.easeInOut(duration:0.22), value: showSticker)
         .animation(.easeInOut(duration:0.2), value: effectiveTodos.isEmpty)
         .animation(.easeInOut(duration:0.2), value: subagentKeys.isEmpty)
-        .onAppear{ showStickerPinned=false; isHoveringLive=false; historyReady=false; verticalTodos=[]; subagentKeys=[]; expandedSubagent=nil; isLockedCached=RunPopupController.shared.isLocked(for: agentName); draggableEnabledState=UserDefaults.standard.bool(forKey:"dropDraggableEnabled"); observeDraggable(); observeTraffic(); fetchAgentStatus(); fetchRunHistory(); observeLogs(); startTick(); startStatusRefresh() }.onDisappear{ if let o=observer{NotificationCenter.default.removeObserver(o)}; if let d=draggableObserver{NotificationCenter.default.removeObserver(d)}; if let t=trafficObserver{NotificationCenter.default.removeObserver(t)}; trafficTimer?.invalidate(); statusTimer?.invalidate(); stopAllSubagentPolling() }.onTapGesture{onTap()}.onHover{ h in RunPopupController.shared.setHover(h, for:agentName) }
+        .onAppear{ showStickerPinned=false; isHoveringLive=false; historyReady=false; verticalTodos=[]; subagentKeys=[]; expandedSubagent=nil; isLockedCached=RunPopupController.shared.isLocked(for: agentName); draggableEnabledState=UserDefaults.standard.bool(forKey:"dropDraggableEnabled"); observeDraggable(); observeTraffic(); fetchAgentStatus(); fetchRunHistory(); observeLogs(); startTick(); startStatusRefresh() }.onDisappear{ if let o=observer{NotificationCenter.default.removeObserver(o)}; if let d=draggableObserver{NotificationCenter.default.removeObserver(d)}; if let t=trafficObserver{NotificationCenter.default.removeObserver(t)}; trafficTimer?.invalidate(); statusTimer?.invalidate(); stopAllSubagentPolling() }.onHover{ h in RunPopupController.shared.setHover(h, for:agentName) }
         .onChange(of: showStickerPinned){ _ in updatePanelForSubagents() }
         .onChange(of: isHoveringLive){ _ in updatePanelForSubagents() }
         .onReceive(livestream.throttled){ agent in if agent==agentName { refreshSubagentsFromLive() } }
         .onReceive(livestream.subagentThrottled){ key in if key.parentAgent==agentName { /* subagent updated, no action needed, view auto-refreshes */ } }
+        .onDisappear{ doneCloseTimer?.invalidate(); doneCloseTimer = nil }
     }
     private func bubbleAttachedConfigured(hasLeft: Bool, hasRight: Bool) -> some View {
         var corners: RunRoundedCorner.RunCornerSet = []
@@ -301,7 +314,7 @@ struct RunPopupView: View {
 
     @ViewBuilder private var stickerHeader: some View {
         if !historyReady {
-            HStack{ ProgressView().controlSize(.mini).scaleEffect(0.7); Text("Loading session…").font(.system(size:7)).foregroundColor(.secondary); Spacer() }.padding(.horizontal,6).padding(.vertical,4).frame(maxWidth:.infinity).background(RoundedRectangle(cornerRadius:8).fill(Color(nsColor:.controlBackgroundColor).opacity(0.9)).overlay(RoundedRectangle(cornerRadius:8).stroke(Color.primary.opacity(0.12))))
+            HStack{ ProgressView().controlSize(.mini).scaleEffect(0.7); Text("Loading session…").font(.system(size:7)).foregroundColor(.secondary); Spacer() }.padding(.horizontal,6).padding(.vertical,4).frame(maxWidth:.infinity).background(RoundedRectangle(cornerRadius:8).fill(Color(nsColor:.controlBackgroundColor).opacity(0.9)).overlay(RoundedRectangle(cornerRadius:8).stroke(Color.primary.opacity(0.12)))).contentShape(RoundedRectangle(cornerRadius:8)).onTapGesture { onTap() }
         } else {
             let tools = storeEntries.filter{ if case .tool = $0 { return true } else { return false } }.count
             let msgs = storeEntries.filter{ if case .text = $0 { return true } else if case .reasoning = $0 { return true } else { return false } }.count
@@ -320,7 +333,7 @@ struct RunPopupView: View {
             Spacer()
             HStack(spacing:3){ Image(systemName:"wrench.and.screwdriver").font(.system(size:7)); Text("\(tools) tools").font(.system(size:7, weight:.medium)).foregroundColor(.purple) }.padding(.horizontal,5).padding(.vertical,3).background(Color.purple.opacity(0.10)).cornerRadius(6)
             HStack(spacing:3){ Image(systemName:"bubble.left").font(.system(size:7)); Text("\(msgs) msgs").font(.system(size:7, weight:.medium)).foregroundColor(.blue) }.padding(.horizontal,5).padding(.vertical,3).background(Color.blue.opacity(0.10)).cornerRadius(6)
-            }.padding(.horizontal,6).padding(.vertical,4).frame(maxWidth:.infinity).background(RoundedRectangle(cornerRadius:8).fill(.regularMaterial)).overlay(RoundedRectangle(cornerRadius:8).stroke(Color.primary.opacity(0.12)))
+            }.padding(.horizontal,6).padding(.vertical,4).frame(maxWidth:.infinity).background(RoundedRectangle(cornerRadius:8).fill(.regularMaterial)).overlay(RoundedRectangle(cornerRadius:8).stroke(Color.primary.opacity(0.12))).contentShape(RoundedRectangle(cornerRadius:8)).onTapGesture { onTap() }
             }
     }
     @ViewBuilder private var teamTasksAboveBar: some View {
@@ -401,6 +414,7 @@ struct RunPopupView: View {
             }
             if showSessions { popupSessionSidebar }
             bubbleAttachedConfigured(hasLeft: hasTodo || hasSubLeft, hasRight: hasSubRight)
+                .overlay(alignment:.top){ if showDoneOverlay { doneOverlayBanner } }
             if hasSubRight {
                 ZStack(alignment:.trailing){
                     subagentVerticalStripCollapsed
@@ -468,16 +482,55 @@ struct RunPopupView: View {
                 agentRunning = json["running"] as? Bool
                 agentLastError = json["last_error"] as? String
                 agentEnabled = json["enabled"] as? Bool
+                if json["running"] as? Bool == false { fireDoneFlow() }
             }
         }.resume()
+    }
+    private func fireDoneFlow(){
+        guard !doneCloseScheduled else { return }
+        doneCloseScheduled = true
+        liveRunning = false
+        withAnimation(.easeInOut(duration:0.2)){ showDoneOverlay = true }
+        scheduleDoneClose()
+    }
+    private func scheduleDoneClose(){
+        doneCloseTimer?.invalidate()
+        let t = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false){ _ in
+            Task{ @MainActor in RunPopupController.shared.retract(for: agentName) }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        doneCloseTimer = t
+    }
+    private var doneHasError: Bool { !(agentLastError?.isEmpty ?? true) }
+    @ViewBuilder private var doneOverlayBanner: some View {
+        HStack(spacing:6){
+            Image(systemName: doneHasError ? "xmark.circle.fill" : "checkmark.circle.fill").font(.system(size:10,weight:.semibold)).foregroundColor(doneHasError ? .red : .green)
+            Text(doneHasError ? "Agent Finished with Error" : "Agent is Done").font(.system(size:9,weight:.semibold)).foregroundColor(.primary)
+            Spacer()
+            Button(action:{ withAnimation(.easeInOut(duration:0.15)){ showDoneOverlay = false } }){
+                Image(systemName:"xmark").font(.system(size:8,weight:.bold)).foregroundColor(.secondary).frame(width:18,height:18).background(Color.secondary.opacity(0.12)).clipShape(Circle())
+            }.buttonStyle(.plain).help("Dismiss banner (popup still closes)")
+        }
+        .padding(.horizontal,8).padding(.vertical,6)
+        .background(RoundedRectangle(cornerRadius:9).fill(.regularMaterial).shadow(color:.black.opacity(0.18), radius:6, x:0, y:2))
+        .overlay(RoundedRectangle(cornerRadius:9).stroke((doneHasError ? Color.red : Color.green).opacity(0.35)))
+        .padding(.horizontal,8).padding(.top,6)
+        .transition(.opacity.combined(with:.move(edge:.top)))
     }
     private var bubbleContent: some View {
         VStack(alignment:.leading,spacing:4){
             HStack(spacing:6){
-                if dropPosition=="inlineTiny" { inlineTinyPhoto }
-                Circle().fill(Color.green).frame(width:6,height:6)
-                Text("\(agentName) running").font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
+                HStack(spacing:6){
+                    if dropPosition=="inlineTiny" { inlineTinyPhoto }
+                    Circle().fill(Color.green).frame(width:6,height:6)
+                    Text("\(agentName) running").font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { onTap() }
+                .help("Click to dismiss popup")
                 Spacer()
+                    .contentShape(Rectangle())
+                    .onTapGesture { onTap() }
                 if draggableEnabled {
                     Button(action: { let newLock = !isLockedCached; isLockedCached=newLock; RunPopupController.shared.setLocked(newLock, for: agentName) }){
                         Image(systemName: isLockedCached ? "lock.fill" : "lock.open.fill").font(.system(size:8,weight:.semibold)).foregroundColor(isLockedCached ? .red.opacity(0.8) : .secondary).frame(width:16,height:16).background(Color.secondary.opacity(isLockedCached ? 0.18 : 0.12)).clipShape(Circle())
@@ -692,7 +745,7 @@ struct RunPopupView: View {
         ZStack{
             Circle().stroke(Color.accentColor.opacity(0.6),lineWidth:2).frame(width:56,height:56).modifier(PulseGlow())
             if let photo=ProfilePhotos.shared.circularPhoto(for:agentName,size:48){ Image(nsImage:photo).resizable().frame(width:48,height:48) } else { ZStack{ Circle().fill(Color.accentColor.opacity(0.25)); Text(agentMonogram).font(.system(size:18,weight:.bold)).foregroundColor(.accentColor) }.frame(width:48,height:48) }
-        }.frame(height:60)
+        }.frame(height:60).contentShape(Rectangle()).onTapGesture { onTap() }.help("Click to dismiss popup")
     }
 
     private var bubble: some View { bubbleAttached }
@@ -720,7 +773,7 @@ struct RunPopupView: View {
             } else if lname == "skill" {
                 runSkillBanner(input: input, output: output)
             } else {
-                runGenericBanner(name: name, input: input, output: output)
+                ToolJSONDisplay(name: name, input: input, output: output)
             }
         }
     }
@@ -901,7 +954,7 @@ struct RunPopupView: View {
         let liveEntries = LivestreamStore.shared.stream(for: agentName)
         var liveRaw: [[String: Any]] = []
         for e in liveEntries {
-            if case .tool(_, let name, let input, let output) = e, ["call_omo_agent","task","team_create"].contains(name.lowercased()) {
+            if case .tool(_, let name, let input, let output) = e, ["call_omo_agent","task","subtask","hub","team_create"].contains(name.lowercased()) {
                 var part: [String: Any] = ["type":"tool","tool":name]
                 if let i=input { part["input"]=i }
                 if let o=output { part["output"]=o }
@@ -934,7 +987,7 @@ struct RunPopupView: View {
         let liveEntries = LivestreamStore.shared.stream(for: agentName)
         var liveRaw: [[String: Any]] = []
         for e in liveEntries {
-            if case .tool(_, let name, let input, let output) = e, ["call_omo_agent","task","team_create"].contains(name.lowercased()) {
+            if case .tool(_, let name, let input, let output) = e, ["call_omo_agent","task","subtask","hub","team_create"].contains(name.lowercased()) {
                 var part: [String: Any] = ["type":"tool","tool":name]
                 if let i=input { part["input"]=i }
                 if let o=output { part["output"]=o }
@@ -1334,11 +1387,8 @@ struct SubagentBubbleView: View {
             } else if lname=="edit", let inp=input, let d=LivestreamParsing.parseEdit(inp) {
                 HStack(spacing:4){ Image(systemName:"pencil").font(.system(size:7)).foregroundColor(.orange); Text((d.path as NSString).lastPathComponent).font(.system(size:7, design:.monospaced)).foregroundColor(.orange).lineLimit(1); Spacer(); Text("+\(d.new.components(separatedBy:"\n").count) -\(d.old.components(separatedBy:"\n").count)").font(.system(size:6, design:.monospaced)).foregroundColor(.secondary) }.padding(4).background(Color.orange.opacity(0.08)).cornerRadius(6)
             } else {
-                HStack(spacing:4){ Image(systemName: LivestreamParsing.toolIcon(name)).font(.system(size:7)).foregroundColor(LivestreamParsing.toolColor(name)); Text(LivestreamParsing.toolDisplayName(name)).font(.system(size:7, weight:.semibold)).foregroundColor(LivestreamParsing.toolColor(name)); Spacer() }.padding(4).background(LivestreamParsing.toolColor(name).opacity(0.08)).cornerRadius(6)
-                let c=LivestreamParsing.formatToolContent(name: name, input: input, output: output)
-                if !c.isEmpty {
-                    Text(c).font(.system(size:6, design:.monospaced)).foregroundColor(.secondary).lineLimit(3).padding(.horizontal,4)
-                }
+                ToolJSONDisplay(name: name, input: input, output: output)
+                    .font(.system(size: 7))
             }
         }
     }

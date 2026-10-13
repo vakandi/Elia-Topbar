@@ -42,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var scheduleWindow: NSWindow?
     private var colimaManager: ColimaManager!
+    private var opencodeServerManager: OpenCodeServerManager!
     private var subworkerManager: SubworkerManager!
     private var cancellables = Set<AnyCancellable>()
     private var logPopover: NSPopover?
@@ -58,6 +59,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var iconPhotoNames: [String] = []
     private var subworkerLogPopover: NSPopover?
     private var subworkerLogPopoverName: String?
+    /// Invisible 1pt anchor panel for notch-centered log popovers. MUST stay
+    /// alive + ordered in while the popover is shown (see showLogPopoverBelowNotch).
+    private var notchLogAnchorPanel: NSPanel?
     private var tunnelProgressController: TunnelProgressPanelController?
     private var tunnelStatusCache: [String: Any]?
     private var tunnelStatusInFlight = false
@@ -159,6 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appNapActivity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleSystemSleepDisabled], reason: "EliaTopBar status-bar live updates")
 
         colimaManager = ColimaManager()
+        opencodeServerManager = OpenCodeServerManager()
         subworkerManager = SubworkerManager()
 
         // Restore persisted server URL
@@ -179,6 +184,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             colimaManager.$instances.map { _ in () }.eraseToAnyPublisher(),
             colimaManager.$loadState.map { _ in () }.eraseToAnyPublisher(),
             colimaManager.$actionError.map { _ in () }.eraseToAnyPublisher(),
+            opencodeServerManager.$status.map { _ in () }.eraseToAnyPublisher(),
+            opencodeServerManager.$version.map { _ in () }.eraseToAnyPublisher(),
+            opencodeServerManager.$otherServers.map { _ in () }.eraseToAnyPublisher(),
+            opencodeServerManager.$actionError.map { _ in () }.eraseToAnyPublisher(),
             subworkerManager.$wsConnected.map { _ in () }.eraseToAnyPublisher(),
             subworkerManager.$runningCount.map { _ in () }.eraseToAnyPublisher(),
             subworkerManager.$wsError.map { _ in () }.eraseToAnyPublisher(),
@@ -353,14 +362,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if mainMenu == nil || (mainMenu?.numberOfItems ?? 0) == 0 { setupMenu() }
         guard let menu = mainMenu,
               let pt = NotchIslandController.shared.primaryMenuPoint() else { return }
+        closeAllLogPopovers()
+        RunPopupController.shared.closeAllUnlocked()
         isMenuOpen = true
         menu.popUp(positioning: nil, at: pt, in: nil)
     }
 
     private func openAgentFromIsland(_ name: String) {
-        NotificationCenter.default.post(
-            name: .eliaShowMiniBubble, object: nil, userInfo: ["name": name]
-        )
+        logClick("islandAgent name=\(name) hasPanel=\(RunPopupController.shared.hasPanel(for: name)) openLog=\(subworkerLogPopoverName ?? "nil") viewer=\(viewerPreferredUI)")
+        if RunPopupController.shared.hasPanel(for: name) {
+            RunPopupController.shared.retract(for: name)
+            logClick("branch=island-retract-toggle name=\(name)")
+            return
+        }
+        if subworkerLogPopover?.isShown == true && subworkerLogPopoverName == name {
+            closeAllLogPopovers()
+            logClick("branch=island-popover-toggle name=\(name)")
+            return
+        }
+        if viewerPreferredUI == "miniBubble" {
+            NotificationCenter.default.post(
+                name: .eliaShowMiniBubble, object: nil, userInfo: ["name": name]
+            )
+        } else {
+            showSubworkerLogPopover(for: name, button: statusItem.button)
+        }
     }
 
     @objc private func handleSystemWake(_ note: Notification) {
@@ -549,6 +575,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private var maxConcurrentDrops: Int { min(max(1, UserDefaults.standard.object(forKey: "runPopupMaxConcurrent") as? Int ?? 10), 10) }
     private func menuBarAnchorX() -> CGFloat {
+        if useNotchIsland {
+            if let x = NotchIslandController.shared.notchCenterX() { return x }
+            if let screen = NSScreen.main { return screen.frame.midX }
+        }
         if let screen = NSScreen.main {
             if let midX = statusItem.button?.window?.frame.midX, midX > screen.frame.minX + 200 {
                 return midX
@@ -1300,6 +1330,72 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Log Popover
 
+    /// Shows a log popover centered below the notch island (status item is
+    /// hidden in island mode, so button-anchored show falls back to the
+    /// bottom of the screen). Returns true when the popover was shown, false
+    /// when no anchor and no button existed so the caller can try the button path.
+    private func showLogPopoverBelowNotch(_ popover: NSPopover, contentWidth: CGFloat) -> Bool {
+        guard let anchor = NotchIslandController.shared.logViewerAnchorPoint()
+            ?? NSScreen.main.map({ NSPoint(x: $0.frame.midX, y: $0.frame.maxY - 32) }),
+              NSScreen.main != nil else {
+            if let button = statusItem.button {
+                popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+                clampPopoverInsideScreen(popover)
+                return true
+            }
+            return false
+        }
+        if !useNotchIsland, let button = statusItem.button, button.window != nil {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            clampPopoverInsideScreen(popover)
+            return true
+        }
+        // Each notch popover needs its own live anchor: drop the previous one.
+        notchLogAnchorPanel?.orderOut(nil)
+        notchLogAnchorPanel = nil
+
+        // NSPopover requires an anchor view: host a 1pt view in an invisible
+        // panel at the notch point, show relative to it, then center the
+        // popover window below the notch on the next runloop. The panel MUST
+        // stay alive + ordered in while the popover is shown — ordering it out
+        // (or deallocating it) drops the anchor and AppKit re-seats the
+        // popover at the bottom of the screen. Retired in
+        // closeAllLogPopovers / popoverDidClose.
+        let anchorView = NSView(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
+        let anchorPanel = NSPanel(
+            contentRect: NSRect(x: anchor.x, y: anchor.y, width: 1, height: 1),
+            styleMask: .borderless, backing: .buffered, defer: false
+        )
+        anchorPanel.isOpaque = false
+        anchorPanel.backgroundColor = .clear
+        anchorPanel.hasShadow = false
+        anchorPanel.ignoresMouseEvents = true
+        anchorPanel.level = .statusBar
+        anchorPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        anchorPanel.contentView?.addSubview(anchorView)
+        anchorPanel.orderFront(nil)
+        notchLogAnchorPanel = anchorPanel
+        popover.show(relativeTo: anchorView.bounds, of: anchorView, preferredEdge: .minY)
+        let anchorX = anchor.x
+        let anchorY = anchor.y
+        DispatchQueue.main.async {
+            if let win = popover.contentViewController?.view.window,
+               let scr = win.screen ?? NSScreen.main {
+                var frame = win.frame
+                let w = frame.width > 0 ? frame.width : contentWidth
+                frame.origin.x = anchorX - w / 2
+                frame.origin.y = anchorY - frame.height - 8
+                let vf = scr.visibleFrame
+                frame.origin.x = max(vf.minX + 8, min(frame.origin.x, vf.maxX - w - 8))
+                frame.origin.y = max(vf.minY + 8, min(frame.origin.y, vf.maxY - frame.height - 8))
+                win.setFrame(frame, display: true)
+            }
+            // NOTE: anchor panel stays ordered in until the popover closes.
+        }
+        clampPopoverInsideScreen(popover)
+        return true
+    }
+
     private func clampPopoverInsideScreen(_ popover: NSPopover) {
         DispatchQueue.main.async { [weak popover] in
             guard let popover, popover.isShown,
@@ -1321,6 +1417,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let popover = subworkerLogPopover, popover.isShown { popover.performClose(nil); popover.contentViewController = nil }
         subworkerLogPopover = nil
         subworkerLogPopoverName = nil
+        notchLogAnchorPanel?.orderOut(nil)
+        notchLogAnchorPanel = nil
+    }
+
+    /// Retires the notch anchor panel, but only when no log popover is on
+    /// screen — didClose for a replaced popover must not pull the anchor of
+    /// the popover that just opened.
+    private func retireNotchLogAnchorIfIdle() {
+        guard subworkerLogPopover?.isShown != true, logPopover?.isShown != true else { return }
+        notchLogAnchorPanel?.orderOut(nil)
+        notchLogAnchorPanel = nil
     }
 
     private var viewerPreferredUI: String { UserDefaults.standard.string(forKey: "viewerPreferredUI") ?? "logViewer" }
@@ -1350,6 +1457,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.contentViewController = NSHostingController(rootView: logView)
 
         logPopover = popover
+        if useNotchIsland {
+            if showLogPopoverBelowNotch(popover, contentWidth: 500) { return }
+        }
         if let button = statusItem.button {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             clampPopoverInsideScreen(popover)
@@ -1358,13 +1468,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func mainItemClicked(_ sender: NSStatusBarButton) {
         AppLog.d("mainItemClicked self=\(ObjectIdentifier(self)) senderTarget=\(String(describing: sender.target)) — button click received buttonNil=\(statusItem.button == nil) windowNil=\(statusItem.button?.window == nil) menuItems=\(mainMenu?.numberOfItems ?? -1)")
-        if NSApp.currentEvent?.type == .leftMouseDown { return }
         // Toggle only when that agent's viewer is actually on screen; a stale
         // name alone must never swallow the click (self-healing toggle).
         let wasOpenName = (subworkerLogPopover?.isShown == true) ? subworkerLogPopoverName : nil
+        // A primary click always dismisses open LogViewers — even when the
+        // click itself bails out below (menu handled by AppKit) or opens the
+        // main menu further down. Close is idempotent.
+        closeAllLogPopovers()
+
+        if NSApp.currentEvent?.type == .leftMouseDown { return }
         logClick("entry viewer=\(viewerPreferredUI) wasOpen=\(wasOpenName ?? "nil") popShown=\(subworkerLogPopover?.isShown ?? false)")
         logClick("state subs=\(subworkerManager.subworkers.count) runningCount=\(subworkerManager.runningCount) ws=\(subworkerManager.wsConnected) health=\(subworkerManager.serverHealth?.healthStatus ?? "nil") statusErr=\(subworkerManager.statusError ?? "nil") arrRunning=\(subworkerManager.subworkers.filter(\.running).map(\.name)) colimaRun=\(colimaManager.hasRunningInstance)")
-        closeAllLogPopovers()
         watchdogCheck()
         ensureStatusItemAlive()
         if mainMenu == nil || (mainMenu?.numberOfItems ?? 0) == 0 {
@@ -1428,8 +1542,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let shouldCloseDrops = UserDefaults.standard.object(forKey: "closeDropsOnPrimaryClick") as? Bool ?? true
         if shouldCloseDrops && RunPopupController.shared.panelCount > 0 {
-            AppLog.d("primaryClick closeAll Drops count=\(RunPopupController.shared.panelCount)")
-            RunPopupController.shared.closeAll()
+            AppLog.d("primaryClick closeAllUnlocked Drops count=\(RunPopupController.shared.panelCount)")
+            RunPopupController.shared.closeAllUnlocked()
         }
         if let menu = mainMenu {
             logClick("branch=menu-fallback (geometry miss)")
@@ -1647,9 +1761,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showSubworkerLogPopover(for name: String, button: NSButton?) {
         if viewerPreferredUI == "miniBubble" {
-             let dropX = menuBarAnchorX(); RunPopupController.shared.show(for: name, dropX: dropX, duration: effectiveRunPopupDuration, baseURL: subworkerManager.currentBaseURL, showSessionSelector: true); return
-         }
-         guard let button else { return }
+            let dropX = menuBarAnchorX(); RunPopupController.shared.show(for: name, dropX: dropX, duration: effectiveRunPopupDuration, baseURL: subworkerManager.currentBaseURL, showSessionSelector: true); return
+        }
         if let popover = subworkerLogPopover {
             if subworkerLogPopoverName == name && popover.isShown {
                 return
@@ -1669,6 +1782,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         subworkerLogPopover = popover
         subworkerLogPopoverName = name
         NSApp.activate(ignoringOtherApps: true)
+        if useNotchIsland {
+            if showLogPopoverBelowNotch(popover, contentWidth: 520) { return }
+            guard let button else {
+                subworkerLogPopover = nil
+                subworkerLogPopoverName = nil
+                return
+            }
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            clampPopoverInsideScreen(popover)
+            return
+        }
+        guard let button else { return }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         clampPopoverInsideScreen(popover)
     }
@@ -1733,6 +1858,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sender.attributedTitle = emojiAwareTitle("🧹 Cleaning…", color: .secondaryLabelColor)
         AppLog.d("Manual RAM cleanup triggered")
         showCleanupLoadingPanel()
+
+        // The Rust server does not go through the Docker control plane, so there
+        // is no /server/cleanup to call for it — clean natively instead.
+        if opencodeServerManager.isHealthy || !opencodeServerManager.otherServers.isEmpty {
+            opencodeServerManager.clean { [weak self] result in
+                guard let self else { return }
+                sender.isEnabled = true
+                sender.attributedTitle = original
+                self.hideCleanupLoadingPanel()
+                switch result {
+                case .success(let summary):
+                    self.showCleanupAlert(title: "Cleanup done", message: summary)
+                case .failure(let error):
+                    self.showCleanupAlert(title: "Cleanup failed", message: error.localizedDescription)
+                }
+                self.refreshStatus()
+            }
+            return
+        }
+
         Task { @MainActor [weak self] in
             defer {
                 sender.isEnabled = true
@@ -2346,6 +2491,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
                 if index == 0 {
                     instanceMenu.addItem(NSMenuItem.separator())
+                    addOpenCodeServerItems(to: instanceMenu)
+                    instanceMenu.addItem(NSMenuItem.separator())
                     let cleanupItem = NSMenuItem(title: "", action: #selector(cleanRamAndIdle(_:)), keyEquivalent: "")
                     cleanupItem.attributedTitle = emojiAwareTitle("🧹 Clean RAM + Idle Cleaner", color: .labelColor)
                     cleanupItem.target = self
@@ -2355,8 +2502,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let headerTitle: String
                 if instance.name == "default" && instance.status.isRunning {
                     let serverHealthy = subworkerManager.serverHealth?.healthStatus == "healthy"
-                    headerTitle = serverHealthy
-                        ? "✅ ELIA SYSTEM RUNNING"
+                    let rustHealthy = opencodeServerManager.isHealthy
+                    headerTitle = (serverHealthy || rustHealthy)
+                        ? "✅ ELIA SYSTEM IS WORKING"
                         : "⚠️ Docker Running — Server Down"
                 } else if instance.name == "default" {
                     headerTitle = "○ Docker Engine"
@@ -2368,6 +2516,116 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 instanceItem.submenu = instanceMenu
                 menu.addItem(instanceItem)
             }
+        }
+    }
+
+    /// OpenCode Rust server block: the native replacement for the Docker-backed
+    /// one. It is a plain process, so everything here is start/stop/status rather
+    /// than instance management.
+    private func addOpenCodeServerItems(to menu: NSMenu) {
+        let manager = opencodeServerManager!
+
+        let header = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        header.attributedTitle = emojiAwareTitle("🦀 OpenCode Rust Server", color: .labelColor)
+        header.isEnabled = false
+        menu.addItem(header)
+
+        let statusInfo = NSMenuItem(title: "  Status: \(manager.status.label)", action: nil, keyEquivalent: "")
+        statusInfo.isEnabled = false
+        menu.addItem(statusInfo)
+
+        let portInfo = NSMenuItem(title: "  Port: \(manager.port)", action: nil, keyEquivalent: "")
+        portInfo.isEnabled = false
+        menu.addItem(portInfo)
+
+        let healthText: String
+        if manager.isHealthy {
+            healthText = "  Health: ✅ healthy\(manager.version.map { " (v\($0))" } ?? "")"
+        } else if manager.status == .unhealthy {
+            healthText = "  Health: ⚠️ not responding"
+        } else {
+            healthText = "  Health: —"
+        }
+        let healthInfo = NSMenuItem(title: healthText, action: nil, keyEquivalent: "")
+        healthInfo.isEnabled = false
+        menu.addItem(healthInfo)
+
+        menu.addItem(NSMenuItem.separator())
+
+        if manager.isBusy {
+            let busy = NSMenuItem(title: "  \(manager.status.label)", action: nil, keyEquivalent: "")
+            busy.isEnabled = false
+            menu.addItem(busy)
+        } else if manager.status == .missingBinary {
+            let missing = NSMenuItem(title: "  Not built — run ./install.sh", action: nil, keyEquivalent: "")
+            missing.isEnabled = false
+            menu.addItem(missing)
+        } else {
+            let startItem = NSMenuItem(title: "  Start", action: #selector(startOpenCodeServer(_:)), keyEquivalent: "")
+            startItem.target = self
+            startItem.isEnabled = !manager.isHealthy
+            menu.addItem(startItem)
+
+            let stopItem = NSMenuItem(title: "  Stop", action: #selector(stopOpenCodeServer(_:)), keyEquivalent: "")
+            stopItem.target = self
+            stopItem.isEnabled = manager.isHealthy || manager.status == .unhealthy
+            menu.addItem(stopItem)
+        }
+
+        // Duplicates are the failure mode worth surfacing: a second server binds
+        // another port and the two silently fight over the session database.
+        if !manager.otherServers.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+            let dupHeader = NSMenuItem(title: "  ⚠️ Other servers detected (\(manager.otherServers.count))", action: nil, keyEquivalent: "")
+            dupHeader.isEnabled = false
+            menu.addItem(dupHeader)
+
+            for server in manager.otherServers {
+                let detail = NSMenuItem(title: "    pid \(server.pid) — \(server.displayPort)", action: nil, keyEquivalent: "")
+                detail.isEnabled = false
+                detail.toolTip = server.command
+                menu.addItem(detail)
+            }
+
+            let killAll = NSMenuItem(title: "  Kill All Servers", action: #selector(killAllOpenCodeServers(_:)), keyEquivalent: "")
+            killAll.target = self
+            menu.addItem(killAll)
+        }
+
+        if let error = manager.actionError, !error.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+            let errorItem = NSMenuItem(title: "  ⚠ \(truncatedMenuText(error))", action: nil, keyEquivalent: "")
+            errorItem.isEnabled = false
+            errorItem.toolTip = error
+            menu.addItem(errorItem)
+        }
+    }
+
+    @objc private func startOpenCodeServer(_ sender: NSMenuItem) {
+        opencodeServerManager.start()
+    }
+
+    @objc private func stopOpenCodeServer(_ sender: NSMenuItem) {
+        opencodeServerManager.stop()
+    }
+
+    @objc private func killAllOpenCodeServers(_ sender: NSMenuItem) {
+        let servers = opencodeServerManager.otherServers
+        guard !servers.isEmpty else { return }
+
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Kill \(servers.count) opencode server\(servers.count == 1 ? "" : "s")?"
+        alert.informativeText = servers
+            .map { "pid \($0.pid) — \($0.displayPort)" }
+            .joined(separator: "\n")
+            + "\n\nAny run in progress on those servers is lost."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Kill All")
+        alert.addButton(withTitle: "Cancel")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            opencodeServerManager.stopAllDetected()
         }
     }
 
@@ -2475,6 +2733,7 @@ extension AppDelegate: NSPopoverDelegate {
         if popover === logPopover {
             logPopover = nil
         }
+        retireNotchLogAnchorIfIdle()
     }
 }
 
@@ -2504,7 +2763,16 @@ extension AppDelegate: NSMenuDelegate {    func menuNeedsUpdate(_ menu: NSMenu) 
         for m in models {
             let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
             let star = m.provider == "opencode" ? "⭐ " : ""
-            item.attributedTitle = emojiAwareTitle("\(star)\(m.name)  (\(m.provider))", color: .labelColor)
+            // Plan §2.1: NEW badge for fresh roster ids; deprecated ids stay
+            // listed one cycle, greyed + struck through. Old servers omit
+            // both flags (default false) → titles render exactly as before.
+            let newPrefix = m.isNew ? "NEW " : ""
+            item.attributedTitle = emojiAwareTitle("\(star)\(newPrefix)\(m.name)  (\(m.provider))", color: m.isDeprecated ? .secondaryLabelColor : .labelColor)
+            if m.isDeprecated, let base = item.attributedTitle {
+                let struck = NSMutableAttributedString(attributedString: base)
+                struck.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: NSRange(location: 0, length: struck.length))
+                item.attributedTitle = struck
+            }
             item.state = m.id == currentModel ? .on : .off
             item.target = self
             item.representedObject = ["name": agentName, "model": m.id]
