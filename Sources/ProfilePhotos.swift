@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import ImageIO
 
 /// Manages agent profile photos stored locally in the app's Application Support folder.
 /// Photos are copied INTO the app's own folder so they never get lost.
@@ -12,6 +13,10 @@ final class ProfilePhotos {
     private let photosDir: URL
     private var profiles: [String: String] = [:]  // agentName -> filename
 
+    /// Decoded, cropped avatars. SwiftUI re-evaluates `body` constantly; without
+    /// this, a 16pt avatar in a menu row re-decoded a multi-MB PNG every frame.
+    private let imageCache = NSCache<NSString, NSImage>()
+
     private init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let base = appSupport.appendingPathComponent("EliaTopBar", isDirectory: true)
@@ -20,22 +25,46 @@ final class ProfilePhotos {
 
         // Ensure directories exist
         try? FileManager.default.createDirectory(at: photosDir, withIntermediateDirectories: true)
+        imageCache.countLimit = 64
         load()
     }
 
     // MARK: - Public API
 
     /// Returns the NSImage for an agent's profile photo, or nil if none set.
+    /// Downsampled to a sane display size — never decoded at source resolution.
     func photo(for agentName: String) -> NSImage? {
+        let key = "\(agentName)|raw" as NSString
+        if let hit = imageCache.object(forKey: key) { return hit }
         guard let filename = profiles[agentName] else { return nil }
         let path = photosDir.appendingPathComponent(filename)
-        return NSImage(contentsOf: path)
+        guard let img = downsample(path: path, maxPixelSize: 256) else { return nil }
+        imageCache.setObject(img, forKey: key)
+        return img
     }
 
     /// Returns a circular cropped version of the agent's photo, or nil.
     func circularPhoto(for agentName: String, size: CGFloat) -> NSImage? {
+        let key = "\(agentName)|\(Int(size))" as NSString
+        if let hit = imageCache.object(forKey: key) { return hit }
         guard let original = photo(for: agentName) else { return nil }
-        return circularCrop(original, size: size)
+        let cropped = circularCrop(original, size: size)
+        imageCache.setObject(cropped, forKey: key)
+        return cropped
+    }
+
+    /// Decodes straight from disk at the size actually drawn. A 4000x3000 PNG
+    /// costs ~48 MB decoded in RGBA; this pays a few hundred KB instead.
+    private func downsample(path: URL, maxPixelSize: CGFloat) -> NSImage? {
+        guard let source = CGImageSourceCreateWithURL(path as CFURL, nil) else { return nil }
+        let opts: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: Int(maxPixelSize),
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, opts as CFDictionary) else { return nil }
+        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
     }
 
     /// Sets a profile photo for an agent by copying the file into the app folder.

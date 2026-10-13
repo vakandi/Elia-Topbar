@@ -1113,11 +1113,16 @@ struct LogPopoverView: View {
     }
 
     /// @State storage is reference-backed, so the delegate can reach these even
-    /// after `contentViewController = nil` skipped onDisappear.
-    func releaseTimers() {
+    /// after `contentViewController = nil` skipped onDisappear. Observer stops
+    /// belong here too: an un-removed observer block holds this view's state
+    /// boxes, so a leaked observer leaks the whole populated view.
+    func releaseResources() {
         stopLiveTick()
         stopLiveMessagesPolling()
         stopAllSubagentPolling()
+        stopObservingRunLogs()
+        stopObservingRunBanners()
+        stopObservingLiveLifecycle()
     }
 
     private func startLiveMessagesPolling() {

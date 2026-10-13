@@ -77,6 +77,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItemWatchdog: Timer?
     private var statusItemDispatchWatchdog: DispatchSourceTimer?
     private var countdownRefreshTimer: Timer?
+    private var countdownIdleTimer: Timer?
+    private static let tunnelActiveInterval: TimeInterval = 30.0
     private var lastMenuHash: Int = 0
     private var isMenuOpen = false
     private weak var openModelMenu: NSMenu?
@@ -246,7 +248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Cloudflare tunnel status — keep the menu line fresh (30s cadence).
         refreshTunnelStatus()
-        let t = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+        let t = Timer.scheduledTimer(withTimeInterval: Self.tunnelActiveInterval, repeats: true) { [weak self] _ in
             self?.refreshTunnelStatus()
         }
         RunLoop.main.add(t, forMode: .common)
@@ -254,6 +256,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startStatusItemWatchdog()
         startOverflowMonitor()
         startCountdownRefresh()
+
+        if SelfTest.cycles > 0 { runSelfTest() }
+    }
+
+    private func runSelfTest() {
+        let baseURL = subworkerManager.currentBaseURL
+        let agents = subworkerManager.subworkers.map(\.name)
+        let name = { (i: Int) in agents.isEmpty ? "selftest-agent" : (agents[i % agents.count]) }
+        SelfTest.run(cycles: SelfTest.cycles,
+                     openPopup: { [weak self] i in
+                         guard let self else { return }
+                         self.RunPopupController_runShow(name(i), baseURL: baseURL)
+                     },
+                     closePopup: { RunPopupController.shared.closeAllUnlocked() },
+                     openLog: { [weak self] i in
+                         self?.showSubworkerLogPopover(for: name(i), button: self?.statusItem.button)
+                     },
+                     closeLog: { [weak self] in self?.closeAllLogPopovers() },
+                     probe: { [weak self] in self?.selftestProbe() ?? "" })
+    }
+
+    private func selftestProbe() -> String {
+        let ls = LivestreamStore.shared
+        let panels = RunPopupController.shared.panelCount
+        let windows = NSApp.windows.count
+        return "subStreams=\(ls.subagentStreams.count) streams=\(ls.streams.count) panels=\(panels) windows=\(windows) island=\(useNotchIsland) viewers=\(viewerPreferredUI)"
+    }
+
+    @MainActor
+    private func RunPopupController_runShow(_ name: String, baseURL: String) {
+        RunPopupController.shared.show(for: name, dropX: menuBarAnchorX(), duration: 0, baseURL: baseURL, showSessionSelector: true, disableAutoClose: true)
     }
 
     /// Logs the exact AppKit complaint on the next NSException before death.
@@ -392,6 +425,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         closeAllLogPopovers()
         RunPopupController.shared.closeAllUnlocked()
         isMenuOpen = true
+        countdownIdleTimer?.invalidate(); countdownIdleTimer = nil
+        startCountdownRefresh()
         updateNapAssertion()
         menu.popUp(positioning: nil, at: pt, in: nil)
     }
@@ -495,6 +530,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.purgeStaleErrors()
             self.lastMenuHash = 0
             self.setupMenu()
+            // Back off while nothing is on screen: an idle menu bar does not
+            // need a full menu rebuild twice a minute.
+            self.countdownRefreshTimer?.invalidate()
+            let idle = Timer.scheduledTimer(withTimeInterval: 300.0, repeats: false) { [weak self] _ in
+                self?.startCountdownRefresh()
+            }
+            RunLoop.main.add(idle, forMode: .common)
+            self.countdownIdleTimer = idle
         }
         RunLoop.main.add(t, forMode: .common)
         countdownRefreshTimer = t
@@ -1436,14 +1479,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func closeAllLogPopovers() {
-        if let popover = logPopover, popover.isShown { popover.performClose(nil) }
-        logPopoverView?.releaseTimers(); logPopoverView = nil
+        if let popover = logPopover, popover.isShown { popover.close() }
+        logPopoverView?.releaseResources(); logPopoverView = nil
         logPopover?.contentViewController = nil
-        logPopover = nil
-        if let popover = subworkerLogPopover, popover.isShown { popover.performClose(nil) }
-        subworkerLogPopoverView?.releaseTimers(); subworkerLogPopoverView = nil
+        if let popover = subworkerLogPopover, popover.isShown { popover.close() }
+        subworkerLogPopoverView?.releaseResources(); subworkerLogPopoverView = nil
         subworkerLogPopover?.contentViewController = nil
-        subworkerLogPopover = nil
         subworkerLogPopoverName = nil
         notchLogAnchorPanel?.orderOut(nil)
         notchLogAnchorPanel = nil
@@ -1788,20 +1829,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if viewerPreferredUI == "miniBubble" {
             let dropX = menuBarAnchorX(); RunPopupController.shared.show(for: name, dropX: dropX, duration: effectiveRunPopupDuration, baseURL: subworkerManager.currentBaseURL, showSessionSelector: true); return
         }
-        if let popover = subworkerLogPopover {
+if let popover = subworkerLogPopover {
             if subworkerLogPopoverName == name && popover.isShown {
                 return
             }
-            popover.performClose(nil)
-            subworkerLogPopoverView?.releaseTimers(); subworkerLogPopoverView = nil
+            popover.close()
+            subworkerLogPopoverView?.releaseResources(); subworkerLogPopoverView = nil
             popover.contentViewController = nil
-            subworkerLogPopover = nil
             subworkerLogPopoverName = nil
         }
-        let popover = NSPopover()
-        popover.contentSize = NSSize(width: 520, height: 400)
-        popover.behavior = .semitransient
-        popover.delegate = self
+        // Reuse one NSPopover. Building a fresh one per open leaked a ~7 MB
+        // CoreAnimation IOSurface every presentation (measured: 404 MB of
+        // 436 MB footprint was IOSurface after 60 cycles) with window and heap
+        // counts flat — it was the per-presentation backing store, not objects.
+        let popover = subworkerLogPopover ?? {
+            let p = NSPopover()
+            p.contentSize = NSSize(width: 520, height: 400)
+            p.behavior = .semitransient
+            p.delegate = self
+            return p
+        }()
         let sv = LogPopoverView(subworkerName: name, baseURL: subworkerManager.currentBaseURL)
         subworkerLogPopoverView = sv
         popover.contentViewController = NSHostingController(rootView: sv)
@@ -2239,6 +2286,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func refreshTunnelStatus() {
         guard UserDefaults.standard.string(forKey: "tunnelDomain") != nil,
               !tunnelStatusInFlight else { return }
+        // This only feeds a menu line. With no menu and no popup on screen it
+        // is a network round-trip nobody can see, so skip it while idle.
+        guard isMenuOpen || tunnelStatusCache == nil else { return }
         tunnelStatusInFlight = true
         let baseURL = UserDefaults.standard.string(forKey: "subworkerServerURL") ?? "http://localhost:5656"
         guard let url = URL(string: "\(baseURL)/tunnel/status") else {
@@ -2752,15 +2802,14 @@ extension AppDelegate: NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         guard let popover = notification.object as? NSPopover else { return }
         if popover === subworkerLogPopover {
-            subworkerLogPopoverView?.releaseTimers(); subworkerLogPopoverView = nil
-            subworkerLogPopover = nil
+            subworkerLogPopoverView?.releaseResources(); subworkerLogPopoverView = nil
+            popover.contentViewController = nil
             subworkerLogPopoverName = nil
         }
         if popover === logPopover {
-            logPopoverView?.releaseTimers(); logPopoverView = nil
-            logPopover = nil
+            logPopoverView?.releaseResources(); logPopoverView = nil
+            popover.contentViewController = nil
         }
-        popover.contentViewController = nil
         retireNotchLogAnchorIfIdle()
         updateNapAssertion()
     }

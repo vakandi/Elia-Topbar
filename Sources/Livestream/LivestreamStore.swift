@@ -360,9 +360,22 @@ import SwiftUI
         return out
     }
 
-    func mergeSubagentHistory(key: SubagentKey, rawMessages: [[String: Any]]) {
+    private static let maxSubagentStreams = 400
+
+    private func evictSubagentStreamsIfNeeded() {
+        guard subagentStreams.count > Self.maxSubagentStreams else { return }
+        let overflow = subagentStreams.count - Self.maxSubagentStreams
+        // Session ids are time-ordered, so lexical order is oldest-first.
+        for key in subagentStreams.keys.sorted(by: { $0.sessionId < $1.sessionId }).prefix(overflow) {
+            subagentStreams[key] = nil
+            subagentTodos[key] = nil
+        }
+    }
+
+func mergeSubagentHistory(key: SubagentKey, rawMessages: [[String: Any]]) {
         if rawMessages.isEmpty { return }
         if subagentStreams[key] == nil { subagentStreams[key] = AgentStream() }
+        evictSubagentStreamsIfNeeded()
         var history: [LivestreamEntry] = []
         var latest: [LivestreamTodoItem]? = nil
         for raw in rawMessages {
