@@ -848,9 +848,15 @@ final class SubworkerManager: ObservableObject {
         }.resume()
     }
 
+    /// Subworkers with an enable/disable request still in flight. The menu shows
+    /// a spinner row for these instead of a plain command, so the request is
+    /// visible rather than looking like nothing happened.
+    @Published private(set) var pendingToggles: Set<String> = []
+
     func enableSubworker(_ name: String) {
         guard let url = URL(string: "\(baseURL)/enable/\(name)") else { return }
         AppLog.d("Enabling subworker: \(name)")
+        pendingToggles.insert(name)
         // Optimistic: flip immediately so UI moves agent to Active list without waiting for round-trip.
         if let idx = subworkers.firstIndex(where: { $0.name == name }) {
             subworkers[idx].enabled = true
@@ -862,6 +868,7 @@ final class SubworkerManager: ObservableObject {
         URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                self.pendingToggles.remove(name)
                 if let error {
                     AppLog.d("Enable error: \(error.localizedDescription)")
                     self.lastError = "Enable failed: \(error.localizedDescription)"
@@ -896,6 +903,7 @@ final class SubworkerManager: ObservableObject {
     func disableSubworker(_ name: String) {
         guard let url = URL(string: "\(baseURL)/disable/\(name)") else { return }
         AppLog.d("Disabling subworker: \(name)")
+        pendingToggles.insert(name)
         // Optimistic: flip immediately so UI moves agent to Inactive list without waiting.
         if let idx = subworkers.firstIndex(where: { $0.name == name }) {
             subworkers[idx].enabled = false
@@ -907,6 +915,7 @@ final class SubworkerManager: ObservableObject {
         URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                self.pendingToggles.remove(name)
                 if let error {
                     AppLog.d("Disable error: \(error.localizedDescription)")
                     self.lastError = "Disable failed: \(error.localizedDescription)"

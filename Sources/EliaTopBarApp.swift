@@ -119,7 +119,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let duration = effectiveRunPopupDuration
         guard duration > 0 else { return }
-        let newly = running.subtracting(previousRunningNames).filter { !RunPopupController.shared.hasPanel(for: $0) }
+        let newly = running.subtracting(previousRunningNames)
+            .filter { !RunPopupController.shared.hasPanel(for: $0) }
+            // Enabling an agent flips it to running, which used to fire the drop
+            // popup saying "agent is done". That reads wrong for a toggle: the
+            // run has only just been requested. The menu shows an in-flight row
+            // for it instead.
+            .filter { !self.suppressDropFor.contains($0) }
         guard !newly.isEmpty else { return }
         let dropX = menuBarAnchorX()
         let limited = Array(newly.sorted().prefix(maxConcurrentDrops - RunPopupController.shared.panelCount))
@@ -1489,7 +1495,10 @@ if !subworkerManager.wsConnected {
 
         submenu.addItem(NSMenuItem.separator())
 
-        if sw.enabled {
+        if subworkerManager.pendingToggles.contains(sw.name) {
+            let verb = sw.enabled ? "Enabling" : "Disabling"
+            submenu.addItem(loadingMenuItem(text: "\(verb) \(sw.name)…"))
+        } else if sw.enabled {
             let disableItem = NSMenuItem(title: "", action: #selector(disableSubworker(_:)), keyEquivalent: "")
             disableItem.attributedTitle = emojiAwareTitle("⏸️ Disable", color: .labelColor)
             disableItem.target = self
@@ -2079,8 +2088,13 @@ if let popover = subworkerLogPopover {
         subworkerManager.triggerSubworker(name)
     }
 
+    /// Agents enabled from this menu, kept until they stop reporting running. Their
+    /// transitions must not raise the drop popup.
+    @Published private var suppressDropFor: Set<String> = []
+
     @objc private func enableSubworker(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
+        suppressDropFor.insert(name)
         subworkerManager.enableSubworker(name)
         updateStatusIcon()
         forceMenuRebuild()
@@ -2088,6 +2102,7 @@ if let popover = subworkerLogPopover {
 
     @objc private func disableSubworker(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
+        suppressDropFor.remove(name)
         subworkerManager.disableSubworker(name)
         updateStatusIcon()
         forceMenuRebuild()
