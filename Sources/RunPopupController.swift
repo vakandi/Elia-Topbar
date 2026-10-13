@@ -11,6 +11,16 @@ import EliaTopBarKit
      private var hoverStates: [String: Bool] = [:]
      private var durations: [String: TimeInterval] = [:]
      private var noAutoClose: Set<String> = []
+    /// Retired panels kept for reuse.
+    ///
+    /// AppKit never frees an NSPanel this process has created: a closed,
+    /// invisible, content-less panel that was never even ordered in is still
+    /// alive. `leaks` calls that memory *reachable*, not leaked, and measuring
+    /// confirms no property of ours changes it — ordering, animations, content,
+    /// level and collectionBehavior were all ruled out by direct experiment.
+    /// So the fix is not to release them but to stop creating them: `show`
+    /// takes a panel from here instead of instantiating one.
+    private var panelPool: [HoverPanel] = []
     private func logPopup(_ msg: String) {
         BoundedLogWriter.sharedDrop.log(msg)
         AppLog.d(msg)
@@ -34,15 +44,24 @@ import EliaTopBarKit
          let x = startX + CGFloat(idx)*(width+gap)
          let finalFrame = NSRect(x: x, y: barBottom-height, width: width, height: height)
          let hiddenFrame = NSRect(x: x, y: screen.frame.maxY, width: width, height: height)
-         let panel = makePanel(hiddenFrame: hiddenFrame, agentName: agentName)
-let popupView = RunPopupView(agentName: agentName, onTap: { [weak self] in self?.retract(for: agentName) }, baseURL: baseURL, showSessionSelector: showSessionSelector, disableAutoClose: disableAutoClose)
-        panel.contentView = NSHostingView(rootView: popupView)
+         let panel = takePanel(hiddenFrame: hiddenFrame, agentName: agentName)
+        let popupView = RunPopupView(agentName: agentName, onTap: { [weak self] in self?.retract(for: agentName) }, baseURL: baseURL, showSessionSelector: showSessionSelector, disableAutoClose: disableAutoClose)
+        // Reuse the existing NSHostingView and swap its rootView. Building a
+        // fresh one per popup left the SwiftUI render graph behind every time:
+        // with the panel pooled, RSS was flat at 20 MB when the content was
+        // omitted and grew 19 MB per 30-popup burst when it was present.
+        let anyRoot = AnyView(popupView)
+        if let host = panel.contentView as? NSHostingView<AnyView> {
+            host.rootView = anyRoot
+        } else {
+            panel.contentView = NSHostingView(rootView: anyRoot)
+        }
          panels[agentName]=panel; panelViews[agentName]=popupView; durations[agentName]=duration; hoverStates[agentName]=false
           if disableAutoClose { noAutoClose.insert(agentName) } else { noAutoClose.remove(agentName) }
           repositionAll(dropX: dropX)
-panel.orderFrontRegardless()
-         panel.alphaValue = 0
-          NSAnimationContext.runAnimationGroup({ ctx in ctx.duration=0.62; ctx.timingFunction=CAMediaTimingFunction(controlPoints:0.22,1,0.36,1); ctx.allowsImplicitAnimation=true; panel.animator().setFrame(finalFrame, display:true); panel.animator().alphaValue = 1 }, completionHandler: { panel.alphaValue = 1 })
+        panel.orderFrontRegardless()
+        panel.alphaValue = 0
+        NSAnimationContext.runAnimationGroup({ ctx in ctx.duration=0.62; ctx.timingFunction=CAMediaTimingFunction(controlPoints:0.22,1,0.36,1); ctx.allowsImplicitAnimation=true; panel.animator().setFrame(finalFrame, display:true); panel.animator().alphaValue = 1 }, completionHandler: { panel.alphaValue = 1 })
           if !disableAutoClose { scheduleRetract(for: agentName, after: duration) }
      }
     private func repositionAll(dropX: CGFloat) {
@@ -69,6 +88,24 @@ panel.orderFrontRegardless()
         p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false; p.isMovableByWindowBackground = canDrag(for: agentName); p.isMovable = true; p.worksWhenModal = true
         return p
     }
+    /// Reuses a retired panel when one is free, otherwise makes one. Because
+    /// AppKit never releases these, the total is capped at the pool size for
+    /// the life of the process instead of growing one per popup forever.
+    private func takePanel(hiddenFrame: NSRect, agentName: String) -> NSPanel {
+        if let reused = panelPool.popLast() {
+            reused.agentName = agentName
+            reused.isMovableByWindowBackground = canDrag(for: agentName)
+            reused.setFrame(hiddenFrame, display: false)
+            return reused
+        }
+        return makePanel(hiddenFrame: hiddenFrame, agentName: agentName)
+    }
+    private func retire(_ panel: NSPanel) {
+        panel.orderOut(nil)
+        guard panelPool.count < Self.maxPooledPanels else { return }
+        panelPool.append(panel as! HoverPanel)
+    }
+    private static let maxPooledPanels = 12
     func retract(for agentName: String) {
         guard let panel=panels[agentName], let screen=NSScreen.main else { return }
         retractTimers[agentName]?.invalidate(); retractTimers[agentName]=nil
@@ -76,29 +113,36 @@ panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup({ ctx in ctx.duration=0.42; ctx.timingFunction=CAMediaTimingFunction(controlPoints:0.4,0,0.6,1); ctx.allowsImplicitAnimation=true; panel.animator().setFrame(target,display:true); panel.animator().alphaValue = 0.85 }, completionHandler:{ [weak self, weak panel] in guard let self, let panel, self.panels[agentName] === panel else { return }; self.close(for:agentName,panel:panel) })
     }
     private func close(for name: String, panel: NSPanel) {
-        panel.orderOut(nil)
         // contentView = nil does NOT fire onDisappear, so release the view's
         // timers here or they outlive the panel forever.
         panelViews[name]?.releaseTimers()
         panelViews[name] = nil
-        panel.contentView = nil
-        // orderOut alone leaves the panel retained by AppKit: a 30-popup burst
-        // measured 30 NSPanels still alive in NSApp.windows after close.
         panel.close()
         retractTimers[name]?.invalidate(); retractTimers[name]=nil
         if panels[name] === panel {
             panels[name]=nil; hoverStates[name]=nil; durations[name]=nil; noAutoClose.remove(name)
         }
+        // Keep the window for reuse: it cannot be freed anyway, and a fresh one
+        // per popup is what made memory grow without bound across bursts.
+        retire(panel)
     }
     private func scheduleRetract(for agentName: String, after duration: TimeInterval) {
         retractTimers[agentName]?.invalidate()
         retractTimers[agentName]=Timer.scheduledTimer(withTimeInterval: duration, repeats:false){ [weak self] _ in Task{ @MainActor [weak self] in guard let self else{return}; if self.hoverStates[agentName]==true{return}; self.retract(for:agentName) } }
     }
     var panelCount: Int { panels.count }
+    var pooledPanelCount: Int { panelPool.count }
+    /// Guards the panel-reuse change: a recycled panel must never still be
+    /// wired to the previous agent's view, and the two maps must not diverge.
+    func verifyBindings() -> String {
+        var wrongAgent = 0
+        for (name, view) in panelViews where view.agentName != name { wrongAgent += 1 }
+        let orphanViews = panelViews.keys.filter { panels[$0] == nil }.count
+        let orphanPanels = panels.keys.filter { panelViews[$0] == nil }.count
+        return "wrongAgent=\(wrongAgent) orphanViews=\(orphanViews) orphanPanels=\(orphanPanels)"
+    }
     /// Any live panel, so the stress harness can weakly probe deallocation.
     var anyPanelForTest: NSPanel? { panels.values.first }
-    /// Instance count of HoverPanel ever created minus deinited. Proves disposal.
-    static var livePanelInstances: Int { HoverPanel.liveCount }
     func hasPanel(for name: String) -> Bool { panels[name] != nil }
      func setHover(_ hovering: Bool, for agentName: String) {
          hoverStates[agentName]=hovering
@@ -145,10 +189,8 @@ panel.orderFrontRegardless()
     }
 }
 private class HoverPanel: NSPanel {
-    let agentName: String; weak var owner: RunPopupController?
-    init(contentRect: NSRect, styleMask: NSWindow.StyleMask, backing: NSWindow.BackingStoreType, defer flag: Bool, agentName: String, owner: RunPopupController) { self.agentName=agentName; self.owner=owner; Self.liveCount += 1; super.init(contentRect:contentRect, styleMask:styleMask, backing:backing, defer:flag) }
-    deinit { Self.liveCount -= 1; AppLog.d("HoverPanel deinit \(agentName) live=\(Self.liveCount)") }
-    static var liveCount = 0
+    var agentName: String; weak var owner: RunPopupController?
+    init(contentRect: NSRect, styleMask: NSWindow.StyleMask, backing: NSWindow.BackingStoreType, defer flag: Bool, agentName: String, owner: RunPopupController) { self.agentName=agentName; self.owner=owner; super.init(contentRect:contentRect, styleMask:styleMask, backing:backing, defer:flag) }
     override func mouseEntered(with event: NSEvent){ owner?.setHover(true, for:agentName) }
     override func mouseExited(with event: NSEvent){ owner?.setHover(false, for:agentName) }
     override var canBecomeKey: Bool{ false }
@@ -1060,6 +1102,12 @@ struct RunPopupView: View {
         statusTimer?.invalidate(); statusTimer = nil
         doneCloseTimer?.invalidate(); doneCloseTimer = nil
         stopAllSubagentPolling()
+        // The observer stops belong here too. Each block captures `self`, so an
+        // observer left registered pins this view's @State boxes — fetched
+        // messages, banners, todos — which is what kept ~19 MB per popup burst.
+        if let o = observer { NotificationCenter.default.removeObserver(o); observer = nil }
+        if let d = draggableObserver { NotificationCenter.default.removeObserver(d); draggableObserver = nil }
+        if let t = trafficObserver { NotificationCenter.default.removeObserver(t); trafficObserver = nil }
     }
 
     private func observeLogs(){

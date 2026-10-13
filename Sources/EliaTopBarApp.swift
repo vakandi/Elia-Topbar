@@ -288,7 +288,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func runSelfTest() {
         let baseURL = subworkerManager.currentBaseURL
         let agents = subworkerManager.subworkers.map(\.name)
-        let name = { (i: Int) in agents.isEmpty ? "selftest-agent" : (agents[i % agents.count]) }
+        // Distinct name per cycle so a reused panel is forced to show the NEW agent:
+        // if SwiftUI kept @State across the reused NSHostingView's rootView
+        // swap, the header would still read the previous cycle's agent.
+        let name = { (i: Int) in agents.isEmpty ? "selftest-agent-\(i)" : (agents[i % agents.count]) }
         SelfTest.run(cycles: SelfTest.cycles,
                      openPopup: { [weak self] i in
                          guard let self else { return }
@@ -306,12 +309,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let ls = LivestreamStore.shared
         let panels = RunPopupController.shared.panelCount
         let windows = NSApp.windows.count
-        return "subStreams=\(ls.subagentStreams.count) streams=\(ls.streams.count) panels=\(panels) livePanels=\(RunPopupController.livePanelInstances) windows=\(windows) island=\(useNotchIsland)"
+        return "subStreams=\(ls.subagentStreams.count) streams=\(ls.streams.count) panels=\(panels) pooled=\(RunPopupController.shared.pooledPanelCount) windows=\(windows) bind=[\(RunPopupController.shared.verifyBindings())] grok=\(GrokStyles.cacheSizes()) md=\(MarkdownView.cacheSize())"
     }
 
     @MainActor
     private func RunPopupController_runShow(_ name: String, baseURL: String) {
-        RunPopupController.shared.show(for: name, dropX: menuBarAnchorX(), duration: 0, baseURL: baseURL, showSessionSelector: true, disableAutoClose: true)
+        // duration must be > 0: show() aborts on 0, which silently made every
+        // popup cycle in this harness a no-op.
+        RunPopupController.shared.show(for: name, dropX: menuBarAnchorX(), duration: 30, baseURL: baseURL, showSessionSelector: true, disableAutoClose: true)
     }
 
     /// Logs the exact AppKit complaint on the next NSException before death.

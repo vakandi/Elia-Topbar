@@ -1,6 +1,6 @@
 import AppKit
 
-/// Headless stress harness, enabled only by `ELIATOPBAR_SELFTEST_CYCLES=<n>`.
+/// Headless stress harness, enabled only by the `ELIATOPBAR_SELFTEST_*` env vars.
 ///
 /// GUI automation cannot reach a LSUIElement status item, so the popup and log
 /// viewer cycles are driven through the same entry points the menu uses. This
@@ -28,6 +28,27 @@ enum SelfTest {
 
     static var cycleDelay: TimeInterval {
         TimeInterval(ProcessInfo.processInfo.environment["ELIATOPBAR_SELFTEST_DELAY"] ?? "") ?? 0.25
+    }
+
+    static var noExit: Bool {
+        ProcessInfo.processInfo.environment["ELIATOPBAR_SELFTEST_NOEXIT"] != nil
+    }
+
+    /// Leave the popups on screen instead of closing them, for a screenshot.
+    static var holdSeconds: Double {
+        Double(ProcessInfo.processInfo.environment["ELIATOPBAR_SELFTEST_HOLD"] ?? "") ?? 0
+    }
+
+    /// Normally exits so CI gets a status code. With ELIATOPBAR_SELFTEST_NOEXIT
+    /// it stays alive instead, so `leaks <pid>` can be attached to a process
+    /// that still holds the leaked objects.
+    static func finish() {
+        fflush(stdout)
+        if noExit {
+            report("NOEXIT — attach leaks/heap to this pid", { "" })
+            while true { RunLoop.main.run(until: Date().addingTimeInterval(1)) }
+        }
+        exit(0)
     }
 
     static var cycles: Int {
@@ -72,21 +93,23 @@ enum SelfTest {
                          openAll: @escaping @MainActor () -> Void,
                          closeAll: @escaping @MainActor () -> Void,
                          probe: @escaping @MainActor () -> String) {
-        report("burst start", probe)
+report("burst start", probe)
+        let hold = holdSeconds
         for r in 0..<repeats {
             openAll()
-            RunLoop.main.run(until: Date().addingTimeInterval(1.5))
+            RunLoop.main.run(until: Date().addingTimeInterval(hold > 0 ? hold : 1.5))
             report("burst \(r+1)/\(repeats) open", probe)
+            if hold > 0 { continue }
             closeAll()
             RunLoop.main.run(until: Date().addingTimeInterval(1.5))
             report("burst \(r+1)/\(repeats) closed", probe)
         }
+        if hold > 0 { report("HELD open for screenshot — not closing", probe); finish() }
         for s in [10, 30] {
             RunLoop.main.run(until: Date().addingTimeInterval(s == 10 ? 7 : 20))
             report("drain +\(s)s", probe)
         }
-        fflush(stdout)
-        exit(0)
+        finish()
     }
 
     /// Runs on the main actor after launch. `open`/`close` are the AppDelegate
@@ -142,7 +165,6 @@ enum SelfTest {
 
         print("SELFTEST peak threads during cycles: \(burstPeakThreads)")
         report("end", probe)
-        fflush(stdout)
-        exit(0)
+        finish()
     }
 }

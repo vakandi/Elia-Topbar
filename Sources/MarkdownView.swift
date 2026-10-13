@@ -19,6 +19,11 @@ struct MarkdownView: View {
     private static var blockCache: [String: [Block]] = [:]
     private static let cacheLock = NSLock()
     private static let maxCacheSize = 200
+    /// Cache size, for the stress harness.
+    static func cacheSize() -> Int {
+        cacheLock.lock(); defer { cacheLock.unlock() }
+        return blockCache.count
+    }
 
     init(text: String, baseColor: Color) {
         self.text = text

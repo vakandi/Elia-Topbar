@@ -40,12 +40,18 @@ the menu items call.
 
 | | Baseline | After |
 |---|---|---|
-| RSS after 100 popup cycles | 180.6 MB | **23.8 MB** |
-| RSS after 100 log-viewer cycles | 484.0 MB | 46.0 MB |
+| RSS after 100 popup cycles | 180.6 MB | **24.7 MB** |
+| RSS after 100 log-viewer cycles | 484.0 MB | 43.8 MB |
 | RSS after a 30 s drain | 394.7 MB | **39.4 MB** |
 | Threads at end | 8 | 7 |
 
 Baseline figures come from a worktree at `4c7c2c3` built with the same harness.
+
+> Correction: an earlier run of this table reported 23.8 MB after 100 popup
+> cycles. That number was meaningless — the harness passed `duration: 0` to
+> `show()`, which aborts on zero, so every popup cycle silently did nothing.
+> The harness now passes a real duration and `pooled=1` in the output confirms
+> panels are actually being created. The 24.7 MB above is a real measurement.
 
 ## 30-popup burst
 
@@ -53,31 +59,31 @@ Baseline figures come from a worktree at `4c7c2c3` built with the same harness.
 
 | | Before | After |
 |---|---|---|
-| `NSApp.windows` after burst 1 | 32 | 8 |
-| after burst 2 | 62 | 8 |
-| after burst 3 | 92 | 8 |
-| after burst 4 | 122 | 8 |
-| RSS per burst | +21.2 MB | **+21.2 MB — still growing** |
+| RSS after burst 1 | 45.3 MB | 29.7 MB |
+| RSS after burst 10 | 218.0 MB | 32.0 MB |
+| Growth across 300 popups | +173 MB | **+2.3 MB** |
 
-The window-list leak is fixed by `panel.close()` + `isReleasedWhenClosed = true`
-(an `NSPanel` defaults to `false`, so `close()` never released it).
+This leak is now fixed. Two causes, found by bisecting one variable at a time:
 
-**The burst memory growth is NOT fixed.** `HoverPanel.liveCount` goes
-0 → 30 → 60 → 90 → 120 across bursts and never drops: not one panel reaches
-`deinit`. 8 bursts reached 200.5 MB, perfectly linear at 21.2 MB each.
+**1. The `NSPanel` objects were never freed.** A closed, invisible,
+content-less panel that was *never even ordered in* was still alive 30 s
+later. `leaks` classified the memory as **reachable**, not leaked, so
+something held a live reference. Ruled out by direct experiment: the data
+path (server dead, same growth), pacing (250 ms/cycle, same growth), the
+notch anchor panel (island off, same growth), `orderFront` vs
+`orderFrontRegardless`, the `animator()` animation blocks (removed
+entirely, same growth), autorelease-pool draining, and panel configuration
+(`level`, `collectionBehavior`, `contentView`, SwiftUI content).
 
-Bisected to a minimal case: a bare `NSPanel` with **no** properties set — no
-level, no collectionBehavior, no contentView, no SwiftUI — leaks identically
-(29 of 30 per round, accumulating to 145 across five rounds). Ruled out by
-direct experiment: the data path (server dead, same growth), pacing (250 ms
-per cycle, same growth), the notch anchor panel (island off, same growth),
-`orderFront` vs `orderFrontRegardless`, the `animator()` animation blocks
-(removed entirely, same growth), and autorelease-pool draining.
+Because AppKit will not release them, the fix is to stop creating them.
+`close()` now retires the panel into a pool and `show()` takes one from
+there, capped at 12 for the life of the process.
 
-So the retention is baseline AppKit behaviour for windows this process has
-ordered in, not something `RunPopupController` configures. **Not measured:**
-what actually holds them. Closing this needs either a minimal AppKit
-reproducer outside this repo or an Instruments allocation trace.
+**2. Every popup built a new SwiftUI render graph.** With the panel pooled
+but the content rebuilt each time, memory was flat at 20 MB with the
+content omitted and still grew 19 MB per burst with it present — so the
+whole remainder was the view graph. `show()` now reuses the existing
+`NSHostingView` and swaps its `rootView` instead of instantiating a new one.
 
 ## Regression suite
 
@@ -123,13 +129,21 @@ be attributed to the avatar path alone.
 
 ## Behaviour preserved
 
-Verified by running the shipping build for 25 s against the live server:
-process alive, menu bar item present, no entries in
-`/tmp/EliaTopBar-exceptions.log`, no crash reports in
-`~/Library/Logs/DiagnosticReports`, and the drop-detection log still firing.
+Verified by running the shipping build against the live server, plus a
+screenshot of popups on screen: the header rendered the correct agent name,
+with its state dot and live badge, and a recycled panel showed the *new*
+agent rather than the previous one.
 
-Live streaming, agent trigger/enable/disable, the log viewer, the server
-controls and the run popup were not each exercised end-to-end by hand. The
-stress harness does drive the popup and log-viewer show/close paths 200 times,
-and the 30-popup burst drives the panel cap, but that is not a substitute for a
-human clicking through the app.
+Panel reuse is the riskiest change here, so it is asserted rather than assumed.
+`verifyBindings()` checks on every stress checkpoint that no panel is still
+wired to the previous agent's view and that the panel and view maps have not
+diverged. Across 5 bursts and 30 cycles using a distinct agent name each cycle:
+
+```
+bind=[wrongAgent=0 orphanViews=0 orphanPanels=0]
+```
+
+**Not measured:** a human clicking through live streaming, agent
+trigger/enable/disable, the server controls and the log viewer. The harness
+drives the popup and log-viewer show/close paths 200 times and the panel cap
+under burst, but that is not a substitute for using the app.

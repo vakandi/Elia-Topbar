@@ -102,6 +102,9 @@ enum GrokStyles {
     private static var baseCache: [String: NSImage] = [:]
     private static var frameCache: [String: NSImage] = [:]
     private static var defaultIcon: NSImage?
+    /// Cache sizes, for the stress harness. A frameCache that never stops
+    /// growing is the difference between a bounded island and a slow leak.
+    static func cacheSizes() -> String { "frame=\(frameCache.count) base=\(baseCache.count)" }
 
     static func islandFrame(style: String, barHeight: CGFloat, phase: Double) -> NSImage {
         let bucket = Int(phase * 15) % 512
