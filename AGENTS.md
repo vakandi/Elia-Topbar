@@ -8,21 +8,22 @@ Native macOS menu bar app (Swift 5.9, macOS 13+). Command center for the Elia ag
 They are different processes, different ports, different repos, and the menu
 shows controls for both in the *same* submenu.
 
-| | Subworker server | OpenCode Rust server |
+| | Subworker bridge | OpenCode Rust engine |
 |---|---|---|
-| Repo | `~/Documents/subworker-opencode-rust` | `~/Documents/opencode-rust` |
-| What it is | The `control/` bridge app (Bun/TypeScript) | The agent engine (`opencode serve`) |
-| Port | 5656 | 3000 (configurable) |
-| Binary | `bun`, cwd `<repo>/control` | `target/release/opencode`, or an installed `opencoderust` on PATH |
+| Repo | `~/Documents/subworker-opencode-rust` | `~/Documents/subworker-opencode-rust/server` |
+| What it is | The `control/` bridge app (Bun/TypeScript) | The vendored engine (Rust) |
+| Port | 5656 | 5655 (configurable) |
+| Binary | `bun`, cwd `<repo>/control` | `<repo>/server/target/release/opencode` |
 | Managed by | `SubworkerManager` (WebSocket + REST) | `OpenCodeServerManager` (CLI subprocess) |
 
-**`~/Documents/subworker-opencode-rust` is the server EliaTopBar controls.**
-It is what `subworkerServerURL` points at and what every agent status,
-trigger, enable/disable and log line comes from. Do not point the app at
-`opencode-rust` expecting subworker data, and do not edit either repo —
-they are separate repositories that EliaTopBar only talks to.
+**Both live in the same repo.** The engine is vendored at `server/` inside
+`subworker-opencode-rust`; there is no separate `~/Documents/opencode-rust`
+that anything loads. That folder was a redundant clone of `vakandi/opencode-rust`
+and pointing the app at it meant the menu resolved a binary the subworker system
+never used. `OpenCodeServerManager.repoPath` now defaults to
+`<subworker repo>/server` via `SubworkerServerManager.configuredRepoPath`.
 
-The "🦀 OpenCode Rust Server" block in the menu manages `opencode-rust` only.
+The "🦀 OpenCode Rust Server" block in the menu manages the engine only.
 
 ### The three runtimes inside `subworker-opencode-rust`
 
@@ -34,10 +35,10 @@ them caused a wrong claim that `/tunnel/*` did not exist:
   `/tunnel/*` endpoints. It does not run agents itself — it reads OpenCode's
   state and relays it. The `FastAPI` name in older docs is wrong; commit
   `0cab9c2` ("replace Python/Docker stack with Rust server") removed Python.
-- **`server/` — a Rust crate beside it.** Not what serves 5656. Don't grep it
-  looking for routes.
-- **`opencode-rust` at `~/Documents/opencode-rust` — the actual engine**, port
-  3000. Separate repo entirely.
+- **`server/` — a Rust crate beside it.** The vendored OpenCode engine, port 5655.
+  Not what serves 5656. Don't grep it looking for routes.
+- **`~/Documents/opencode-rust` — a redundant clone.** Same upstream as `server/`,
+  but nothing loads it. Do not point the app there.
 
 Confirm before trusting any runtime assumption:
 
@@ -49,7 +50,8 @@ lsof -nP -iTCP:5656 -sTCP:LISTEN   # shows the real process (bun)
 
 Neither path is hardcoded. They live in `🔌 Server Connection Settings`:
 
-- 🦀 **Rust repo** — `opencodeServerRepoPath`, defaults to `~/Documents/opencode-rust`
+- 🦀 **Rust repo** — `opencodeServerRepoPath`, defaults to
+  `~/Documents/subworker-opencode-rust/server`
 - 🦀 **Rust binary** — `opencodeServerBinaryPath`, an explicit override. Empty means
   auto-detect: repo build, then `opencoderust`/`opencode-rust` on PATH, then
   `~/.local/bin/opencoderust`
@@ -108,7 +110,7 @@ EliaTopBarApp.swift (AppDelegate)
   │     ├── subworkers: [SubworkerInfo]
   │     ├── serverHealth: ServerHealth
   │     └── modelSelections (reads/writes ~/EliaAI/ui_electron/model-selections.json)
-  ├── OpenCodeServerManager ──CLI──▶ opencode-rust :3000 (start/stop/health)
+  ├── OpenCodeServerManager ──CLI──▶ subworker-opencode-rust/server :5655 (start/stop/health)
   ├── ColimaManager ──CLI──▶ colima status/start/stop/delete/ssh
   ├── ProfilePhotos ──FileSystem──▶ ~/Library/Application Support/EliaTopBar/agent_photos/
   └── Menu (NSMenu) ──▶ all UI

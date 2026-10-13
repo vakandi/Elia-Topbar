@@ -55,20 +55,21 @@ final class OpenCodeServerManager: ObservableObject {
     @Published private(set) var isCleaning = false
     @Published private(set) var lastCleanSummary: String?
 
-    static let defaultPort = 3000
+    static let defaultPort = 5655
     private static let portDefaultsKey = "opencodeServerPort"
     private static let repoPathDefaultsKey = "opencodeServerRepoPath"
 
-    /// Where the Rust checkout lives. Overridable so a fork or a second clone
-    /// does not have to be patched into the app.
+    /// Where the engine checkout lives: the `server/` directory inside the
+    /// subworker repo, which vendors the Rust engine. Not a separate
+    /// `~/Documents/opencode-rust` clone — nothing in the subworker system
+    /// loads or needs that one. Overridable for a fork or second checkout.
     static var repoPath: String {
         get {
             if let stored = UserDefaults.standard.string(forKey: repoPathDefaultsKey),
                !stored.trimmingCharacters(in: .whitespaces).isEmpty {
-                return stored
+                return (stored as NSString).expandingTildeInPath
             }
-            return FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Documents/opencode-rust").path
+            return SubworkerServerManager.configuredRepoPath + "/server"
         }
         set { UserDefaults.standard.set(newValue, forKey: repoPathDefaultsKey) }
     }
@@ -335,7 +336,7 @@ final class OpenCodeServerManager: ObservableObject {
         return value == normalisedRepo || value.hasPrefix(normalisedRepo + "/")
     }
 
-    /// Pull `--port 3000` out of a command line, if present.
+    /// Pull the `--port` value out of a command line, if present.
     static func portFromCommand(_ command: String) -> Int? {
         let tokens = command.split(separator: " ").map(String.init)
         for (index, token) in tokens.enumerated() where token == "--port" || token == "-p" {
