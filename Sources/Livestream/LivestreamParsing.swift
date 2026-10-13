@@ -4,9 +4,7 @@ import Foundation
 enum LivestreamParsing {
 
     static func hostPath(_ path: String) -> String {
-        if path.hasPrefix("/data/") { return path.replacingOccurrences(of: "/data/", with: "/Users/vakandi/EliaAI/", options: .anchored) }
-        if path == "/data" { return "/Users/vakandi/EliaAI" }
-        return path
+        LocalPaths.hostPath(path)
     }
 
     struct EditPayload { let path: String; let old: String; let new: String }

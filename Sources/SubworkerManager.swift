@@ -69,10 +69,39 @@ struct ServerHealth: Equatable {
 
 // MARK: - Model Selection
 
+// MARK: - Local Path Mapping
+
+/// The server reports paths inside its sandbox as `/data/...`, which is
+/// `OPENCODE_PATHS_ROOT` — start.sh points that at `<repo>/server/data`.
+enum LocalPaths {
+    static func hostPath(_ path: String) -> String {
+        guard path == "/data" || path.hasPrefix("/data/") else { return path }
+        let root = dataRoot()
+        return path == "/data" ? root : root + String(path.dropFirst("/data".count))
+    }
+
+    static func dataRoot() -> String {
+        let candidate = SubworkerServerManager.configuredRepoPath + "/server/data"
+        if FileManager.default.fileExists(atPath: candidate) { return candidate }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("EliaAI").path
+    }
+}
+
 enum SubworkerModels {
     /// Shared with ui_electron — trigger_template.js reads this file to pick `--model`.
-    static let selectionsPath = "/Users/vakandi/EliaAI/ui_electron/model-selections.json"
-    static let defaultModel = "opencode/big-pickle"
+    /// Overridable; defaults to ~/EliaAI/ui_electron/model-selections.json so the
+    /// app works on any account instead of one hardcoded home directory.
+    static var selectionsPath: String {
+        if let stored = UserDefaults.standard.string(forKey: "modelSelectionsPath"),
+           !stored.trimmingCharacters(in: .whitespaces).isEmpty {
+            return (stored as NSString).expandingTildeInPath
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("EliaAI/ui_electron/model-selections.json").path
+    }
+
+    static var defaultModel = "opencode/big-pickle"
 
     static func displayName(for id: String) -> String {
         id.split(separator: "/").last.map(String.init) ?? id
@@ -925,7 +954,7 @@ final class SubworkerManager: ObservableObject {
         }
     }
 
-    // MARK: - Model Selection
+// MARK: - Model Selection
 
     /// Plan §2.3 reader: accepts BOTH the legacy bare-string shape
     /// `{agent: "provider/model"}` and the new object shape

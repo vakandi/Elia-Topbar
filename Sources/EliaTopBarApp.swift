@@ -1184,8 +1184,9 @@ if !subworkerManager.wsConnected {
             return
         }
 
-        let portInfo = disabledItem("📁 \(manager.repoPath)  ·  port \(manager.port)")
-        portInfo.toolTip = manager.startScript
+        let folderName = (manager.repoPath as NSString).lastPathComponent
+        let portInfo = disabledItem("📁 \(folderName)  ·  port \(manager.port)")
+        portInfo.toolTip = "\(manager.repoPath)\nStarted by \(manager.startScript)"
         menu.addItem(portInfo)
 
         if manager.status.isBusy {

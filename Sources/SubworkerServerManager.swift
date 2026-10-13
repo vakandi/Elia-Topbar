@@ -82,6 +82,14 @@ final class SubworkerServerManager: ObservableObject {
             .appendingPathComponent("Documents/subworker-opencode-rust").path
     }
 
+    /// Same value as the instance property, but callable off the main actor so
+    /// path formatting in views does not have to hop threads.
+    nonisolated static var configuredRepoPath: String {
+        UserDefaults.standard.string(forKey: repoPathKey)
+            ?? FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Documents/subworker-opencode-rust").path
+    }
+
     var startScript: String { repoPath + "/start.sh" }
     var stopScript: String { repoPath + "/stop.sh" }
     var serverConfigPath: String { repoPath + "/control/config/server.json" }

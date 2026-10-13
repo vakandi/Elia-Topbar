@@ -1251,11 +1251,7 @@ struct RunPopupView: View {
 
     // MARK: - Helpers (mirrored from LogPopoverView, compact)
 
-    private func runHostPath(_ p:String)->String{
-        if p.hasPrefix("/data/"){ return p.replacingOccurrences(of:"/data/", with:"/Users/vakandi/EliaAI/", options:.anchored)}
-        if p=="/data"{ return "/Users/vakandi/EliaAI"}
-        return p
-    }
+    private func runHostPath(_ p:String)->String{ LocalPaths.hostPath(p) }
     private struct RunEditPayload{let path:String; let old:String; let new:String}
     private struct RunWritePayload{let path:String; let preview:String}
     private func runParseEdit(_ raw:String)->RunEditPayload?{

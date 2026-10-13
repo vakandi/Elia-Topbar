@@ -13,7 +13,7 @@ shows controls for both in the *same* submenu.
 | Repo | `~/Documents/subworker-opencode-rust` | `~/Documents/opencode-rust` |
 | What it is | The FastAPI subworker API | The agent engine (`opencode serve`) |
 | Port | 5656 | 3000 (configurable) |
-| Binary | run via its own launcher | `target/release/opencode` |
+| Binary | run via its own launcher | `target/release/opencode`, or an installed `opencoderust` on PATH |
 | Managed by | `SubworkerManager` (WebSocket + REST) | `OpenCodeServerManager` (CLI subprocess) |
 
 **`~/Documents/subworker-opencode-rust` is the server EliaTopBar controls.**
@@ -23,7 +23,22 @@ trigger, enable/disable and log line comes from. Do not point the app at
 they are separate repositories that EliaTopBar only talks to.
 
 The "🦀 OpenCode Rust Server" block in the menu manages `opencode-rust` only.
-Its repo path is overridable via the `opencodeServerRepoPath` default.
+
+### Both servers' folders are configurable, and are not compile-time constants
+
+Neither path is hardcoded. They live in `🔌 Server Connection Settings`:
+
+- 🦀 **Rust repo** — `opencodeServerRepoPath`, defaults to `~/Documents/opencode-rust`
+- 🦀 **Rust binary** — `opencodeServerBinaryPath`, an explicit override. Empty means
+  auto-detect: repo build, then `opencoderust`/`opencode-rust` on PATH, then
+  `~/.local/bin/opencoderust`
+- 📁 **Subworker repo** — `subworkerServerRepoPath`, defaults to
+  `~/Documents/subworker-opencode-rust`. The port and auth token are read from
+  this repo (`control/config/server.json`, `.env`), not assumed.
+
+Looking only inside `<repo>/target/release/opencode` reported "Not built" on a
+machine where the engine was installed and working on PATH. Always resolve via
+`OpenCodeServerManager.binaryPath`, which searches all of the above.
 
 ## Architecture
 ```
@@ -80,12 +95,42 @@ EliaTopBarApp.swift (AppDelegate)
 
 ## Build & Release
 ```bash
-./build-app.sh v1.4.0    # universal binary (arm64+x86_64) + .app bundle + ad-hoc sign
-./build-dmg.sh v1.4.0    # wraps build-app.sh + hdiutil DMG
+./build-app.sh v2.3      # arm64+x86_64 .app bundle + ad-hoc sign
+./build-dmg.sh v2.3      # wraps build-app.sh + hdiutil DMG
 ```
 - No CI/CD. Manual builds only.
 - Ad-hoc codesigned (`codesign --sign -`). No notarization. Users: `xattr -dr com.apple.quarantine EliaTopBar.app`.
 - Version patched at build time via PlistBuddy (Info.plist hardcodes `1.0.1` but is overridden).
+
+### Install the build you just made — not the last release
+
+**`brew reinstall --cask eliatopbar` does NOT install your working tree.** The
+cask downloads the published DMG for its pinned version from GitHub, so a
+reinstall silently replaces your local build with an older release. This cost
+real time: three separate fixes appeared "not working" because every test ran
+the release binary while the fix sat in the local build.
+
+To run what you just built:
+
+```bash
+pkill -f "/Applications/EliaTopBar.app"
+rm -rf /Applications/EliaTopBar.app
+cp -R ~/Documents/EliaTopBar/EliaTopBar.app /Applications/EliaTopBar.app
+open /Applications/EliaTopBar.app
+```
+
+Confirm which binary is actually running before trusting any menu behaviour:
+
+```bash
+strings /Applications/EliaTopBar.app/Contents/MacOS/EliaTopBar | grep -c "<a-string-from-your-fix>"
+stat -f "%Sm" /Applications/EliaTopBar.app/Contents/MacOS/EliaTopBar
+```
+
+Only use `brew reinstall --cask` after cutting a release, so the cask and the
+DMG on GitHub carry the same build. Bumping the version in `Casks/eliatopbar.rb`
+and running `./scripts/sync-brew-tap.sh` does not help on its own — the script
+verifies the sha256 against the local DMG, but the tap is only useful once that
+DMG is published.
 
 ## Server API (FastAPI at localhost:5656)
 | Endpoint | Method | Purpose |
@@ -105,12 +150,11 @@ EliaTopBarApp.swift (AppDelegate)
 | `/ws` | WebSocket | Real-time status stream |
 
 ## Known Technical Debt
-- **EliaTopBarApp.swift is a 1980-line God Object.** Contains AppDelegate, menu construction, icon rendering, hover handling, tunnel progress panel, and all UI callbacks. Decomposition is overdue.
-- **Hardcoded auth token** in `SubworkerManager.swift:63` (`EliaAuth.defaultToken`). Bearer token in source, extractable via `strings`. Should use Keychain.
-- **Hardcoded filesystem path** in `SubworkerManager.swift:47` (`/Users/vakandi/EliaAI/ui_electron/model-selections.json`). Breaks on any other user.
-- **Zero tests.** No test target in `Package.swift`, no `*Test*.swift` files, no XCTest imports. 5111 lines of untested code.
-- **Mixed async patterns.** `DispatchQueue.main.async` (16 sites) coexists with `@MainActor` + `Task { @MainActor }` (36 sites). SubworkerManager is `@MainActor` but some callbacks still dispatch via GCD.
-- **`AppLog.debug = true` hardcoded** (SubworkerManager.swift:7). Debug logging always on in production builds.
+- **EliaTopBarApp.swift is a 3300-line God Object.** Contains AppDelegate, menu construction, icon rendering, hover handling, tunnel progress panel, and all UI callbacks. Decomposition is overdue.
+- **Hardcoded auth token** in `SubworkerManager.swift` (`EliaAuth.defaultToken`). Bearer token in source, extractable via `strings`. `SubworkerServerManager.applyRepoSettings()` now re-reads it from the subworker repo's `.env`, so a rotated token is picked up, but the literal is still in the binary. Should use Keychain.
+- **Hardcoded filesystem path** in `SubworkerManager.swift` (`/Users/vakandi/EliaAI/ui_electron/model-selections.json`). Breaks on any other user.
+- **Tests are a standalone executable, not XCTest.** `swift run -c release PerfTests` asserts and exits non-zero. XCTest and Swift Testing are both unavailable on a CLT-only machine (`_Testing_Foundation` ships without a swiftmodule).
+- **Mixed async patterns.** `DispatchQueue.main.async` coexists with `@MainActor` + `Task { @MainActor }`. SubworkerManager is `@MainActor` but some callbacks still dispatch via GCD.
 - **`docs/SUBWORKER_MANAGEMENT_PLAN.md` references port 8080** but server runs on 5656. Stale spec.
 - **Cloudflare API token stored in UserDefaults** (`cfApiToken` key). Plaintext, no encryption. Should use Keychain.
 
