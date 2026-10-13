@@ -2561,24 +2561,26 @@ if let popover = subworkerLogPopover {
 
                 instanceMenu.addItem(NSMenuItem.separator())
 
-                // Start/Stop actions
+                // Start/Stop actions. Labelled with what they act on: the Rust server block
+                // lives in this same submenu, so a bare "Start" gave two identical
+                // buttons and no way to tell which one starts what.
                 if instance.status.isStopped {
-                    let startItem = NSMenuItem(title: "Start", action: #selector(startInstance(_:)), keyEquivalent: "")
+                    let startItem = NSMenuItem(title: "▶ Start Colima", action: #selector(startInstance(_:)), keyEquivalent: "")
                     startItem.target = self
                     startItem.representedObject = instance.name
                     instanceMenu.addItem(startItem)
                 } else if instance.status.isRunning {
-                    let stopItem = NSMenuItem(title: "Stop", action: #selector(stopInstance(_:)), keyEquivalent: "")
+                    let stopItem = NSMenuItem(title: "■ Stop Colima", action: #selector(stopInstance(_:)), keyEquivalent: "")
                     stopItem.target = self
                     stopItem.representedObject = instance.name
                     instanceMenu.addItem(stopItem)
 
-                    let restartItem = NSMenuItem(title: "Restart", action: #selector(restartInstance(_:)), keyEquivalent: "")
+                    let restartItem = NSMenuItem(title: "↻ Restart Colima", action: #selector(restartInstance(_:)), keyEquivalent: "")
                     restartItem.target = self
                     restartItem.representedObject = instance.name
                     instanceMenu.addItem(restartItem)
 
-                    let shellItem = NSMenuItem(title: "Open Shell", action: #selector(sshInstance(_:)), keyEquivalent: "")
+                    let shellItem = NSMenuItem(title: "🖥 Open Colima Shell", action: #selector(sshInstance(_:)), keyEquivalent: "")
                     shellItem.target = self
                     shellItem.representedObject = instance.name
                     instanceMenu.addItem(shellItem)
@@ -2589,7 +2591,7 @@ if let popover = subworkerLogPopover {
                 }
 
                 instanceMenu.addItem(NSMenuItem.separator())
-                let deleteItem = NSMenuItem(title: "Delete…", action: #selector(deleteInstance(_:)), keyEquivalent: "")
+                let deleteItem = NSMenuItem(title: "🗑 Delete Colima…", action: #selector(deleteInstance(_:)), keyEquivalent: "")
                 deleteItem.target = self
                 deleteItem.representedObject = instance.name
                 deleteItem.isEnabled = !instance.status.isTransitioning
@@ -2659,7 +2661,14 @@ if let popover = subworkerLogPopover {
         menu.addItem(NSMenuItem.separator())
 
         if manager.isBusy {
-            let busy = NSMenuItem(title: "  \(manager.status.label)", action: nil, keyEquivalent: "")
+            let busy = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            // Elapsed time, so a slow start reads as progress rather than a hang.
+            let elapsed = manager.startElapsed
+            let seconds = elapsed < 10 ? String(format: "%.1fs", elapsed) : "\(Int(elapsed))s"
+            busy.attributedTitle = emojiAwareTitle(
+                "  ⏳ \(manager.status.label) \(seconds) — cancel with Stop",
+                color: .secondaryLabelColor
+            )
             busy.isEnabled = false
             menu.addItem(busy)
         } else if manager.status == .missingBinary {
@@ -2667,12 +2676,12 @@ if let popover = subworkerLogPopover {
             missing.isEnabled = false
             menu.addItem(missing)
         } else {
-            let startItem = NSMenuItem(title: "  Start", action: #selector(startOpenCodeServer(_:)), keyEquivalent: "")
+            let startItem = NSMenuItem(title: "  ▶ Start Rust Server", action: #selector(startOpenCodeServer(_:)), keyEquivalent: "")
             startItem.target = self
             startItem.isEnabled = !manager.isHealthy
             menu.addItem(startItem)
 
-            let stopItem = NSMenuItem(title: "  Stop", action: #selector(stopOpenCodeServer(_:)), keyEquivalent: "")
+            let stopItem = NSMenuItem(title: "  ■ Stop Rust Server", action: #selector(stopOpenCodeServer(_:)), keyEquivalent: "")
             stopItem.target = self
             stopItem.isEnabled = manager.isHealthy || manager.status == .unhealthy
             menu.addItem(stopItem)
@@ -2693,7 +2702,7 @@ if let popover = subworkerLogPopover {
                 menu.addItem(detail)
             }
 
-            let killAll = NSMenuItem(title: "  Kill All Servers", action: #selector(killAllOpenCodeServers(_:)), keyEquivalent: "")
+            let killAll = NSMenuItem(title: "  🧹 Kill All Rust Servers", action: #selector(killAllOpenCodeServers(_:)), keyEquivalent: "")
             killAll.target = self
             menu.addItem(killAll)
         }

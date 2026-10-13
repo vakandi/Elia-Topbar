@@ -90,11 +90,24 @@ final class OpenCodeServerManager: ObservableObject {
     private var statusTimer: Timer?
     private var managedProcess: Process?
 
+    /// Process scans (pgrep, ps, lsof) must never run on the main actor.
+    /// They did, and every Start/Stop froze the menu for as long as the scan
+    /// took — clicking Start was what made the app appear to hang.
+    private static let scanQueue = DispatchQueue(label: "com.elia.topbar.ocs.scan", qos: .userInitiated)
+
     /// A health probe must not hang the menu; anything slower is not healthy.
     private let probeTimeout: TimeInterval = 2.0
 
+    /// How long a freshly spawned server is given to answer /health before we
+    /// stop showing "Starting…". Surfaces in the menu so the wait is legible.
+    private let settleTimeout: TimeInterval = 15.0
+    private let settleInterval: TimeInterval = 0.5
+
     var isHealthy: Bool { status == .running }
     var isBusy: Bool { status.isBusy }
+    /// Elapsed seconds of the current start, for the loading row.
+    private(set) var startElapsed: TimeInterval = 0
+    private var startBeganAt: Date?
 
     init() {
         port = configuredPort
@@ -126,14 +139,37 @@ final class OpenCodeServerManager: ObservableObject {
         refresh()
     }
 
-    func refresh() {
+    /// Refreshes status off the main actor.
+    ///
+    /// `settling` must be true only while resolving a start/stop we initiated:
+    /// the point of that path is to leave `.starting`/`.stopping`, which the
+    /// ordinary isBusy guard exists to prevent. Without it the status could
+    /// never leave "starting" — the only code able to move it refused to run
+    /// for exactly as long as it was stuck.
+    func refresh(settling: Bool = false) {
         port = configuredPort
-        detectServers()
-
+        if startBeganAt != nil { startElapsed = Date().timeIntervalSince(startBeganAt!) }
         Task { [weak self] in
             guard let self else { return }
-            let response = await self.probeHealth()
-            await self.applyHealth(response)
+            let servers = await Self.detectServersOffMain()
+            let probe = await self.probeHealth()
+            await self.applyResults(servers: servers, probe: probe, settling: settling)
+        }
+    }
+
+    private static func detectServersOffMain() async -> [DetectedServer] {
+        await withCheckedContinuation { continuation in
+            scanQueue.async {
+                continuation.resume(returning: findServerProcesses(excluding: ProcessInfo.processInfo.processIdentifier))
+            }
+        }
+    }
+
+    private static func portOccupiedOffMain(_ port: Int) async -> Bool {
+        await withCheckedContinuation { continuation in
+            scanQueue.async {
+                continuation.resume(returning: isPortOccupiedSync(port))
+            }
         }
     }
 
@@ -166,23 +202,30 @@ final class OpenCodeServerManager: ObservableObject {
         }
     }
 
-    private func applyHealth(_ probe: HealthProbe) {
-        guard !isBusy else { return }
-        if binaryPath == nil && probe.isHealthy == false && otherServers.isEmpty {
+    /// Single place where status is decided, so the busy guard and the start
+    /// settle can never disagree about who is allowed to move it.
+    private func applyResults(servers: [DetectedServer], probe: HealthProbe, settling: Bool) {
+        if !settling { guard !isBusy else { return } }
+        otherServers = servers
+        if binaryPath == nil && probe.isHealthy == false && servers.isEmpty {
             status = .missingBinary
             version = nil
+            startBeganAt = nil
             return
         }
         if probe.isHealthy {
             status = .running
             version = probe.version
-        } else if otherServers.isEmpty {
+            startBeganAt = nil
+        } else if servers.isEmpty {
             status = .stopped
             version = nil
+            startBeganAt = nil
         } else {
             // Something is serving opencode but did not answer /health.
             status = .unhealthy
             version = nil
+            startBeganAt = nil
         }
     }
 
@@ -192,11 +235,8 @@ final class OpenCodeServerManager: ObservableObject {
     ///
     /// `pgrep -f` matches the full command line, which is what makes a server
     /// started from a shell or another tool visible here — those are exactly the
-    /// duplicates the single-instance guard has to catch.
-    private func detectServers() {
-        otherServers = Self.findServerProcesses(excluding: ProcessInfo.processInfo.processIdentifier)
-    }
-
+    /// duplicates the single-instance guard has to catch. Callers must be off
+    /// the main actor: this shells out to pgrep and then ps once per match.
     static func findServerProcesses(excluding ownPID: pid_t) -> [DetectedServer] {
         guard let output = runSync("/usr/bin/pgrep", ["-f", "opencode.*serve"]),
               !output.isEmpty else { return [] }
@@ -232,24 +272,42 @@ final class OpenCodeServerManager: ObservableObject {
             return
         }
 
-        // Refuse rather than fight: a second server on the same port fails in a
-        // way that is far harder to diagnose than an explicit refusal.
-        if !otherServers.isEmpty {
-            actionError = "\(otherServers.count) opencode server(s) already running — stop them first"
-            refresh()
-            return
-        }
-        if isPortOccupied() {
-            actionError = "Port \(port) is already in use by another program"
-            return
-        }
-
         status = .starting
         actionError = nil
+        startElapsed = 0
+        startBeganAt = Date()
 
+        Task { [weak self] in
+            guard let self else { return }
+            // Refuse rather than fight: a second server on the same port fails in a
+            // way that is far harder to diagnose than an explicit refusal.
+            let existing = await Self.detectServersOffMain()
+            if !existing.isEmpty {
+                let pids = existing.map { String($0.pid) }.joined(separator: ", ")
+                let plural = existing.count == 1 ? "" : "s"
+                await self.failStart("\(existing.count) opencode server\(plural) already running (pid \(pids)) — stop them first")
+                return
+            }
+            if await Self.portOccupiedOffMain(self.port) {
+                await self.failStart("Port \(self.port) is already in use by another program")
+                return
+            }
+            await self.spawn(binary: binary)
+        }
+    }
+
+    private func failStart(_ message: String) {
+        status = .stopped
+        actionError = message
+        startBeganAt = nil
+        refresh()
+    }
+
+    private func spawn(binary: String) {
+        let baseURL = configuredPort
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binary)
-        process.arguments = ["serve", "--port", String(port), "--hostname", "127.0.0.1"]
+        process.arguments = ["serve", "--port", String(baseURL), "--hostname", "127.0.0.1"]
         // Run from the repo so it finds crates/, docs and its own config.
         process.currentDirectoryURL = URL(fileURLWithPath: Self.repoPath)
 
@@ -268,14 +326,48 @@ final class OpenCodeServerManager: ObservableObject {
         do {
             try process.run()
             managedProcess = process
-            AppLog.d("opencode server started pid=\(process.processIdentifier) port=\(port)")
-            // Give it a moment to bind, then let the poller settle the label.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                self?.refresh()
-            }
+            AppLog.d("opencode server started pid=\(process.processIdentifier) port=\(baseURL)")
+            settleAfterStart(pid: process.processIdentifier)
         } catch {
             status = .stopped
             actionError = "Failed to start: \(error.localizedDescription)"
+            startBeganAt = nil
+        }
+    }
+
+    /// Polls /health until the new server answers, then settles the label.
+    /// The old code waited a fixed 1.5s and asked `applyHealth`, which refused
+    /// to run while the status was still `.starting` — so the menu sat on
+    /// "Starting…" indefinitely whether or not the server came up.
+    private func settleAfterStart(pid: pid_t) {
+        Task { [weak self] in
+            guard let self else { return }
+            let deadline = Date().addingTimeInterval(self.settleTimeout)
+            while Date() < deadline {
+                try? await Task.sleep(nanoseconds: UInt64(self.settleInterval * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                if kill(pid, 0) != 0 {
+                    self.status = .stopped
+                    self.actionError = "Server exited immediately after starting — see ~/Library/Logs/EliaTopBar/debug.log"
+                    self.startBeganAt = nil
+                    self.refresh(settling: true)
+                    return
+                }
+                let probe = await self.probeHealth()
+                if probe.isHealthy {
+                    self.status = .running
+                    self.version = probe.version
+                    self.actionError = nil
+                    self.startBeganAt = nil
+                    self.refresh(settling: true)
+                    return
+                }
+                if let began = self.startBeganAt { self.startElapsed = Date().timeIntervalSince(began) }
+            }
+            self.status = .stopped
+            self.actionError = "Server did not answer /health within \(Int(self.settleTimeout))s"
+            self.startBeganAt = nil
+            self.refresh(settling: true)
         }
     }
 
@@ -304,8 +396,10 @@ final class OpenCodeServerManager: ObservableObject {
                 signal(survivors, signal: SIGKILL)
             }
             self.managedProcess = nil
+            self.startBeganAt = nil
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.refresh()
+                // settling: nothing else will move .stopping to .stopped.
+                self?.refresh(settling: true)
             }
         }
     }
@@ -420,22 +514,9 @@ final class OpenCodeServerManager: ObservableObject {
     }
 
     /// True when something already holds the port, healthy or not.
-    private func isPortOccupied() -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        process.arguments = ["-nP", "-iTCP:\(port)", "-sTCP:LISTEN"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else { return false }
-            let output = String(data: data, encoding: .utf8) ?? ""
-            return output.contains("LISTEN")
-        } catch {
-            return false
-        }
+    private static func isPortOccupiedSync(_ port: Int) -> Bool {
+        guard let output = runSync("/usr/sbin/lsof", ["-nP", "-iTCP:\(port)", "-sTCP:LISTEN"]),
+              output.contains("LISTEN") else { return false }
+        return true
     }
 }

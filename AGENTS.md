@@ -3,30 +3,78 @@
 ## What This Is
 Native macOS menu bar app (Swift 5.9, macOS 13+). Command center for the Elia agent ecosystem. No dock icon (`LSUIElement=true`). No Xcode project — pure SPM build via shell scripts.
 
+## The Two Servers — do not confuse them
+
+They are different processes, different ports, different repos, and the menu
+shows controls for both in the *same* submenu.
+
+| | Subworker server | OpenCode Rust server |
+|---|---|---|
+| Repo | `~/Documents/subworker-opencode-rust` | `~/Documents/opencode-rust` |
+| What it is | The FastAPI subworker API | The agent engine (`opencode serve`) |
+| Port | 5656 | 3000 (configurable) |
+| Binary | run via its own launcher | `target/release/opencode` |
+| Managed by | `SubworkerManager` (WebSocket + REST) | `OpenCodeServerManager` (CLI subprocess) |
+
+**`~/Documents/subworker-opencode-rust` is the server EliaTopBar controls.**
+It is what `subworkerServerURL` points at and what every agent status,
+trigger, enable/disable and log line comes from. Do not point the app at
+`opencode-rust` expecting subworker data, and do not edit either repo —
+they are separate repositories that EliaTopBar only talks to.
+
+The "🦀 OpenCode Rust Server" block in the menu manages `opencode-rust` only.
+Its repo path is overridable via the `opencodeServerRepoPath` default.
+
 ## Architecture
 ```
 Sources/
-├── EliaTopBarApp.swift      1980L  @main, AppDelegate, menu bar, all callbacks, TunnelProgressPanelController, NSMenuDelegate
-├── SubworkerManager.swift    895L  WebSocket + REST client for EliaFastAPI (localhost:5656)
-├── LogPopoverView.swift      833L  Per-agent session browser (messages, tools, live stream)
+├── EliaTopBarApp.swift      3269L  @main, AppDelegate, menu bar, all callbacks, TunnelProgressPanelController, NSMenuDelegate
+├── LogPopoverView.swift     2032L  Per-agent session browser (messages, tools, live stream)
+├── RunPopupController.swift 1495L  Animated agent-run notification overlay (NSPanel, pooled)
+├── SubworkerManager.swift   1228L  WebSocket + REST client for the subworker server :5656
+├── TopbarSettingsView.swift  606L  Menu bar placement, photo side, padding settings
+├── OpenCodeServerManager.swift 525L  Start/stop/health for the opencode Rust server
+├── ColimaManager.swift       307L  Colima Docker VM management via CLI subprocess
 ├── MarkdownView.swift        347L  Custom SwiftUI markdown renderer (block-cached)
-├── ColimaManager.swift       305L  Colima Docker VM management via CLI subprocess
-├── RunPopupController.swift  216L  Animated agent-run notification overlay (NSPanel)
-├── SchedulePopoverView.swift 204L  Interval schedule editor (hours, minute, days)
-├── TopbarSettingsView.swift  193L  Menu bar placement, photo side, padding settings
-├── ProfilePhotos.swift       138L  Circular crop + Application Support storage
+├── JSONTreeDisplay.swift     360L  Tool-input/output tree renderer
+├── NotchIslandView.swift     328L  Notch island rendering
+├── SchedulePopoverView.swift 339L  Interval schedule editor (hours, minute, days)
+├── ProfilePhotos.swift       138L  Circular crop + downsampled Application Support storage
+├── SelfTest.swift            170L  Env-gated stress harness (see below)
 └── Info.plist                     Bundle config (com.elia.elia-topbar)
+
+Lib/
+└── BoundedLogWriter.swift          Capped, coalescing, off-main log writer
+
+Tests/PerfTests/main.swift           Runnable assertions (XCTest unavailable on CLT-only machines)
 ```
+
+## Stress harness (how the perf numbers are measured)
+
+GUI automation cannot reach a `LSUIElement` status item, so popups and log
+viewers are driven through the real menu entry points, gated on env vars and
+inert otherwise:
+
+```bash
+ELIATOPBAR_SELFTEST_CYCLES=100 EliaTopBar.app/Contents/MacOS/EliaTopBar  # popup + log viewer cycles
+ELIATOPBAR_SELFTEST_BURST=30 ELIATOPBAR_SELFTEST_BURSTS=10 …           # 30-popup bursts
+ELIATOPBAR_SELFTEST_HOLD=60 …                                          # leave popups up, for a screenshot
+ELIATOPBAR_SELFTEST_NOEXIT=1 …                                         # stay alive for leaks/heap
+```
+
+Gotcha that cost a measurement: `RunPopupController.show()` returns early when
+`duration <= 0`, so a harness passing `duration: 0` silently opens nothing.
 
 ## Key Data Flow
 ```
 EliaTopBarApp.swift (AppDelegate)
-  ├── SubworkerManager ──WebSocket──▶ FastAPI server :5656
+  ├── SubworkerManager ──WebSocket/REST──▶ subworker-opencode-rust :5656
   │     ├── subworkers: [SubworkerInfo]
   │     ├── serverHealth: ServerHealth
   │     └── modelSelections (reads/writes /Users/vakandi/EliaAI/ui_electron/model-selections.json)
+  ├── OpenCodeServerManager ──CLI──▶ opencode-rust :3000 (start/stop/health)
   ├── ColimaManager ──CLI──▶ colima status/start/stop/delete/ssh
-  ├── ProfilePhotos ──FileSystem──▶ ~/Library/Application Support/EliaTopBar/ProfilePhotos/
+  ├── ProfilePhotos ──FileSystem──▶ ~/Library/Application Support/EliaTopBar/agent_photos/
   └── Menu (NSMenu) ──▶ all UI
 ```
 

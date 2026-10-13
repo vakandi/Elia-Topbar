@@ -48,6 +48,11 @@ and turns every subworker into a live, actionable dashboard row.
 - 🎭 **Profiles** — Developer (full livestream), Calm (essentials), Minimal (dots + LogViewer)
   one-tap setups for dev and non-dev use
 - ⚡ **Manual Run Subworker** — trigger any subworker on demand from a dropdown
+- 🦀 **Two servers, clearly labelled** — the subworker API (`subworker-opencode-rust`, port 5656)
+  and the OpenCode agent engine (`opencode-rust`, port 3000) both have Start/Stop controls in
+  the same submenu, so every button says what it actually starts: **Start Colima**,
+  **Start Rust Server**, **Stop Rust Server**. Starting the Rust server shows an elapsed
+  timer instead of freezing the menu.
 - 🔁 **Enable / Disable, next run, schedule** — per-agent submenu with everything you need
 - ⚙️ **Topbar Settings** — profiles, Drop panels, menu bar layout with live preview,
   run animation, viewer choice — zero permissions required
