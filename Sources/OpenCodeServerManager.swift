@@ -158,9 +158,15 @@ final class OpenCodeServerManager: ObservableObject {
     }
 
     private static func detectServersOffMain() async -> [DetectedServer] {
-        await withCheckedContinuation { continuation in
+        // Read the subworker repo path on the main actor first: reading
+        // UserDefaults off-actor is not safe, and this runs on a scan queue.
+        let repo = await MainActor.run { SubworkerServerManager.shared.repoPath }
+        return await withCheckedContinuation { continuation in
             scanQueue.async {
-                continuation.resume(returning: findServerProcesses(excluding: ProcessInfo.processInfo.processIdentifier))
+                continuation.resume(returning: findServerProcesses(
+                    excluding: ProcessInfo.processInfo.processIdentifier,
+                    subworkerRepo: repo
+                ))
             }
         }
     }
@@ -237,7 +243,7 @@ final class OpenCodeServerManager: ObservableObject {
     /// started from a shell or another tool visible here — those are exactly the
     /// duplicates the single-instance guard has to catch. Callers must be off
     /// the main actor: this shells out to pgrep and then ps once per match.
-    static func findServerProcesses(excluding ownPID: pid_t) -> [DetectedServer] {
+    static func findServerProcesses(excluding ownPID: pid_t, subworkerRepo: String? = nil) -> [DetectedServer] {
         guard let output = runSync("/usr/bin/pgrep", ["-f", "opencode.*serve"]),
               !output.isEmpty else { return [] }
 
@@ -248,9 +254,27 @@ final class OpenCodeServerManager: ObservableObject {
             guard let command = runSync("/bin/ps", ["-p", String(pid), "-o", "command="])?
                 .trimmingCharacters(in: .whitespacesAndNewlines),
                   !command.isEmpty else { continue }
+            // The subworker server spawns its own Rust harness child, which is
+            // also an `opencode serve`. It is not a competing agent engine, so
+            // listing it as one sent the user to kill their own subworker
+            // stack. stop.sh identifies it the same way: OPENCODE_PATHS_ROOT
+            // pointing inside the repo.
+            if let repo = subworkerRepo, isSubworkerChild(pid: pid, repo: repo) { continue }
             found.append(DetectedServer(pid: pid, port: portFromCommand(command), command: command))
         }
         return found.sorted { $0.pid < $1.pid }
+    }
+
+    /// True when the process's OPENCODE_PATHS_ROOT sits inside the subworker repo.
+    private static func isSubworkerChild(pid: pid_t, repo: String) -> Bool {
+        guard let env = runSync("/bin/ps", ["eww", "-p", String(pid)]),
+              let line = env.split(separator: "\n").first(where: { $0.contains("OPENCODE_PATHS_ROOT=") })
+        else { return false }
+        guard let marker = line.split(separator: " ").first(where: { $0.hasPrefix("OPENCODE_PATHS_ROOT=") })
+        else { return false }
+        let value = String(marker.dropFirst("OPENCODE_PATHS_ROOT=".count))
+        let normalisedRepo = repo.hasSuffix("/") ? String(repo.dropLast()) : repo
+        return value == normalisedRepo || value.hasPrefix(normalisedRepo + "/")
     }
 
     /// Pull `--port 3000` out of a command line, if present.

@@ -1084,12 +1084,91 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(parent)
         }
 
-        if !subworkerManager.wsConnected {
+if !subworkerManager.wsConnected {
             let reconnectItem = NSMenuItem(title: "", action: #selector(reconnectServer), keyEquivalent: "")
             reconnectItem.attributedTitle = emojiAwareTitle("🔄 Reconnect", color: .labelColor)
             reconnectItem.target = self
             menu.addItem(reconnectItem)
         }
+
+        menu.addItem(NSMenuItem.separator())
+        addSubworkerServerControlItems(to: menu)
+    }
+
+    /// Start/stop for the subworker server itself, driven by the repo's own
+    /// `start.sh` / `stop.sh`. Without this the app could only connect to a
+    /// server something else had to launch first.
+    private func addSubworkerServerControlItems(to menu: NSMenu) {
+        let manager = SubworkerServerManager.shared
+
+        if !manager.repoExists {
+            let missing = disabledItem("📁 Subworker repo not found")
+            menu.addItem(missing)
+            let fix = NSMenuItem(title: "⚙️ Set Subworker Repo Path…", action: #selector(setSubworkerRepoPath), keyEquivalent: "")
+            fix.target = self
+            menu.addItem(fix)
+            return
+        }
+
+        let portInfo = disabledItem("📁 \(manager.repoPath)  ·  port \(manager.port)")
+        portInfo.toolTip = manager.startScript
+        menu.addItem(portInfo)
+
+        if manager.status.isBusy {
+            let elapsed = manager.elapsed
+            let seconds = elapsed < 10 ? String(format: "%.1fs", elapsed) : "\(Int(elapsed))s"
+            let busy = disabledItem("⏳ \(manager.status.label) \(seconds) — cancel with Stop")
+            menu.addItem(busy)
+        } else {
+            let start = NSMenuItem(title: "▶ Start Subworker Server", action: #selector(startSubworkerServer), keyEquivalent: "")
+            start.target = self
+            start.isEnabled = manager.status != .running
+            menu.addItem(start)
+
+            let stop = NSMenuItem(title: "■ Stop Subworker Server", action: #selector(stopSubworkerServer), keyEquivalent: "")
+            stop.target = self
+            stop.isEnabled = manager.status == .running || manager.status == .unhealthy
+            menu.addItem(stop)
+        }
+
+        let status = disabledItem("   Status: \(manager.status.label)")
+        menu.addItem(status)
+
+        if let error = manager.actionError {
+            let errorItem = errorMenuItem(text: error)
+            errorItem.toolTip = "Tail of \(manager.repoPath)/control/data/server.log"
+            menu.addItem(errorItem)
+        }
+
+        let path = NSMenuItem(title: "⚙️ Set Subworker Repo Path…", action: #selector(setSubworkerRepoPath), keyEquivalent: "")
+        path.target = self
+        menu.addItem(path)
+    }
+
+    @objc private func startSubworkerServer() {
+        SubworkerServerManager.shared.start()
+    }
+
+    @objc private func stopSubworkerServer() {
+        SubworkerServerManager.shared.stop()
+    }
+
+    @objc private func setSubworkerRepoPath() {
+        let manager = SubworkerServerManager.shared
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Subworker server repo path"
+        alert.informativeText = "The folder containing start.sh and stop.sh. Port and auth token are read from it automatically."
+        let field = NSTextField(string: manager.repoPath)
+        field.frame = NSRect(x: 0, y: 0, width: 420, height: 24)
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let path = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty else { return }
+        manager.repoPath = (path as NSString).expandingTildeInPath
+        resetMenuHashAndRebuild()
     }
 
     // MARK: - Subworker List
