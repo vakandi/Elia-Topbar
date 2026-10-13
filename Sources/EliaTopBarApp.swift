@@ -987,6 +987,76 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Server Connection Submenu
 
+    /// Both folders the app drives live here: the subworker API repo and the
+    /// OpenCode Rust engine. Neither is a compile-time constant any more.
+    private func addServerPathMenuItems(to menu: NSMenu) {
+        let oc = opencodeServerManager!
+        let sw = SubworkerServerManager.shared
+
+        let ocRow = NSMenuItem(title: "", action: #selector(setOpenCodeRepoPath), keyEquivalent: "")
+        ocRow.attributedTitle = emojiAwareTitle("🦀 Rust repo: \(Self.abbreviate(oc.checkoutPath))", color: .labelColor)
+        ocRow.target = self
+        menu.addItem(ocRow)
+
+        let ocBinRow = NSMenuItem(title: "", action: #selector(setOpenCodeBinaryPath), keyEquivalent: "")
+        ocBinRow.attributedTitle = emojiAwareTitle("🦀 Rust binary: \(Self.abbreviate(oc.binaryDescription))", color: .labelColor)
+        ocBinRow.target = self
+        menu.addItem(ocBinRow)
+
+        let swRow = NSMenuItem(title: "", action: #selector(setSubworkerRepoPath), keyEquivalent: "")
+        swRow.attributedTitle = emojiAwareTitle("📁 Subworker repo: \(Self.abbreviate(sw.repoPath))", color: .labelColor)
+        swRow.target = self
+        menu.addItem(swRow)
+    }
+
+    private static func abbreviate(_ path: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let shown = path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
+        return shown.count > 46 ? "…" + String(shown.suffix(44)) : shown
+    }
+
+    private func promptForPath(title: String, message: String, current: String,
+                               onSave: @escaping (String) -> Void) {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        let field = NSTextField(string: current)
+        field.frame = NSRect(x: 0, y: 0, width: 440, height: 24)
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Auto-detect")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            let value = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty else { return }
+            onSave((value as NSString).expandingTildeInPath)
+        case .alertThirdButtonReturn:
+            onSave("")
+        default:
+            return
+        }
+        resetMenuHashAndRebuild()
+    }
+
+    @objc private func setOpenCodeRepoPath() {
+        let oc = opencodeServerManager!
+        promptForPath(title: "OpenCode Rust repo path",
+                      message: "Folder containing the Rust engine checkout. The binary is looked for at target/release/opencode inside it.",
+                      current: oc.checkoutPath) { oc.checkoutPath = $0 }
+    }
+
+    @objc private func setOpenCodeBinaryPath() {
+        let oc = opencodeServerManager!
+        let detected = OpenCodeServerManager.discoverInstalledBinary() ?? ""
+        promptForPath(title: "OpenCode Rust binary path",
+                      message: detected.isEmpty
+                        ? "Leave empty to search the repo and your PATH. Auto-detect clears this override."
+                        : "Detected: \(Self.abbreviate(detected))",
+                      current: oc.binaryPathOverride ?? detected) { oc.binaryPathOverride = $0.isEmpty ? nil : $0 }
+    }
+
     private func addServerConnectionSubmenu(to menu: NSMenu) {
         let submenu = NSMenu()
         submenu.autoenablesItems = false
@@ -1000,6 +1070,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Server URL preference
         addServerURLMenuItems(to: submenu)
+
+        submenu.addItem(NSMenuItem.separator())
+
+        addServerPathMenuItems(to: submenu)
 
         submenu.addItem(NSMenuItem.separator())
 

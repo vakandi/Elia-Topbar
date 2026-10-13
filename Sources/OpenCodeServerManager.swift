@@ -73,6 +73,17 @@ final class OpenCodeServerManager: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: repoPathDefaultsKey) }
     }
 
+    /// Instance access to the repo path. Setting it re-resolves the binary and
+    /// status immediately, so changing the folder in the menu takes effect
+    /// without a relaunch.
+    var checkoutPath: String {
+        get { Self.repoPath }
+        set {
+            Self.repoPath = newValue
+            refresh()
+        }
+    }
+
     var configuredPort: Int {
         get {
             let stored = UserDefaults.standard.integer(forKey: Self.portDefaultsKey)
@@ -81,10 +92,57 @@ final class OpenCodeServerManager: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: Self.portDefaultsKey) }
     }
 
-    /// Resolved binary, or nil when the repo has not been built.
+    /// Resolved binary, or nil when nothing runnable was found.
+    ///
+    /// `target/release/opencode` is only one of the ways this engine gets
+    /// installed: `install.sh` also drops a standalone `opencoderust` on PATH,
+    /// and the npm package ships its own. Looking only in target/ reported
+    /// "Not built" on a machine where the engine was installed and working.
     var binaryPath: String? {
-        let path = "\(Self.repoPath)/target/release/opencode"
-        return FileManager.default.isExecutableFile(atPath: path) ? path : nil
+        let inRepo = "\(Self.repoPath)/target/release/opencode"
+        if FileManager.default.isExecutableFile(atPath: inRepo) { return inRepo }
+        if let override = UserDefaults.standard.string(forKey: Self.binaryPathKey),
+           !override.isEmpty,
+           FileManager.default.isExecutableFile(atPath: override) {
+            return override
+        }
+        return Self.discoverInstalledBinary()
+    }
+
+    /// Explicit binary path, bypassing the repo lookup.
+    var binaryPathOverride: String? {
+        get {
+            let stored = UserDefaults.standard.string(forKey: Self.binaryPathKey) ?? ""
+            return stored.isEmpty ? nil : stored
+        }
+        set {
+            UserDefaults.standard.set(newValue ?? "", forKey: Self.binaryPathKey)
+            refresh()
+        }
+    }
+
+    /// Where the binary actually came from, for the menu.
+    var binaryDescription: String {
+        guard let path = binaryPath else { return "not found" }
+        if path.hasPrefix(Self.repoPath) { return "repo build: \(path)" }
+        return "installed: \(path)"
+    }
+
+    private static let binaryPathKey = "opencodeServerBinaryPath"
+
+    /// Looks for the engine where an install would actually put it.
+    static func discoverInstalledBinary() -> String? {
+        var candidates: [String] = []
+        let envPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
+        for dir in envPath.split(separator: ":").map(String.init) {
+            for name in ["opencoderust", "opencode-rust"] {
+                candidates.append("\(dir)/\(name)")
+            }
+        }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        candidates.append("\(home)/.local/bin/opencoderust")
+        candidates.append("\(home)/.local/bin/opr")
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     private var statusTimer: Timer?
