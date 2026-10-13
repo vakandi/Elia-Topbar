@@ -44,8 +44,15 @@ if git diff --quiet -- Casks "$CASK_NAME.rb" 2>/dev/null && [ -z "$(git status -
   exit 0
 fi
 git add "Casks/$CASK_NAME.rb"
-git -c user.name="$(gh api user --jq .name)" \
-    -c user.email="$(gh api user --jq .email)" \
+# gh api user can return a null name/email on some accounts; fall back to the
+# GitHub noreply form so the commit is attributed rather than empty.
+GH_USER="$(gh api user --jq .login)"
+GH_NAME="$(gh api user --jq '.name // empty')"
+GH_EMAIL="$(gh api user --jq '.email // empty')"
+[[ -n "$GH_NAME" ]] || GH_NAME="$GH_USER"
+[[ -n "$GH_EMAIL" ]] || GH_EMAIL="${GH_USER}@users.noreply.github.com"
+git -c user.name="$GH_NAME" \
+    -c user.email="$GH_EMAIL" \
     commit -m "chore(cask): eliatopbar $VERSION
 
 sha256 $ACTUAL matches EliaTopBar-v$VERSION.dmg."
