@@ -257,7 +257,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startOverflowMonitor()
         startCountdownRefresh()
 
+        if SelfTest.burst > 0 { runBurstTest(); return }
         if SelfTest.cycles > 0 { runSelfTest() }
+    }
+
+    private var burstPanelProbe: SelfTest.WeakBox?
+
+    private func runBurstTest() {
+        let baseURL = subworkerManager.currentBaseURL
+        let names = subworkerManager.subworkers.map(\.name)
+        let n = SelfTest.burst
+        SelfTest.runBurst(count: n, repeats: SelfTest.burstRepeats,
+                          openAll: { [weak self] in
+                              guard let self else { return }
+                              let dropX = self.menuBarAnchorX()
+                              for i in 0..<n {
+                                  let name = names.isEmpty ? "burst-\(i)" : names[i % names.count]
+                                  RunPopupController.shared.show(for: name, dropX: dropX, duration: 30, baseURL: baseURL, showSessionSelector: false, disableAutoClose: true)
+                              }
+                              self.burstPanelProbe = SelfTest.WeakBox(RunPopupController.shared.anyPanelForTest)
+                          },
+                          closeAll: { RunPopupController.shared.closeAllUnlocked() },
+                          probe: { [weak self] in
+                              guard let self else { return "" }
+                              let alive = self.burstPanelProbe?.value != nil
+                              return self.selftestProbe() + " probeAlive=\(alive)"
+                          })
     }
 
     private func runSelfTest() {
@@ -281,7 +306,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let ls = LivestreamStore.shared
         let panels = RunPopupController.shared.panelCount
         let windows = NSApp.windows.count
-        return "subStreams=\(ls.subagentStreams.count) streams=\(ls.streams.count) panels=\(panels) windows=\(windows) island=\(useNotchIsland) viewers=\(viewerPreferredUI)"
+        return "subStreams=\(ls.subagentStreams.count) streams=\(ls.streams.count) panels=\(panels) livePanels=\(RunPopupController.livePanelInstances) windows=\(windows) island=\(useNotchIsland)"
     }
 
     @MainActor

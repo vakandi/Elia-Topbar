@@ -9,6 +9,23 @@ import AppKit
 /// It prints observed RSS / thread / log-size at each checkpoint and exits.
 enum SelfTest {
 
+    /// Weak holder so a test can prove an object really deallocated instead of
+    /// inferring it from a count.
+    final class WeakBox {
+        weak var value: AnyObject?
+        init(_ v: AnyObject?) { value = v }
+    }
+
+    static var burst: Int {
+        guard let raw = ProcessInfo.processInfo.environment["ELIATOPBAR_SELFTEST_BURST"],
+              let n = Int(raw), n > 0 else { return 0 }
+        return n
+    }
+
+    static var burstRepeats: Int {
+        Int(ProcessInfo.processInfo.environment["ELIATOPBAR_SELFTEST_BURSTS"] ?? "") ?? 1
+    }
+
     static var cycleDelay: TimeInterval {
         TimeInterval(ProcessInfo.processInfo.environment["ELIATOPBAR_SELFTEST_DELAY"] ?? "") ?? 0.25
     }
@@ -48,6 +65,28 @@ enum SelfTest {
         print(String(format: "SELFTEST %-28s rss=%.1fMB threads=%d log=%.1fKB %@",
                      (label as NSString).utf8String!, f, threadCount(), Double(logSize()) / 1024.0, probe()))
         fflush(stdout)
+    }
+
+    @MainActor
+    static func runBurst(count: Int, repeats: Int,
+                         openAll: @escaping @MainActor () -> Void,
+                         closeAll: @escaping @MainActor () -> Void,
+                         probe: @escaping @MainActor () -> String) {
+        report("burst start", probe)
+        for r in 0..<repeats {
+            openAll()
+            RunLoop.main.run(until: Date().addingTimeInterval(1.5))
+            report("burst \(r+1)/\(repeats) open", probe)
+            closeAll()
+            RunLoop.main.run(until: Date().addingTimeInterval(1.5))
+            report("burst \(r+1)/\(repeats) closed", probe)
+        }
+        for s in [10, 30] {
+            RunLoop.main.run(until: Date().addingTimeInterval(s == 10 ? 7 : 20))
+            report("drain +\(s)s", probe)
+        }
+        fflush(stdout)
+        exit(0)
     }
 
     /// Runs on the main actor after launch. `open`/`close` are the AppDelegate

@@ -40,8 +40,8 @@ let popupView = RunPopupView(agentName: agentName, onTap: { [weak self] in self?
          panels[agentName]=panel; panelViews[agentName]=popupView; durations[agentName]=duration; hoverStates[agentName]=false
           if disableAutoClose { noAutoClose.insert(agentName) } else { noAutoClose.remove(agentName) }
           repositionAll(dropX: dropX)
-          panel.orderFrontRegardless()
-          panel.alphaValue = 0
+panel.orderFrontRegardless()
+         panel.alphaValue = 0
           NSAnimationContext.runAnimationGroup({ ctx in ctx.duration=0.62; ctx.timingFunction=CAMediaTimingFunction(controlPoints:0.22,1,0.36,1); ctx.allowsImplicitAnimation=true; panel.animator().setFrame(finalFrame, display:true); panel.animator().alphaValue = 1 }, completionHandler: { panel.alphaValue = 1 })
           if !disableAutoClose { scheduleRetract(for: agentName, after: duration) }
      }
@@ -61,6 +61,10 @@ let popupView = RunPopupView(agentName: agentName, onTap: { [weak self] in self?
     }
     private func makePanel(hiddenFrame: NSRect, agentName: String) -> NSPanel {
         let p = HoverPanel(contentRect: hiddenFrame, styleMask: [.borderless,.nonactivatingPanel], backing: .buffered, defer: false, agentName: agentName, owner: self)
+        // NSPanel defaults isReleasedWhenClosed to false, so close() left every
+        // panel alive: a 30-popup burst grew NSApp.windows 2 -> 32 -> 62 -> 92
+        // -> 122 across 4 bursts, +25 MB each, never reclaimed.
+        p.isReleasedWhenClosed = true
         p.level = .statusBar; p.collectionBehavior=[.canJoinAllSpaces,.fullScreenAuxiliary,.ignoresCycle]
         p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false; p.isMovableByWindowBackground = canDrag(for: agentName); p.isMovable = true; p.worksWhenModal = true
         return p
@@ -78,6 +82,9 @@ let popupView = RunPopupView(agentName: agentName, onTap: { [weak self] in self?
         panelViews[name]?.releaseTimers()
         panelViews[name] = nil
         panel.contentView = nil
+        // orderOut alone leaves the panel retained by AppKit: a 30-popup burst
+        // measured 30 NSPanels still alive in NSApp.windows after close.
+        panel.close()
         retractTimers[name]?.invalidate(); retractTimers[name]=nil
         if panels[name] === panel {
             panels[name]=nil; hoverStates[name]=nil; durations[name]=nil; noAutoClose.remove(name)
@@ -88,6 +95,10 @@ let popupView = RunPopupView(agentName: agentName, onTap: { [weak self] in self?
         retractTimers[agentName]=Timer.scheduledTimer(withTimeInterval: duration, repeats:false){ [weak self] _ in Task{ @MainActor [weak self] in guard let self else{return}; if self.hoverStates[agentName]==true{return}; self.retract(for:agentName) } }
     }
     var panelCount: Int { panels.count }
+    /// Any live panel, so the stress harness can weakly probe deallocation.
+    var anyPanelForTest: NSPanel? { panels.values.first }
+    /// Instance count of HoverPanel ever created minus deinited. Proves disposal.
+    static var livePanelInstances: Int { HoverPanel.liveCount }
     func hasPanel(for name: String) -> Bool { panels[name] != nil }
      func setHover(_ hovering: Bool, for agentName: String) {
          hoverStates[agentName]=hovering
@@ -128,14 +139,16 @@ let popupView = RunPopupView(agentName: agentName, onTap: { [weak self] in self?
         let names = panels.keys.filter { !isLocked(for: $0) }
         for name in names {
             if let panel = panels[name] {
-                close(for: name, panel: panel)
+                autoreleasepool { close(for: name, panel: panel) }
             }
         }
     }
 }
 private class HoverPanel: NSPanel {
     let agentName: String; weak var owner: RunPopupController?
-    init(contentRect: NSRect, styleMask: NSWindow.StyleMask, backing: NSWindow.BackingStoreType, defer flag: Bool, agentName: String, owner: RunPopupController) { self.agentName=agentName; self.owner=owner; super.init(contentRect:contentRect, styleMask:styleMask, backing:backing, defer:flag) }
+    init(contentRect: NSRect, styleMask: NSWindow.StyleMask, backing: NSWindow.BackingStoreType, defer flag: Bool, agentName: String, owner: RunPopupController) { self.agentName=agentName; self.owner=owner; Self.liveCount += 1; super.init(contentRect:contentRect, styleMask:styleMask, backing:backing, defer:flag) }
+    deinit { Self.liveCount -= 1; AppLog.d("HoverPanel deinit \(agentName) live=\(Self.liveCount)") }
+    static var liveCount = 0
     override func mouseEntered(with event: NSEvent){ owner?.setHover(true, for:agentName) }
     override func mouseExited(with event: NSEvent){ owner?.setHover(false, for:agentName) }
     override var canBecomeKey: Bool{ false }

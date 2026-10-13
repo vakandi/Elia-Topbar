@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import EliaTopBarKit
 
 setvbuf(stdout, nil, _IONBF, 0)
@@ -137,6 +138,9 @@ do {
 }
 
 _ = countRunLoopTimers
+
+// The NSPanel disposal bisect (see docs/PERFORMANCE-RESULTS.md) needs a real
+// AppKit host and is driven through the app instead: ELIATOPBAR_SELFTEST_BURST.
 
 print("")
 print("\(passes) passed, \(failures) failed")
