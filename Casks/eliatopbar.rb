@@ -10,7 +10,7 @@
 
 cask "eliatopbar" do
   version "2.3"
-  sha256 "b619b26661d0ef2b99cb931c88e4b74a98813ab8673277bf28a9363a737512eb"
+  sha256 "2d3fc7de44ddeabbf6f356953d775548e219ce4bc9a30a8db911eaa3c03881d0"
 
   url "https://github.com/vakandi/Elia-Topbar/releases/download/v#{version}/EliaTopBar-v#{version}.dmg"
   name "EliaTopBar"

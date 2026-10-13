@@ -11,9 +11,9 @@ shows controls for both in the *same* submenu.
 | | Subworker server | OpenCode Rust server |
 |---|---|---|
 | Repo | `~/Documents/subworker-opencode-rust` | `~/Documents/opencode-rust` |
-| What it is | The FastAPI subworker API | The agent engine (`opencode serve`) |
+| What it is | The `control/` bridge app (Bun/TypeScript) | The agent engine (`opencode serve`) |
 | Port | 5656 | 3000 (configurable) |
-| Binary | run via its own launcher | `target/release/opencode`, or an installed `opencoderust` on PATH |
+| Binary | `bun`, cwd `<repo>/control` | `target/release/opencode`, or an installed `opencoderust` on PATH |
 | Managed by | `SubworkerManager` (WebSocket + REST) | `OpenCodeServerManager` (CLI subprocess) |
 
 **`~/Documents/subworker-opencode-rust` is the server EliaTopBar controls.**
@@ -23,6 +23,27 @@ trigger, enable/disable and log line comes from. Do not point the app at
 they are separate repositories that EliaTopBar only talks to.
 
 The "🦀 OpenCode Rust Server" block in the menu manages `opencode-rust` only.
+
+### The three runtimes inside `subworker-opencode-rust`
+
+The repo name says Rust, but three different runtimes live in it. Confusing
+them caused a wrong claim that `/tunnel/*` did not exist:
+
+- **`control/` — Bun/TypeScript, port 5656. This is the API EliaTopBar talks to.**
+  A thin bridge: it owns the agent registry, scheduler, `/ws` stream, and the
+  `/tunnel/*` endpoints. It does not run agents itself — it reads OpenCode's
+  state and relays it. The `FastAPI` name in older docs is wrong; commit
+  `0cab9c2` ("replace Python/Docker stack with Rust server") removed Python.
+- **`server/` — a Rust crate beside it.** Not what serves 5656. Don't grep it
+  looking for routes.
+- **`opencode-rust` at `~/Documents/opencode-rust` — the actual engine**, port
+  3000. Separate repo entirely.
+
+Confirm before trusting any runtime assumption:
+
+```bash
+lsof -nP -iTCP:5656 -sTCP:LISTEN   # shows the real process (bun)
+```
 
 ### Both servers' folders are configurable, and are not compile-time constants
 
@@ -83,10 +104,10 @@ Gotcha that cost a measurement: `RunPopupController.show()` returns early when
 ## Key Data Flow
 ```
 EliaTopBarApp.swift (AppDelegate)
-  ├── SubworkerManager ──WebSocket/REST──▶ subworker-opencode-rust :5656
+  ├── SubworkerManager ──WebSocket/REST──▶ control/ (Bun bridge) :5656
   │     ├── subworkers: [SubworkerInfo]
   │     ├── serverHealth: ServerHealth
-  │     └── modelSelections (reads/writes /Users/vakandi/EliaAI/ui_electron/model-selections.json)
+  │     └── modelSelections (reads/writes ~/EliaAI/ui_electron/model-selections.json)
   ├── OpenCodeServerManager ──CLI──▶ opencode-rust :3000 (start/stop/health)
   ├── ColimaManager ──CLI──▶ colima status/start/stop/delete/ssh
   ├── ProfilePhotos ──FileSystem──▶ ~/Library/Application Support/EliaTopBar/agent_photos/
@@ -132,7 +153,7 @@ and running `./scripts/sync-brew-tap.sh` does not help on its own — the script
 verifies the sha256 against the local DMG, but the tap is only useful once that
 DMG is published.
 
-## Server API (FastAPI at localhost:5656)
+## Server API (Bun bridge at localhost:5656)
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/health` | GET | Basic health |
@@ -152,7 +173,7 @@ DMG is published.
 ## Known Technical Debt
 - **EliaTopBarApp.swift is a 3300-line God Object.** Contains AppDelegate, menu construction, icon rendering, hover handling, tunnel progress panel, and all UI callbacks. Decomposition is overdue.
 - **Hardcoded auth token** in `SubworkerManager.swift` (`EliaAuth.defaultToken`). Bearer token in source, extractable via `strings`. `SubworkerServerManager.applyRepoSettings()` now re-reads it from the subworker repo's `.env`, so a rotated token is picked up, but the literal is still in the binary. Should use Keychain.
-- **Hardcoded filesystem path** in `SubworkerManager.swift` (`/Users/vakandi/EliaAI/ui_electron/model-selections.json`). Breaks on any other user.
+- **Model selections path** defaults to `~/EliaAI/ui_electron/model-selections.json` with a `modelSelectionsPath` override. The `/data/` → host rewrite resolves through `LocalPaths` against the configured repo. No `/Users/<name>` literals remain.
 - **Tests are a standalone executable, not XCTest.** `swift run -c release PerfTests` asserts and exits non-zero. XCTest and Swift Testing are both unavailable on a CLT-only machine (`_Testing_Foundation` ships without a swiftmodule).
 - **Mixed async patterns.** `DispatchQueue.main.async` coexists with `@MainActor` + `Task { @MainActor }`. SubworkerManager is `@MainActor` but some callbacks still dispatch via GCD.
 - **`docs/SUBWORKER_MANAGEMENT_PLAN.md` references port 8080** but server runs on 5656. Stale spec.

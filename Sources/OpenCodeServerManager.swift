@@ -365,6 +365,14 @@ final class OpenCodeServerManager: ObservableObject {
             // way that is far harder to diagnose than an explicit refusal.
             let existing = await Self.detectServersOffMain()
             if !existing.isEmpty {
+                // A healthy server already on our port is not a conflict, it is
+                // the desired end state. Reporting an error here made Start look
+                // broken whenever the app was already doing its job.
+                let probe = await self.probeHealth()
+                if probe.isHealthy, existing.count == 1 {
+                    await self.adoptRunningServer()
+                    return
+                }
                 let pids = existing.map { String($0.pid) }.joined(separator: ", ")
                 let plural = existing.count == 1 ? "" : "s"
                 await self.failStart("\(existing.count) opencode server\(plural) already running (pid \(pids)) — stop them first")
@@ -376,6 +384,14 @@ final class OpenCodeServerManager: ObservableObject {
             }
             await self.spawn(binary: binary)
         }
+    }
+
+    private func adoptRunningServer() {
+        status = .running
+        actionError = nil
+        startElapsed = 0
+        startBeganAt = nil
+        refresh()
     }
 
     private func failStart(_ message: String) {
