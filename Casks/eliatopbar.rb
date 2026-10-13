@@ -29,8 +29,9 @@ cask "eliatopbar" do
                    must_succeed: false
   end
 
-  uninstall quit: "com.elia.elia-topbar",
-            delete: "/Library/Logs/EliaTopBar"
+  # The app only writes under the user's home, so uninstall needs no sudo.
+  # A `delete:` stanza pointing at /Library would make plain uninstall fail.
+  uninstall quit: "com.elia.elia-topbar"
 
   zap trash: [
     "~/Library/Application Support/EliaTopBar",
