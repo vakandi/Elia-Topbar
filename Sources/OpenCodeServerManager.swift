@@ -730,6 +730,7 @@ final class OpenCodeServerManager: ObservableObject {
                     self.actionError = nil
                     self.startBeganAt = nil
                     self.refresh(settling: true)
+                    await self.ensureTunnelIfConfigured()
                     return
                 }
                 if let began = self.startBeganAt { self.startElapsed = Date().timeIntervalSince(began) }
@@ -739,6 +740,118 @@ final class OpenCodeServerManager: ObservableObject {
             self.startBeganAt = nil
             self.refresh(settling: true)
         }
+    }
+
+    // MARK: - Tunnel
+
+    /// The app keeps its own copy so Cloudflare config lives in Application Support
+    /// with the rest of the app state, instead of depending on a token sitting in
+    /// some checkout's tree. Seeded once from the wrapper's tunnel state.
+    private var localTunnelDir: String {
+        NSHomeDirectory() + "/Library/Application Support/EliaTopBar/tunnel"
+    }
+
+    private var localTunnelTokenPath: String { localTunnelDir + "/token" }
+
+    private func resolveTunnelTokenPath() -> String? {
+        let statePath = subworkerRoot + "/control/config/tunnel.json"
+        let wrapperToken = (try? Data(contentsOf: URL(fileURLWithPath: statePath)))
+            .flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
+            .flatMap { $0["tunnel_token"] as? String }
+        guard let token = wrapperToken, !token.isEmpty else {
+            return FileManager.default.fileExists(atPath: localTunnelTokenPath) ? localTunnelTokenPath : nil
+        }
+        let existing = try? String(contentsOfFile: localTunnelTokenPath, encoding: .utf8)
+        guard existing != token else { return localTunnelTokenPath }
+        try? FileManager.default.createDirectory(atPath: localTunnelDir, withIntermediateDirectories: true)
+        guard (try? token.write(toFile: localTunnelTokenPath, atomically: true, encoding: .utf8)) != nil else { return nil }
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: localTunnelTokenPath)
+        AppLog.important("tunnel: synced own config from \(statePath)")
+        return localTunnelTokenPath
+    }
+
+    /// Start already brings up the bridge and the engine, but the tunnel is a
+    /// separate process the bridge never spawns — `control/tunnelWatch.sh` and the
+    /// compose `cloudflared` profile own it, and neither runs under the app. So a
+    /// configured tunnel had nothing listening on its public hostname after Start.
+    private func ensureTunnelIfConfigured() async {
+        guard let tokenPath = resolveTunnelTokenPath() else {
+            AppLog.important("tunnel: no tunnel token available, nothing to start")
+            return
+        }
+        if await Self.isCloudflaredRunning() {
+            AppLog.important("tunnel: cloudflared already running")
+            return
+        }
+        if await Self.startCloudflaredService() {
+            AppLog.important("tunnel: started via systemctl --user \(Self.cloudflaredServiceName)")
+            return
+        }
+        guard let binary = Self.findCloudflared() else {
+            AppLog.important("tunnel: token present at \(tokenPath) but cloudflared binary not found")
+            return
+        }
+        AppLog.important("tunnel: spawning \(binary) tunnel run with \(tokenPath)")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: binary)
+        process.arguments = ["tunnel", "run", "--token-file", tokenPath]
+        process.currentDirectoryURL = URL(fileURLWithPath: subworkerRoot + "/control")
+        let log = Self.openAppendHandle(subworkerRoot + "/control/data/cloudflared.log")
+        process.standardOutput = log
+        process.standardError = log
+        process.standardInput = FileHandle.nullDevice
+        do {
+            try process.run()
+            AppLog.important("tunnel: cloudflared pid=\(process.processIdentifier)")
+        } catch {
+            AppLog.important("tunnel: failed to spawn cloudflared — \(error.localizedDescription)")
+        }
+    }
+
+    private static let cloudflaredServiceName = "cloudflared-omp"
+
+    private static func isCloudflaredRunning() async -> Bool {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+                process.arguments = ["-f", "cloudflared.*tunnel.*run"]
+                process.standardOutput = FileHandle.nullDevice
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                    continuation.resume(returning: process.terminationStatus == 0)
+                } catch {
+                    continuation.resume(returning: false)
+                }
+            }
+        }
+    }
+
+    private static func startCloudflaredService() async -> Bool {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/bash")
+                process.arguments = ["-lc", "systemctl --user start \(cloudflaredServiceName) 2>/dev/null"]
+                process.standardOutput = FileHandle.nullDevice
+                process.standardError = FileHandle.nullDevice
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                    continuation.resume(returning: process.terminationStatus == 0)
+                } catch {
+                    continuation.resume(returning: false)
+                }
+            }
+        }
+    }
+
+    private static func findCloudflared() -> String? {
+        for candidate in ["/opt/homebrew/bin/cloudflared", "/usr/local/bin/cloudflared"] where FileManager.default.isExecutableFile(atPath: candidate) {
+            return candidate
+        }
+        return nil
     }
 
     func stop() {
