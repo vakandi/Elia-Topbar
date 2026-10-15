@@ -9,8 +9,8 @@
 # homebrew-<repo> directory, so this repo does not need to be renamed.
 
 cask "eliatopbar" do
-  version "2.3"
-  sha256 "2d3fc7de44ddeabbf6f356953d775548e219ce4bc9a30a8db911eaa3c03881d0"
+  version "2.5"
+  sha256 "f1ad4baefddb3752ab260b77da5d66fea7ce42de9edd1244f8bf49c7dc860793"
 
   url "https://github.com/vakandi/Elia-Topbar/releases/download/v#{version}/EliaTopBar-v#{version}.dmg"
   name "EliaTopBar"
