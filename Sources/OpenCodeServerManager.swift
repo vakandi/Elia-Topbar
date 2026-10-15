@@ -149,7 +149,6 @@ final class OpenCodeServerManager: ObservableObject {
 
     private var statusTimer: Timer?
     private var managedProcess: Process?
-    private var managedBridge: Process?
     /// Bookmark for the repo folder. macOS only grants an app access to
     /// `~/Documents` when the user picks it, so the grant is stored and reused
     /// instead of re-prompting on every Start.
@@ -239,6 +238,37 @@ final class OpenCodeServerManager: ObservableObject {
     /// Elapsed seconds of the current start, for the loading row.
     private(set) var startElapsed: TimeInterval = 0
     private var startBeganAt: Date?
+
+    enum Action { case start, stop }
+
+    struct Outcome {
+        let action: Action
+        let ok: Bool
+        /// The reason, already phrased for a human: on success what is now up,
+        /// on failure the one line that explains why nothing is.
+        let message: String
+    }
+
+    /// Fires once per Start/Stop, at the moment it settles. The menu bar popup
+    /// needs a definitive success or failure to swap its spinner for an emoji —
+    /// watching `status` instead means guessing whether a transition was caused by
+    /// this action or by the background poll.
+    var onOutcome: ((Outcome) -> Void)?
+    private var pendingAction: Action?
+    private var didReportOutcome = false
+
+    /// Single exit point for every terminal start/stop state, so a success or a
+    /// failure can never be reported by one path and swallowed by another.
+    /// First report wins: several paths converge on a failure (the script exits
+    /// non-zero, then the settle poll also gives up), and the popup should show
+    /// the first real reason, not the last.
+    private func reportOutcome(ok: Bool, _ message: String) {
+        guard !didReportOutcome else { return }
+        didReportOutcome = true
+        let action = pendingAction ?? .start
+        AppLog.important("outcome: \(action == .start ? "start" : "stop") ok=\(ok) \(message)")
+        onOutcome?(Outcome(action: action, ok: ok, message: message))
+    }
 
     init() {
         port = configuredPort
@@ -449,40 +479,117 @@ final class OpenCodeServerManager: ObservableObject {
         return p
     }
 
-    struct ScriptResult { let exitCode: Int32; let lastLines: String }
+    struct ScriptResult {
+        let exitCode: Int32
+        let output: String
+        /// The one line that says why it failed, when the script says so itself.
+        /// Both repo scripts report through `[start] ERROR: …` / `[stop] ERROR: …`
+        /// on stderr; the popup needs that line, not whatever happened to be last.
+        var errorLine: String? {
+            output.split(separator: "\n")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .first { $0.contains("ERROR:") }
+                .map { String($0) }
+        }
+    }
 
-    /// Runs a repo script off the main actor and keeps the tail, which is where
+    /// Environment for every child process this manager spawns.
+    ///
+    /// A `.app` launched by launchd inherits launchd's PATH
+    /// (`/usr/bin:/bin:/usr/sbin:/sbin`), never the user's shell PATH. `start.sh`
+    /// then dies at its very first gate — `command -v bun` — because bun lives in
+    /// `~/.bun/bin`, and the failure reads as "run ./install.sh first" on a machine
+    /// where bun is installed and working in a terminal.
+    ///
+    /// The same gap hides two more tools the script needs: `cargo` in
+    /// `~/.cargo/bin` (same gate, plus it builds the engine) and `jq` in
+    /// `/opt/homebrew/bin`, without which start.sh silently falls back to its
+    /// default port instead of the one in `control/config/server.json`. So the
+    /// toolchain dirs are restored explicitly rather than trusting the inherited
+    /// environment, which is empty of them.
+    ///
+    /// Proxy vars are dropped because the desktop shell exports omp's residential
+    /// proxy, which refuses outbound HTTPS from the server's context and fails
+    /// every provider call while the same request works directly.
+    static func launchEnvironment() -> [String: String] {
+        var env = ProcessInfo.processInfo.environment
+        for key in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"] {
+            env.removeValue(forKey: key)
+        }
+        let home = NSHomeDirectory()
+        let toolchainDirs = [
+            home + "/.bun/bin",       // bun — start.sh refuses to start without it
+            home + "/.cargo/bin",    // cargo — same gate, and it builds the engine
+            home + "/.local/bin",
+            "/opt/homebrew/bin",     // jq — start.sh reads the real port with it
+            "/usr/local/bin",
+        ]
+        var seen = Set<String>()
+        var pathParts: [String] = []
+        for dir in toolchainDirs + (env["PATH"] ?? "").split(separator: ":").map(String.init) {
+            let trimmed = dir.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, seen.insert(trimmed).inserted else { continue }
+            pathParts.append(trimmed)
+        }
+        env["PATH"] = pathParts.joined(separator: ":")
+        return env
+    }
+
+    /// Runs a repo script off the main actor and keeps its output, which is where
     /// start.sh puts the reason it could not come up.
+    ///
+    /// Output goes to a temp file, never a `Pipe`. `start.sh` detaches the control
+    /// plane with `nohup`, and a detached grandchild that inherits the capture pipe
+    /// keeps its write end open long after start.sh itself exits — so
+    /// `readDataToEndOfFile()` never returns EOF, the continuation never resumes,
+    /// and the Start popup spins forever with no verdict. A file has no reader to
+    /// starve, so the run always completes.
+    ///
+    /// The deadline is the second half of that guarantee: a script that hangs for
+    /// any other reason is killed and reported as a failure rather than stalling
+    /// the action indefinitely. `start.sh`'s own worst case is 30s of health wait
+    /// plus a 60s gate; `stop.sh` is two 10s waits.
     private static func runShellScript(_ path: String, in dir: String) async -> ScriptResult {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
+                let logURL = URL(fileURLWithPath: NSTemporaryDirectory())
+                    .appendingPathComponent("eliatopbar-script-\(UUID().uuidString).log")
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/bin/bash")
                 process.arguments = [path]
                 process.currentDirectoryURL = URL(fileURLWithPath: dir)
-                var env = ProcessInfo.processInfo.environment
-                for key in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"] {
-                    env.removeValue(forKey: key)
+                process.environment = launchEnvironment()
+                let capture = openAppendHandle(logURL.path)
+                process.standardOutput = capture
+                process.standardError = capture
+                process.standardInput = FileHandle.nullDevice
+
+                func finish(exitCode: Int32) {
+                    let data = (try? Data(contentsOf: logURL)) ?? Data()
+                    let text = String(data: data, encoding: .utf8) ?? ""
+                    try? FileManager.default.removeItem(at: logURL)
+                    continuation.resume(returning: ScriptResult(exitCode: exitCode, output: text))
                 }
-                process.environment = env
-                let pipe = Pipe()
-                process.standardOutput = pipe
-                process.standardError = pipe
+
                 do {
                     try process.run()
-                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                    process.waitUntilExit()
-                    let text = String(data: data, encoding: .utf8) ?? ""
-                    continuation.resume(returning: ScriptResult(
-                        exitCode: process.terminationStatus,
-                        lastLines: text.split(separator: "\n").suffix(4).joined(separator: "\n")
-                    ))
                 } catch {
-                    continuation.resume(returning: ScriptResult(
-                        exitCode: -1,
-                        lastLines: error.localizedDescription
-                    ))
+                    finish(exitCode: -1)
+                    return
                 }
+
+                let deadline = Date().addingTimeInterval(scriptTimeout)
+                while process.isRunning && Date() < deadline {
+                    Thread.sleep(forTimeInterval: 0.2)
+                }
+                if process.isRunning {
+                    AppLog.important("script timed out after \(Int(scriptTimeout))s, killing: \(path)")
+                    process.terminate()
+                    Thread.sleep(forTimeInterval: 1)
+                    if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+                }
+                process.waitUntilExit()
+                finish(exitCode: process.terminationStatus)
             }
         }
     }
@@ -496,11 +603,9 @@ final class OpenCodeServerManager: ObservableObject {
         AppLog.important("start: running \(bridgeStartScript)")
 
         let result = await Self.runShellScript(bridgeStartScript, in: subworkerRoot)
-        AppLog.important("start: exit=\(result.exitCode) output=[\(result.lastLines)]")
+        AppLog.important("start: exit=\(result.exitCode) output=[\(result.output)]")
         guard result.exitCode == 0 else {
-            await failStart(result.lastLines.isEmpty
-                ? "start.sh exited \(result.exitCode)"
-                : result.lastLines)
+            await failStart(Self.reason(for: result, script: "start.sh"))
             return true
         }
 
@@ -508,6 +613,23 @@ final class OpenCodeServerManager: ObservableObject {
         AppLog.important("start: ok bridgePort=\(bridgeHealthPort.map(String.init) ?? "?")")
         settleAfterStart(pid: nil)
         return true
+    }
+
+    /// Hard ceiling on one repo script. start.sh's worst case is a 30s health wait
+    /// plus a 60s gate; stop.sh is two 10s waits. Past this the script is stuck,
+    /// not slow, and the action must still reach a verdict.
+    private static let scriptTimeout: TimeInterval = 180
+
+    /// The one line worth putting in front of the user. The script's own
+    /// `ERROR:` line names the actual cause; the trailing chatter ("proxy pool=
+    /// N entries") is the last thing printed and used to be what the menu showed.
+    private static func reason(for result: ScriptResult, script: String) -> String {
+        if let line = result.errorLine { return line }
+        let tail = result.output.split(separator: "\n").suffix(2)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+        return tail.isEmpty ? "\(script) exited \(result.exitCode)" : tail
     }
 
     private func startViaBridge() async -> Bool {
@@ -529,10 +651,7 @@ final class OpenCodeServerManager: ObservableObject {
         bridge.executableURL = URL(fileURLWithPath: bun)
         bridge.arguments = [bridgeEntry]
         bridge.currentDirectoryURL = URL(fileURLWithPath: subworkerRoot)
-        var env = ProcessInfo.processInfo.environment
-        for key in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"] {
-            env.removeValue(forKey: key)
-        }
+        var env = Self.launchEnvironment()
         let repoEnv = subworkerRoot + "/.env"
         if let token = readToken(from: repoEnv) { env["ELIA_AUTH_TOKEN"] = token }
         bridge.environment = env
@@ -602,8 +721,13 @@ final class OpenCodeServerManager: ObservableObject {
     }
 
     func start() {
-        guard !isBusy else { return }
+        guard !isBusy else {
+            reportOutcome(ok: false, "Busy (\(status.label)) — try again in a moment")
+            return
+        }
 
+        pendingAction = .start
+        didReportOutcome = false
         status = .starting
         actionError = nil
         startElapsed = 0
@@ -614,7 +738,11 @@ final class OpenCodeServerManager: ObservableObject {
             // Ask macOS first: the repo lives in ~/Documents, so the launch fails with
             // exit 126 until the user grants access. A stored grant skips the panel.
             let granted = await self.requestRepoAccess()
-            if granted, await self.startViaBridgeScripts() { return }
+            guard granted else {
+                await self.failStart("Access to \(self.subworkerRoot) was not granted — start.sh cannot be run without it.")
+                return
+            }
+            if await self.startViaBridgeScripts() { return }
             AppLog.important("start: falling back to bare binary at \(Self.repoPath)")
             await self.startStandalone()
         }
@@ -625,9 +753,11 @@ final class OpenCodeServerManager: ObservableObject {
     /// whole product.
     private func startStandalone() async {
         guard let binary = binaryPath else {
-            actionError = "opencode binary not built. Run ./install.sh in \(Self.repoPath)"
+            let message = "opencode binary not built. Run ./install.sh in \(Self.repoPath)"
+            actionError = message
             status = .stopped
             startBeganAt = nil
+            reportOutcome(ok: false, message)
             return
         }
 
@@ -660,6 +790,7 @@ final class OpenCodeServerManager: ObservableObject {
         actionError = nil
         startElapsed = 0
         startBeganAt = nil
+        reportOutcome(ok: true, "Already running on :\(probePort)")
         refresh()
     }
 
@@ -667,6 +798,7 @@ final class OpenCodeServerManager: ObservableObject {
         status = .stopped
         actionError = message
         startBeganAt = nil
+        reportOutcome(ok: false, message)
         refresh()
     }
 
@@ -678,13 +810,8 @@ final class OpenCodeServerManager: ObservableObject {
         // Run from the repo so it finds crates/, docs and its own config.
         process.currentDirectoryURL = URL(fileURLWithPath: Self.repoPath)
 
-        var environment = ProcessInfo.processInfo.environment
-        // A proxy in the environment would break the server's own localhost
-        // calls the same way it broke a git push.
-        for key in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"] {
-            environment.removeValue(forKey: key)
-        }
-        environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+        var environment = Self.launchEnvironment()
+        environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" + ":" + (environment["PATH"] ?? "")
         process.environment = environment
 
         process.standardOutput = FileHandle.nullDevice
@@ -699,6 +826,7 @@ final class OpenCodeServerManager: ObservableObject {
             status = .stopped
             actionError = "Failed to start: \(error.localizedDescription)"
             startBeganAt = nil
+            reportOutcome(ok: false, actionError ?? "Failed to start")
         }
     }
 
@@ -720,6 +848,7 @@ final class OpenCodeServerManager: ObservableObject {
                     self.status = .stopped
                     self.actionError = "Server exited immediately after starting — see ~/Library/Logs/EliaTopBar/debug.log"
                     self.startBeganAt = nil
+                    self.reportOutcome(ok: false, self.actionError ?? "Server exited immediately")
                     self.refresh(settling: true)
                     return
                 }
@@ -729,6 +858,7 @@ final class OpenCodeServerManager: ObservableObject {
                     self.version = probe.version
                     self.actionError = nil
                     self.startBeganAt = nil
+                    self.reportOutcome(ok: true, "Rust server up on :\(self.probePort)")
                     self.refresh(settling: true)
                     await self.ensureTunnelIfConfigured()
                     return
@@ -738,6 +868,7 @@ final class OpenCodeServerManager: ObservableObject {
             self.status = .stopped
             self.actionError = "Server did not answer /health within \(Int(self.settleTimeout))s"
             self.startBeganAt = nil
+            self.reportOutcome(ok: false, self.actionError ?? "Start timed out")
             self.refresh(settling: true)
         }
     }
@@ -855,31 +986,15 @@ final class OpenCodeServerManager: ObservableObject {
     }
 
     func stop() {
-        guard !isBusy else { return }
+        guard !isBusy else {
+            reportOutcome(ok: false, "Busy (\(status.label)) — try again in a moment")
+            return
+        }
+        pendingAction = .stop
+        didReportOutcome = false
 
-        // We spawned the bridge, so we own it and its engine child. Kill the
-        // process group: the bridge is the parent of the engine, and stopping
-        // only the bridge leaves the child holding :4096.
-        if let bridge = managedBridge {
-            status = .stopping
-            actionError = nil
-            let pid = bridge.processIdentifier
-            Task { [weak self] in
-                guard let self else { return }
-                AppLog.important("stop: killing bridge pid=\(pid)")
-                kill(pid, SIGTERM)
-                let deadline = Date().addingTimeInterval(5)
-                while Date() < deadline, kill(pid, 0) == 0 {
-                    try? await Task.sleep(nanoseconds: 300_000_000)
-                }
-                if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
-                self.managedBridge = nil
-                self.managedProcess = nil
-                self.bridgeHealthPort = nil
-                self.status = .stopped
-                self.startBeganAt = nil
-                self.refresh()
-            }
+        if bridgeScriptsExist {
+            Task { await stopViaBridgeScripts() }
             return
         }
 
@@ -892,6 +1007,7 @@ final class OpenCodeServerManager: ObservableObject {
 
         guard !pids.isEmpty else {
             actionError = "No running server to stop"
+            reportOutcome(ok: false, actionError ?? "No running server to stop")
             return
         }
 
@@ -906,9 +1022,83 @@ final class OpenCodeServerManager: ObservableObject {
             }
             self.managedProcess = nil
             self.startBeganAt = nil
+            self.reportOutcome(ok: survivors.isEmpty, survivors.isEmpty
+                ? "Rust server stopped"
+                : "\(survivors.count) process(es) survived SIGTERM and were killed")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 // settling: nothing else will move .stopping to .stopped.
                 self?.refresh(settling: true)
+            }
+        }
+    }
+
+    /// Symmetric with `startViaBridgeScripts`. The pgrep path below only ever
+    /// matched `opencode … serve`, so it killed the Rust engine and left the Bun
+    /// bridge holding :5656 — the menu then read "Stopped" against a live server.
+    /// `stop.sh` owns the pidfile and only kills an engine child whose
+    /// `OPENCODE_PATHS_ROOT` is inside this repo, so it leaves foreign ones alone.
+    private func stopViaBridgeScripts() async {
+        status = .stopping
+        actionError = nil
+        let port = bridgePortFromRepo()
+        AppLog.important("stop: running \(bridgeStopScript)")
+
+        let result = await Self.runShellScript(bridgeStopScript, in: subworkerRoot)
+        AppLog.important("stop: exit=\(result.exitCode) output=[\(result.output)]")
+
+        // stop.sh relies on the repo pidfile, and start.sh writes the pid of the
+        // forked subshell rather than bun's, so the script refuses to kill
+        // ("does not match `bun.*server.ts`") and leaves the bridge on :5656 while
+        // the engine child is gone. Stop has to end with the port free, so verify
+        // it instead of trusting the script's exit code.
+        var stragglers: [pid_t] = []
+        if let port {
+            stragglers = await Self.freeBridgePortOffMain(port)
+        }
+
+        managedProcess = nil
+        bridgeHealthPort = nil
+        startBeganAt = nil
+
+        if result.exitCode == 0, stragglers.isEmpty {
+            reportOutcome(ok: true, "Rust server stopped")
+        } else if !stragglers.isEmpty {
+            let message = ":5656 still held by pid \(stragglers.map(String.init).joined(separator: ", ")) after stop.sh — check the repo pidfile"
+            actionError = message
+            reportOutcome(ok: false, message)
+        } else {
+            actionError = Self.reason(for: result, script: "stop.sh")
+            reportOutcome(ok: false, actionError ?? "Stop failed")
+        }
+        refresh(settling: true)
+    }
+
+    /// Terminates whatever still listens on the bridge port, so Stop ends with the
+    /// port free. Returns the pids it had to kill. Scoped to the port `start.sh`
+    /// was told to bind, never to a process name, so a foreign server cannot be
+    /// reached by this path — only one this app just started on that port.
+    private static func freeBridgePortOffMain(_ port: Int) async -> [pid_t] {
+        await withCheckedContinuation { continuation in
+            scanQueue.async {
+                guard let output = runSync("/usr/sbin/lsof", ["-nP", "-iTCP:\(port)", "-sTCP:LISTEN", "-t"]),
+                      !output.isEmpty else {
+                    continuation.resume(returning: [])
+                    return
+                }
+                let pids = output.split(separator: "\n").compactMap { pid_t($0.trimmingCharacters(in: .whitespaces)) }
+                for pid in pids where pid != ProcessInfo.processInfo.processIdentifier {
+                    kill(pid, SIGTERM)
+                }
+                let deadline = Date().addingTimeInterval(5)
+                while Date() < deadline {
+                    let alive = pids.filter { $0 != ProcessInfo.processInfo.processIdentifier && kill($0, 0) == 0 }
+                    if alive.isEmpty { break }
+                    Thread.sleep(forTimeInterval: 0.2)
+                }
+                for pid in pids where pid != ProcessInfo.processInfo.processIdentifier && kill(pid, 0) == 0 {
+                    kill(pid, SIGKILL)
+                }
+                continuation.resume(returning: pids)
             }
         }
     }

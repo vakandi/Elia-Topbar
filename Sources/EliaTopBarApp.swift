@@ -29,12 +29,39 @@ final class SubworkerHoverHandler: NSObject {
     }
 }
 
-private struct CleanupLoadingView: View {
+/// Menu-bar toast. One shape for every long action: a spinner while it runs,
+/// then an emoji verdict with the reason. `elapsedFrom` is set only while the
+/// action is running, so the counter ticks as proof of progress rather than
+/// freezing on a panel that looks hung.
+private struct TopbarToastView: View {
+    let emoji: String
+    let message: String
+    var spinning: Bool = false
+    var elapsedFrom: Date?
+
+    private var elapsedText: String {
+        guard let elapsedFrom else { return "" }
+        let s = max(0, Int(Date().timeIntervalSince(elapsedFrom)))
+        return String(format: " %ds", s)
+    }
+
     var body: some View {
-        HStack(spacing:8){
-            ProgressView().controlSize(.small)
-            Text("Cleaning RAM + Idle Cleaner…").font(.system(size:11, weight:.medium)).foregroundColor(.secondary)
-        }.padding(.horizontal,14).padding(.vertical,10).background(RoundedRectangle(cornerRadius:10).fill(.regularMaterial)).overlay(RoundedRectangle(cornerRadius:10).stroke(Color.primary.opacity(0.12))).shadow(color:.black.opacity(0.15), radius:8, x:0, y:2)
+        HStack(spacing: 8) {
+            if spinning {
+                ProgressView().controlSize(.small)
+            } else {
+                Text(emoji).font(.system(size: 13))
+            }
+            Text(message + elapsedText)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(RoundedRectangle(cornerRadius: 10).fill(.regularMaterial))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.12)))
+        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
     }
 }
 
@@ -83,7 +110,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isMenuOpen = false
     private weak var openModelMenu: NSMenu?
     private var openModelAgent: String?
-    private var cleanupLoadingPanel: NSPanel?
+    private var topbarToastPanel: NSPanel?
+    private var toastHideWorkItem: DispatchWorkItem?
     // MARK: - Overflow → notch island (LEFT of camera)
     private var isOverflowed = false
     private var overflowOcclusionObserver: NSObjectProtocol?
@@ -199,6 +227,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         colimaManager = ColimaManager()
         opencodeServerManager = OpenCodeServerManager()
+        opencodeServerManager.onOutcome = { [weak self] outcome in
+            // The spinner has to become an emoji the moment the action settles,
+            // otherwise the panel sits on "Starting…" long after the server is up.
+            guard let self else { return }
+            let verb = outcome.action == .start ? "started" : "stopped"
+            self.showTopbarToast(
+                emoji: outcome.ok ? "✅" : "❌",
+                message: outcome.ok ? "Rust Server \(verb) — \(outcome.message)" : outcome.message,
+                spinning: false,
+                // A failure stays up long enough to read the reason; a success
+                // only needs to confirm.
+                autoHideAfter: outcome.ok ? 2.5 : 6.0
+            )
+        }
         subworkerManager = SubworkerManager()
         // Touch the bridge singleton at launch. Its health poll starts in init(),
         // and until something referenced it the timer never ran, so the server
@@ -2146,7 +2188,7 @@ if let popover = subworkerLogPopover {
         let original = sender.attributedTitle
         sender.attributedTitle = emojiAwareTitle("🧹 Cleaning…", color: .secondaryLabelColor)
         AppLog.d("Manual RAM cleanup triggered")
-        showCleanupLoadingPanel()
+        showTopbarToast(emoji: "🧹", message: "Cleaning RAM + Idle Cleaner…", spinning: true)
 
         // The Rust server does not go through the Docker control plane, so there
         // is no /server/cleanup to call for it — clean natively instead.
@@ -2155,7 +2197,7 @@ if let popover = subworkerLogPopover {
                 guard let self else { return }
                 sender.isEnabled = true
                 sender.attributedTitle = original
-                self.hideCleanupLoadingPanel()
+                self.hideTopbarToast()
                 switch result {
                 case .success(let summary):
                     self.showCleanupAlert(title: "Cleanup done", message: summary)
@@ -2171,7 +2213,7 @@ if let popover = subworkerLogPopover {
             defer {
                 sender.isEnabled = true
                 sender.attributedTitle = original
-                self?.hideCleanupLoadingPanel()
+                self?.hideTopbarToast()
             }
             guard let self else { return }
             guard let url = URL(string: "\(self.subworkerManager.currentBaseURL)/server/cleanup") else { return }
@@ -2260,26 +2302,64 @@ if let popover = subworkerLogPopover {
         alert.runModal()
     }
 
-    private func showCleanupLoadingPanel() {
-        if cleanupLoadingPanel != nil { return }
+    private func showTopbarToast(emoji: String, message: String, spinning: Bool, autoHideAfter: TimeInterval? = nil) {
         guard let screen = NSScreen.main else { return }
-        let width: CGFloat = 260, height: CGFloat = 44
-        let x = menuBarAnchorX() - width/2
+        toastHideWorkItem?.cancel()
+
+        // Reuse the existing panel when one is up: swapping contentView mid-flight
+        // keeps the fade and avoids stacking a second toast on the first.
+        let width: CGFloat = 320
+        let x = menuBarAnchorX() - width / 2
+        let clampedX = max(screen.frame.minX + 8, min(x, screen.frame.maxX - width - 8))
+        let panel: NSPanel
+        if let existing = topbarToastPanel {
+            panel = existing
+        } else {
+            let y = screen.frame.maxY - NSStatusBar.system.thickness - 52 - 8
+            panel = NSPanel(contentRect: NSRect(x: clampedX, y: y, width: width, height: 44),
+                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            panel.level = .statusBar
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = true
+            panel.isMovableByWindowBackground = false
+            panel.alphaValue = 0
+            topbarToastPanel = panel
+        }
+
+        let hosting = NSHostingView(rootView: TopbarToastView(
+            emoji: emoji, message: message, spinning: spinning, elapsedFrom: spinning ? Date() : nil
+        ))
+        panel.contentView = hosting
+        // The verdict can be a long reason, so the height follows the text instead
+        // of clipping it into a 44pt strip.
+        let height = max(44, hosting.fittingSize.height + 8)
         let y = screen.frame.maxY - NSStatusBar.system.thickness - height - 8
-        let frame = NSRect(x: max(screen.frame.minX+8, min(x, screen.frame.maxX-width-8)), y: y, width: width, height: height)
-        let p = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        p.level = .statusBar; p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-        p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = true; p.isMovableByWindowBackground = false
-        p.contentView = NSHostingView(rootView: CleanupLoadingView())
-        p.orderFrontRegardless()
-        p.alphaValue = 0
-        NSAnimationContext.runAnimationGroup({ ctx in ctx.duration=0.22; ctx.timingFunction=CAMediaTimingFunction(name:.easeInEaseOut); p.animator().alphaValue=1 })
-        cleanupLoadingPanel = p
+        panel.setFrame(NSRect(x: clampedX, y: y, width: width, height: height), display: true)
+
+        panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.22
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().alphaValue = 1
+        })
+
+        if let autoHideAfter {
+            let item = DispatchWorkItem { [weak self] in self?.hideTopbarToast() }
+            toastHideWorkItem = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + autoHideAfter, execute: item)
+        }
     }
 
-    private func hideCleanupLoadingPanel() {
-        guard let p = cleanupLoadingPanel else { return }
-        NSAnimationContext.runAnimationGroup({ ctx in ctx.duration=0.18; p.animator().alphaValue=0 }, completionHandler: { p.orderOut(nil); self.cleanupLoadingPanel=nil })
+    private func hideTopbarToast() {
+        toastHideWorkItem?.cancel()
+        toastHideWorkItem = nil
+        guard let p = topbarToastPanel else { return }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.18
+            p.animator().alphaValue = 0
+        }, completionHandler: { p.orderOut(nil); self.topbarToastPanel = nil })
     }
 
     @objc private func setProfilePhoto(_ sender: NSMenuItem) {
@@ -2903,10 +2983,12 @@ if let popover = subworkerLogPopover {
     }
 
     @objc private func startOpenCodeServer(_ sender: NSMenuItem) {
+        showTopbarToast(emoji: "🦀", message: "Starting Rust Server…", spinning: true)
         opencodeServerManager.start()
     }
 
     @objc private func stopOpenCodeServer(_ sender: NSMenuItem) {
+        showTopbarToast(emoji: "🦀", message: "Stopping Rust Server…", spinning: true)
         opencodeServerManager.stop()
     }
 
