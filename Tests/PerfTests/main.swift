@@ -142,6 +142,83 @@ _ = countRunLoopTimers
 // The NSPanel disposal bisect (see docs/PERFORMANCE-RESULTS.md) needs a real
 // AppKit host and is driven through the app instead: ELIATOPBAR_SELFTEST_BURST.
 
+// --- SessionSelection: a live event must never steal the user's pick ---
+do {
+    var sel = SessionSelection()
+    sel.select("old-session")
+    for _ in 0..<50 { sel.observeLive("new-session") }
+    check("a live event never overwrites the chosen session",
+          sel.viewing == "old-session" && sel.live == "new-session",
+          "viewing=\(sel.viewing ?? "nil") live=\(sel.live ?? "nil")")
+    check("viewing an old session stops rendering the live one",
+          sel.isViewingLive == false && sel.renders("new-session") == false && sel.renders("old-session") == true)
+
+    var free = SessionSelection()
+    check("nothing picked means follow the live run",
+          free.isViewingLive && free.renders("anything"))
+    free.observeLive("run-1")
+    check("still following after the first delta", free.isViewingLive && free.renders("run-1"))
+    free.clear()
+    free.observeLive("run-2")
+    check("clearing returns to live", free.isViewingLive && free.viewing == nil)
+}
+
+// --- ProviderGrouping: opencode pinned, providers separated ---
+do {
+    let rows = [
+        ModelRow(id: "opencode/big-pickle", name: "Big Pickle", provider: "opencode"),
+        ModelRow(id: "anthropic/claude", name: "Claude", provider: "anthropic"),
+        ModelRow(id: "opencode/muse", name: "Muse", provider: "opencode"),
+        ModelRow(id: "openai/gpt", name: "GPT", provider: "openai"),
+    ]
+    let grouped = ProviderGrouping.ordered(rows)
+    check("opencode group is first",
+          grouped.first?.provider == "opencode", "got \(grouped.first?.provider ?? "nil")")
+    check("remaining providers are alphabetical",
+          grouped.map(\.provider) == ["opencode", "anthropic", "openai"],
+          "got \(grouped.map(\.provider))")
+    check("rows keep their order inside a group",
+          grouped[0].rows.map(\.id) == ["opencode/big-pickle", "opencode/muse"])
+    check("no rows means no groups", ProviderGrouping.ordered([]).isEmpty)
+
+    let noPinned = [ModelRow(id: "a", name: "A", provider: "anthropic"),
+                    ModelRow(id: "b", name: "B", provider: "openai")]
+    let g2 = ProviderGrouping.ordered(noPinned)
+    check("no opencode row invents no opencode group",
+          g2.map(\.provider) == ["anthropic", "openai"], "got \(g2.map(\.provider))")
+}
+
+func testSessionSelectionSeparatesLiveFromViewing() {
+    var sel = SessionSelection()
+    sel.observeLive("ses_live")
+    check("nothing picked means viewing live", sel.isViewingLive)
+
+    sel.select("ses_old")
+    check("picking an old session leaves live alone", sel.live == "ses_live")
+    check("picking an old session is not viewing live", !sel.isViewingLive)
+    check("old session renders", sel.renders("ses_old"))
+    check("live session does not render over it", !sel.renders("ses_live"))
+
+    // A new run starting must not steal the panel back from the user's pick.
+    sel.observeLive("ses_new")
+    check("a new live run still does not override the pick", sel.viewing == "ses_old")
+    check("and still refuses to render", !sel.renders("ses_new"))
+
+    sel.clear()
+    check("clearing returns to live", sel.isViewingLive)
+    check("live renders again", sel.renders("ses_new"))
+
+    var pinned = SessionSelection()
+    pinned.observeLive("ses_live")
+    pinned.select("ses_live")
+    check("picking the live session is still viewing live", pinned.isViewingLive)
+
+    var unknownCursor = SessionSelection(live: "ses_live", viewing: "ses_gone")
+    check("renders() defaults to showing when nothing is picked", unknownCursor.renders("ses_live") == false)
+}
+
+testSessionSelectionSeparatesLiveFromViewing()
+
 print("")
 print("\(passes) passed, \(failures) failed")
 exit(failures == 0 ? 0 : 1)

@@ -407,7 +407,11 @@ final class SubworkerManager: ObservableObject {
                let delta = json["text"] as? String {
                 lastActivity[name] = Date()
                 let field = json["field"] as? String ?? "text"
-                Task { @MainActor in LivestreamStore.shared.appendDelta(agent: name, field: field, delta: delta) }
+                let sid = json["session_id"] as? String
+                Task { @MainActor in
+                    if let sid { LivestreamStore.shared.observeLive(agent: name, sessionId: sid) }
+                    LivestreamStore.shared.appendDelta(agent: name, field: field, delta: delta)
+                }
                 NotificationCenter.default.post(
                     name: SubworkerManager.runLogNotification,
                     object: nil,

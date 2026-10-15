@@ -1,22 +1,69 @@
 import Foundation
 import Combine
 import SwiftUI
+import EliaTopBarKit
 
 @MainActor final class LivestreamStore: ObservableObject {
     static let shared = LivestreamStore()
 
+    /// Not `@Published` on purpose: publishing per delta repainted every open panel for
+    /// every agent's traffic (97% CPU with nine running). Views hold their own
+    /// `AgentFeed`; the throttle window is what turns a delta into a repaint.
     struct AgentStream {
         var entries: [LivestreamEntry] = []
         var version: UInt64 = 0
         var cappedAt: Int = 0
     }
 
-    @Published private(set) var streams: [String: AgentStream] = [:]
-    @Published private(set) var todos: [String: [LivestreamTodoItem]] = [:]
+    private(set) var streams: [String: AgentStream] = [:]
+    private(set) var todos: [String: [LivestreamTodoItem]] = [:]
     /// Latest session this agent's todos/stream were synced from. Used to drop
     /// stale per-session state (e.g. previous run's todo list) when a new run
     /// with a different sessionId arrives.
     private(set) var sessionForAgent: [String: String] = [:]
+
+    /// Which session each agent surface is showing, and the transcript of a session
+    /// the user picked from the history list. Kept apart from `streams` so a live
+    /// delta can never land on top of the session someone scrolled back to read.
+    private(set) var selections: [String: SessionSelection] = [:]
+    private var viewedEntries: [String: [LivestreamEntry]] = [:]
+    private var viewedVersion: [String: UInt64] = [:]
+
+    func sessionSelection(for agent: String) -> SessionSelection { selections[agent] ?? SessionSelection() }
+
+    /// Entries the surface for `agent` should draw: the picked session when there is
+    /// one, otherwise the live stream.
+    func visibleEntries(for agent: String) -> (entries: [LivestreamEntry], version: UInt64) {
+        let sel = sessionSelection(for: agent)
+        if let viewing = sel.viewing, viewing != sel.live {
+            return (viewedEntries[agent] ?? [], viewedVersion[agent] ?? 0)
+        }
+        return (streams[agent]?.entries ?? [], streams[agent]?.version ?? 0)
+    }
+
+    /// Called only from a history-list tap. Live events go through `observeLive`.
+    func selectSession(agent: String, sessionId: String?) {
+        var sel = selections[agent] ?? SessionSelection()
+        if let sessionId { sel.select(sessionId) } else { sel.clear() }
+        selections[agent] = sel
+        if sessionId != nil { viewedVersion[agent] = (viewedVersion[agent] ?? 0) &+ 1 }
+        throttled.send(agent)
+    }
+
+    /// Called from a live event. Never changes what the user picked.
+    func observeLive(agent: String, sessionId: String) {
+        var sel = selections[agent] ?? SessionSelection()
+        guard sel.live != sessionId else { return }
+        sel.observeLive(sessionId)
+        selections[agent] = sel
+        throttled.send(agent)
+    }
+
+    func setViewedEntries(agent: String, _ entries: [LivestreamEntry]) {
+        viewedEntries[agent] = entries
+        viewedVersion[agent] = (viewedVersion[agent] ?? 0) &+ 1
+        throttled.send(agent)
+    }
 
     struct SubagentKey: Hashable {
         let parentAgent: String
@@ -30,8 +77,8 @@ import SwiftUI
             self.parentAgent = parentAgent; self.sessionId = sessionId; self.description = description; self.agent = agent; self.kind = kind; self.teamRunId = teamRunId
         }
     }
-    @Published private(set) var subagentStreams: [SubagentKey: AgentStream] = [:]
-    @Published private(set) var subagentTodos: [SubagentKey: [LivestreamTodoItem]] = [:]
+    private(set) var subagentStreams: [SubagentKey: AgentStream] = [:]
+    private(set) var subagentTodos: [SubagentKey: [LivestreamTodoItem]] = [:]
     let subagentThrottled = PassthroughSubject<SubagentKey, Never>()
     private var subagentThrottleWork: [SubagentKey: DispatchWorkItem] = [:]
 
@@ -146,19 +193,24 @@ import SwiftUI
             sessionForAgent[agent] = sessionId
             todos[agent] = nil
         }
-        if rawMessages.isEmpty { return }
+        if rawMessages.isEmpty { throttle(agent); return }
         if streams[agent] == nil { streams[agent] = AgentStream() }
         var historyEntries: [LivestreamEntry] = []
         var latestTodos: [LivestreamTodoItem]? = nil
         for raw in rawMessages {
             guard let parts = raw["parts"] as? [[String: Any]] else { continue }
-            for part in parts {
+            let mid = (raw["info"] as? [String: Any])?["id"] as? String ?? UUID().uuidString
+            for (pi, part) in parts.enumerated() {
                 guard let type = part["type"] as? String else { continue }
+                // Row identity has to survive a re-fetch of the same message. A fresh
+                // UUID per load makes SwiftUI rebuild the whole list on every poll, which
+                // is what threw the scroll position away when paging older messages.
+                let rid = "\(mid)#\(pi)"
                 switch type {
                 case "text":
-                    if let t = part["text"] as? String, !t.isEmpty { historyEntries.append(.text(id: UUID().uuidString, text: t)) }
+                    if let t = part["text"] as? String, !t.isEmpty { historyEntries.append(.text(id: rid, text: t)) }
                 case "reasoning":
-                    if let t = part["text"] as? String, !t.isEmpty { historyEntries.append(.reasoning(id: UUID().uuidString, text: t)) }
+                    if let t = part["text"] as? String, !t.isEmpty { historyEntries.append(.reasoning(id: rid, text: t)) }
                 case "tool":
                     let toolName = part["tool"] as? String ?? "tool"
                     let inputStr: String? = {
@@ -174,7 +226,7 @@ import SwiftUI
                         if let a = part["output"] as? [Any], let jd = try? JSONSerialization.data(withJSONObject: a), let s = String(data: jd, encoding: .utf8) { return s }
                         return nil
                     }()
-                    historyEntries.append(.tool(id: UUID().uuidString, name: toolName, input: inputStr, output: outputStr))
+                    historyEntries.append(.tool(id: rid, name: toolName, input: inputStr, output: outputStr))
                     if toolName.lowercased().contains("todo") {
                         if let todos = LivestreamParsing.extractTodos(input: inputStr, output: outputStr, delta: inputStr ?? ""), !todos.isEmpty { latestTodos = todos }
                     }
@@ -202,7 +254,17 @@ import SwiftUI
         } else if latestTodos == nil && todos[agent] == nil {
             todos[agent] = []
         }
-        if historyEntries.isEmpty { return }
+        if historyEntries.isEmpty { throttle(agent); return }
+
+        // A transcript for a session the user picked from the history list replaces the
+        // view outright. Merging it into the live bucket is what made opening an old
+        // session snap back to the running one: the next delta re-rendered the live
+        // entries over the top of what was just loaded.
+        let sel = sessionSelection(for: agent)
+        if let viewing = sel.viewing, viewing == sessionId, viewing != sel.live {
+            setViewedEntries(agent: agent, historyEntries)
+            return
+        }
 
         var current = streams[agent]!.entries
         if current.isEmpty {
@@ -406,7 +468,6 @@ func mergeSubagentHistory(key: SubagentKey, rawMessages: [[String: Any]]) {
             subagentStreams[key]!.entries = history.count > 60 ? Array(history.suffix(60)) : history
             subagentStreams[key]!.version += 1
             subagentThrottled.send(key)
-            objectWillChange.send()
             return
         }
         let fps = Set(cur.map { entryFingerprint($0) })
@@ -416,7 +477,6 @@ func mergeSubagentHistory(key: SubagentKey, rawMessages: [[String: Any]]) {
         let merged = toInsert + cur
         subagentStreams[key]!.entries = merged.count > 100 ? Array(merged.suffix(100)) : merged
         subagentStreams[key]!.version += 1
-        objectWillChange.send()
         subagentThrottled.send(key)
     }
 
@@ -425,6 +485,67 @@ func mergeSubagentHistory(key: SubagentKey, rawMessages: [[String: Any]]) {
         let work = DispatchWorkItem { self.throttled.send(agent) }
         throttleWork[agent] = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
-        objectWillChange.send()
     }
+
+/// Per-agent render trigger. A panel observes only its own feed, so one agent's
+/// traffic repaints one panel instead of every panel that happens to be open.
+@MainActor final class AgentFeed: ObservableObject {
+    let agent: String
+    private var bag: AnyCancellable?
+    @Published private(set) var entries: [LivestreamEntry] = []
+    @Published private(set) var todos: [LivestreamTodoItem] = []
+    @Published private(set) var subagentTick: UInt64 = 0
+    private var subagentVersions: [LivestreamStore.SubagentKey: UInt64] = [:]
+    private var subBag: AnyCancellable?
+    private var lastVersion: UInt64 = .max
+
+    init(agent: String) {
+        self.agent = agent
+        bag = LivestreamStore.shared.throttled
+            .filter { $0 == agent }
+            .sink { [weak self] _ in self?.reload() }
+        subBag = LivestreamStore.shared.subagentThrottled
+            .filter { $0.parentAgent == agent }
+            .sink { [weak self] key in
+                guard let self else { return }
+                self.subagentVersions[key] = LivestreamStore.shared.subagentStreams[key]?.version ?? 0
+                self.subagentTick &+= 1
+            }
+    }
+
+    func reload() {
+        let store = LivestreamStore.shared
+        let (current, version) = store.visibleEntries(for: agent)
+        if version != lastVersion || current.count != entries.count {
+            lastVersion = version
+            entries = current
+        }
+        todos = store.todos[agent] ?? []
+    }
+}
+
+@MainActor final class SubagentFeed: ObservableObject {
+    let key: LivestreamStore.SubagentKey
+    private var bag: AnyCancellable?
+    @Published private(set) var entries: [LivestreamEntry] = []
+    @Published private(set) var todos: [LivestreamTodoItem] = []
+    private var lastVersion: UInt64 = .max
+
+    init(key: LivestreamStore.SubagentKey) {
+        self.key = key
+        bag = LivestreamStore.shared.subagentThrottled
+            .filter { $0 == key }
+            .sink { [weak self] _ in self?.reload() }
+    }
+
+    func reload() {
+        let store = LivestreamStore.shared
+        let version = store.subagentStreams[key]?.version ?? 0
+        if version != lastVersion {
+            lastVersion = version
+            entries = store.subagentStreams[key]?.entries ?? []
+        }
+        todos = store.subagentTodos[key] ?? []
+    }
+}
 }

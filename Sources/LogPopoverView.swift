@@ -140,10 +140,19 @@ struct LogPopoverView: View {
     @State private var liveMessagesPollTimer: Timer?
     @State private var liveTickTimer: Timer?
     @State private var messageFetchLimit = 20
+    /// Oldest `info.id` currently on screen. `loadMoreMessages` walks backwards from
+    /// here instead of re-requesting a longer tail, which is what used to re-download
+    /// the whole transcript and throw the scroll position away on every scroll-up.
+    @State private var oldestLoadedMessageId: String?
     @State private var hasMoreMessages = true
     @State private var isLoadingMoreMessages = false
     @State private var continuingIds: Set<String> = []
-    @ObservedObject private var livestream = LivestreamStore.shared
+    @ObservedObject private var feed: LivestreamStore.AgentFeed
+    @MainActor init(subworkerName: String, baseURL: String) {
+        self.subworkerName = subworkerName
+        self.baseURL = baseURL
+        _feed = ObservedObject(wrappedValue: LivestreamStore.AgentFeed(agent: subworkerName))
+    }
 
     private var displayItems: [DisplayItem] {
         var items: [DisplayItem] = messages.map { .message($0) }
@@ -214,11 +223,12 @@ struct LogPopoverView: View {
             stopLiveTick()
             stopAllSubagentPolling()
         }
-        .onReceive(livestream.$todos) { map in
-            let todos = map[subworkerName] ?? []
-            verticalTodos = todos.map { TodoItem(content: $0.content, status: $0.status, priority: $0.priority) }
+        .onReceive(LivestreamStore.shared.throttled) { agent in
+            if agent == subworkerName {
+                verticalTodos = feed.todos.map { TodoItem(content: $0.content, status: $0.status, priority: $0.priority) }
+            }
         }
-        .onReceive(livestream.subagentThrottled) { key in
+        .onReceive(LivestreamStore.shared.subagentThrottled) { key in
             if key.parentAgent == subworkerName { refreshSubagentsFromLive() }
         }
     }
@@ -330,8 +340,10 @@ struct LogPopoverView: View {
             messagesError = nil
             verticalTodos = []
             messageFetchLimit = 20
+            oldestLoadedMessageId = nil
             hasMoreMessages = true
             isLoadingMoreMessages = false
+            LivestreamStore.shared.selectSession(agent: subworkerName, sessionId: session.id)
             resetLiveBuffer(for: subworkerName)
             subagentKeys = []
             expandedSubagent = nil
@@ -830,7 +842,7 @@ struct LogPopoverView: View {
     }
 
     private func isSubagentComplete(_ k: LivestreamStore.SubagentKey) -> Bool {
-        for e in livestream.stream(for: subworkerName) {
+        for e in feed.entries {
             if case .tool(_, let name, _, let output) = e, name.lowercased() == "background_output",
                let o = output, o.contains("Task Result"), o.contains(k.sessionId) { return true }
         }
@@ -840,7 +852,7 @@ struct LogPopoverView: View {
     private func updateSubagents(from rawMessages: [[String: Any]]) {
         let keys = LivestreamStore.shared.extractSubagents(parentAgent: subworkerName, rawMessages: rawMessages)
         var liveRaw: [[String: Any]] = []
-        for e in livestream.stream(for: subworkerName) {
+        for e in feed.entries {
             if case .tool(_, let name, let input, let output) = e, ["call_omo_agent", "task", "subtask", "hub", "team_create"].contains(name.lowercased()) {
                 var part: [String: Any] = ["type": "tool", "tool": name]
                 if let i = input { part["input"] = i }
@@ -870,7 +882,7 @@ struct LogPopoverView: View {
 
     private func refreshSubagentsFromLive() {
         var liveRaw: [[String: Any]] = []
-        for e in livestream.stream(for: subworkerName) {
+        for e in feed.entries {
             if case .tool(_, let name, let input, let output) = e, ["call_omo_agent", "task", "subtask", "hub", "team_create"].contains(name.lowercased()) {
                 var part: [String: Any] = ["type": "tool", "tool": name]
                 if let i = input { part["input"] = i }
@@ -968,7 +980,7 @@ struct LogPopoverView: View {
 
     @ViewBuilder
     private var liveStreamPanel: some View {
-        let entries = livestream.stream(for: subworkerName)
+        let entries = feed.entries
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("LIVE")
@@ -1637,15 +1649,15 @@ struct LogPopoverView: View {
     @State private var runLogObserver: NSObjectProtocol?
 
     private func hasLiveContent(for name: String) -> Bool {
-        !livestream.stream(for: name).isEmpty
+        !feed.entries.isEmpty
     }
 
     private func liveCoalescedText(for name: String) -> String {
-        livestream.stream(for: name).compactMap { if case .text(_, let t) = $0 { return t } else if case .reasoning(_, let t) = $0 { return t } else { return nil } }.joined()
+        feed.entries.compactMap { if case .text(_, let t) = $0 { return t } else if case .reasoning(_, let t) = $0 { return t } else { return nil } }.joined()
     }
 
     private func liveCoalescedReasoning(for name: String) -> String {
-        livestream.stream(for: name).compactMap { if case .reasoning(_, let t) = $0 { return t } else { return nil } }.joined()
+        feed.entries.compactMap { if case .reasoning(_, let t) = $0 { return t } else { return nil } }.joined()
     }
 
     private func appendLiveDelta(for name: String, field: String, delta: String) {
@@ -1811,11 +1823,25 @@ struct LogPopoverView: View {
 
     // MARK: - Fetch Messages
 
-    private func fetchMessages(sessionId: String, showSpinner: Bool = true) {
-        guard let url = URL(string: "\(baseURL)/sessions/\(subworkerName)?session_id=\(sessionId)&limit=\(messageFetchLimit)") else { return }
+    private func fetchMessages(sessionId: String, showSpinner: Bool = true, before: String? = nil, prepend: Bool = false) {
+        var comps = URLComponents(string: "\(baseURL)/sessions/\(subworkerName)")
+        comps?.queryItems = [
+            URLQueryItem(name: "session_id", value: sessionId),
+            URLQueryItem(name: "limit", value: String(messageFetchLimit)),
+        ]
+        if let before { comps?.queryItems?.append(URLQueryItem(name: "before", value: before)) }
+        guard let url = comps?.url else { return }
         if showSpinner { messagesLoading = true }
 
         URLSession.shared.dataTask(with: EliaAuth.authorize(url)) { data, _, _ in
+            // Parsed off the main actor: a 200-message page is milliseconds of work and
+            // doing it inside DispatchQueue.main stalled every poll on the UI thread.
+            let page: (messages: [[String: Any]], hasMore: Bool, nextBefore: String?)? = {
+                guard let data,
+                      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let msgs = obj["messages"] as? [[String: Any]] else { return nil }
+                return (msgs, obj["has_more"] as? Bool ?? false, obj["next_before"] as? String)
+            }()
             DispatchQueue.main.async {
                 defer { messagesLoading = false; isLoadingMoreMessages = false }
                 // The user may have already navigated to a different session
@@ -1826,12 +1852,12 @@ struct LogPopoverView: View {
                 // requests happened to finish last used to win unconditionally.
                 guard sessionId == self.selectedSessionId else { return }
 
-                guard let data = data,
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let rawMessages = json["messages"] as? [[String: Any]] else {
+                guard let page, let data else {
                     if messages.isEmpty { messagesError = "Could not load messages" }
                     return
                 }
+                let rawMessages = page.messages
+                if prepend { hasMoreMessages = page.hasMore }
 
                 // Identical payload → keep current views untouched (5s polling).
                 // Keyed per-session: two different sessions can legitimately
@@ -1862,7 +1888,7 @@ struct LogPopoverView: View {
                         derivedBanners.append(RunBanner(id: "\(sessionId)-banner-\(idx)", type: "reinjection", attempt: 0, maxAttempts: 3, delaySeconds: 0, error: errFromPrev, timestamp: ts, sessionId: sessionId))
                         continue
                     }
-                    if let entry = parseMessage(raw, id: "\(sessionId)-\(idx)") {
+                    if let entry = parseMessage(raw, id: (raw["info"] as? [String: Any])?["id"] as? String ?? "\(sessionId)-\(idx)") {
                         filtered.append(entry)
                     }
                 }
@@ -1871,10 +1897,20 @@ struct LogPopoverView: View {
                     isLoadingMoreMessages = false
                     return
                 }
-                self.livestream.mergeHistory(agent: self.subworkerName, sessionId: sessionId, rawMessages: rawMessages)
+                LivestreamStore.shared.mergeHistory(agent: self.subworkerName, sessionId: sessionId, rawMessages: rawMessages)
                 updateSubagents(from: rawMessages)
                 let allParsed = filtered
-                messages = allParsed.count > maxMessages ? Array(allParsed.suffix(maxMessages)) : allParsed
+                if prepend {
+                    let seen = Set(messages.map { $0.id })
+                    let merged = allParsed.filter { !seen.contains($0.id) } + messages
+                    // Same ceiling as the tail path, keeping the newest rows: without
+                    // it, scrolling up through a long session grows the array forever.
+                    messages = merged.count > maxMessages ? Array(merged.suffix(maxMessages)) : merged
+                } else {
+                    messages = allParsed.count > maxMessages ? Array(allParsed.suffix(maxMessages)) : allParsed
+                    oldestLoadedMessageId = page.nextBefore
+                    hasMoreMessages = page.hasMore
+                }
                 var merged = derivedBanners
                 let liveForSession = self.banners.filter { $0.sessionId == sessionId || $0.sessionId == nil }
                 for b in liveForSession where !merged.contains(where: { $0.id == b.id }) {
@@ -1913,8 +1949,6 @@ struct LogPopoverView: View {
                     if latestTodos != nil { break }
                 }
                 if let t = latestTodos, !t.isEmpty { verticalTodos = t }
-                hasMoreMessages = rawMessages.count >= messageFetchLimit
-                isLoadingMoreMessages = false
 
                 // Only explicit loads (session switch / initial fetch, i.e.
                 // showSpinner) re-pin and jump to the bottom. Silent background
@@ -1927,9 +1961,12 @@ struct LogPopoverView: View {
 
     private func loadMoreMessages() {
         guard !isLoadingMoreMessages, hasMoreMessages, let sid = selectedSessionId else { return }
+        // Older rows are appended above the cursor rather than by re-requesting a
+        // longer tail: the old path re-downloaded every message already on screen and
+        // rebuilt the whole list, which is what lost the scroll position.
+        guard let cursor = oldestLoadedMessageId else { return }
         isLoadingMoreMessages = true
-        messageFetchLimit += 20
-        fetchMessages(sessionId: sid, showSpinner: false)
+        fetchMessages(sessionId: sid, showSpinner: false, before: cursor, prepend: true)
     }
 
     private func parseMessage(_ raw: [String: Any], id: String) -> SessionLogEntry? {

@@ -240,6 +240,7 @@ struct RunPopupView: View {
     @State private var liveRunning = true
     @State private var liveTick = 0
     @State private var sessions: [RunSessionInfo] = []
+    @State private var selectedRunSession: String?
     @State private var sessionsLoading = false
     @State private var showSessions = false
     @State private var isLockedCached: Bool = false
@@ -250,7 +251,15 @@ struct RunPopupView: View {
     @State private var pendingPinnedFalse: DispatchWorkItem? = nil
     private static let bubbleBottomId = "run-bubble-bottom"
     private static let bubbleScrollSpace = "run-bubble-scroll"
-    @ObservedObject private var livestream = LivestreamStore.shared
+    @ObservedObject private var feed: LivestreamStore.AgentFeed
+    @MainActor init(agentName: String, onTap: @escaping () -> Void, baseURL: String, showSessionSelector: Bool, disableAutoClose: Bool) {
+        self.agentName = agentName
+        self.onTap = onTap
+        self.baseURL = baseURL
+        self.showSessionSelector = showSessionSelector
+        self.disableAutoClose = disableAutoClose
+        _feed = ObservedObject(wrappedValue: LivestreamStore.AgentFeed(agent: agentName))
+    }
     @State private var agentRunning: Bool? = nil
     @State private var agentLastError: String? = nil
     @State private var agentEnabled: Bool? = nil
@@ -362,8 +371,8 @@ struct RunPopupView: View {
         .onAppear{ showStickerPinned=false; isHoveringLive=false; historyReady=false; verticalTodos=[]; subagentKeys=[]; expandedSubagent=nil; isLockedCached=RunPopupController.shared.isLocked(for: agentName); draggableEnabledState=UserDefaults.standard.bool(forKey:"dropDraggableEnabled"); observeDraggable(); observeTraffic(); fetchAgentStatus(); fetchRunHistory(); observeLogs(); startTick(); startStatusRefresh() }.onDisappear{ if let o=observer{NotificationCenter.default.removeObserver(o)}; if let d=draggableObserver{NotificationCenter.default.removeObserver(d)}; if let t=trafficObserver{NotificationCenter.default.removeObserver(t)}; releaseTimers() }.onHover{ h in RunPopupController.shared.setHover(h, for:agentName) }
         .onChange(of: showStickerPinned){ _ in updatePanelForSubagents() }
         .onChange(of: isHoveringLive){ _ in updatePanelForSubagents() }
-        .onReceive(livestream.throttled){ agent in if agent==agentName { refreshSubagentsFromLive() } }
-        .onReceive(livestream.subagentThrottled){ key in if key.parentAgent==agentName { /* subagent updated, no action needed, view auto-refreshes */ } }
+        .onReceive(LivestreamStore.shared.throttled){ agent in if agent==agentName { refreshSubagentsFromLive(); feed.reload() } }
+        .onReceive(LivestreamStore.shared.subagentThrottled){ key in if key.parentAgent==agentName { feed.reload() } }
         .onDisappear{ doneCloseTimer?.invalidate(); doneCloseTimer = nil }
     }
     private func bubbleAttachedConfigured(hasLeft: Bool, hasRight: Bool) -> some View {
@@ -515,7 +524,7 @@ struct RunPopupView: View {
         DispatchQueue.main.asyncAfter(deadline:.now()+0.05, execute:w)
     }
     private var storeEntries: [RunLiveEntry] {
-        livestream.stream(for: agentName).map { e in
+        feed.entries.map { e in
             switch e {
             case .reasoning(_, let t): return .reasoning(t)
             case .text(_, let t): return .text(t)
@@ -525,7 +534,7 @@ struct RunPopupView: View {
     }
     private var effectiveTodos: [RunTodoItem] {
         guard historyReady else { return [] }
-        return livestream.todo(for: agentName).map { RunTodoItem(content: $0.content, status: $0.status, priority: $0.priority) }
+        return feed.todos.map { RunTodoItem(content: $0.content, status: $0.status, priority: $0.priority) }
     }
     private var liveStatus: (text:String, color:Color, dot:Color?) {
         if let running = agentRunning {
@@ -714,12 +723,19 @@ struct RunPopupView: View {
     private var groupedSubagents: [String?: [LivestreamStore.SubagentKey]] {
         Dictionary(grouping: filteredSubagentsForSide, by: { $0.teamRunId })
     }
+    private func subagentCounts(_ k: LivestreamStore.SubagentKey) -> (tools: Int, messages: Int) {
+        _ = feed.subagentTick
+        let entries = LivestreamStore.shared.subagentStream(for: k)
+        let tools = entries.filter{ if case .tool = $0 { return true } else { return false }}.count
+        let messages = entries.filter{ if case .text = $0 { return true } else if case .reasoning = $0 { return true } else { return false }}.count
+        return (tools, messages)
+    }
     private func isWorking(_ k: LivestreamStore.SubagentKey) -> Bool {
         if isSubagentComplete(k) { return false }
         return agentRunning==true
     }
     private func isSubagentComplete(_ k: LivestreamStore.SubagentKey) -> Bool {
-        for e in livestream.stream(for: agentName) {
+        for e in feed.entries {
             if case .tool(_, let name, _, let output) = e, name.lowercased()=="background_output",
                let o = output, o.contains("Task Result"), o.contains(k.sessionId) { return true }
         }
@@ -764,8 +780,9 @@ struct RunPopupView: View {
                         Text(teamName).font(.system(size:6, weight:.bold, design:.monospaced)).foregroundColor(.secondary).padding(.horizontal,6)
                         ForEach(keys, id:\.self){ k in
                             let isSel = expandedSubagent==k
-                            let tools = livestream.subagentStream(for: k).filter{ if case .tool = $0 { return true } else { return false }}.count
-                            let msgs = livestream.subagentStream(for: k).filter{ if case .text = $0 { return true } else if case .reasoning = $0 { return true } else { return false }}.count
+                                                                            let counts = subagentCounts(k)
+                            let tools = counts.tools
+                            let msgs = counts.messages
                             let badgeColor: Color = k.kind=="team" ? .blue : k.kind=="call_omo" ? .purple : k.kind=="task" ? .orange : .secondary
                             let badgeText = k.kind=="team" ? "team" : k.kind=="call_omo" ? "bg" : k.kind=="task" ? "task" : k.kind
                             Button(action: { withAnimation(.easeInOut(duration:0.18)){ expandedSubagent = isSel ? nil : k } }){
@@ -783,8 +800,9 @@ struct RunPopupView: View {
             } else {
                 ForEach(subagentKeys, id:\.self){ k in
                     let isSel = expandedSubagent==k
-                    let tools = livestream.subagentStream(for: k).filter{ if case .tool = $0 { return true } else { return false }}.count
-                    let msgs = livestream.subagentStream(for: k).filter{ if case .text = $0 { return true } else if case .reasoning = $0 { return true } else { return false }}.count
+                                        let counts = subagentCounts(k)
+                    let tools = counts.tools
+                    let msgs = counts.messages
                     let badgeColor: Color = k.kind=="team" ? .blue : k.kind=="call_omo" ? .purple : k.kind=="task" ? .orange : .secondary
                     let badgeText = k.kind=="team" ? "team" : k.kind=="call_omo" ? "bg" : k.kind=="task" ? "task" : k.kind
                     Button(action: { withAnimation(.easeInOut(duration:0.18)){ expandedSubagent = isSel ? nil : k } }){
@@ -968,7 +986,7 @@ struct RunPopupView: View {
              Text(agentName).font(.caption2).fontWeight(.semibold).lineLimit(1).padding(.top,2)
              Divider()
              if sessionsLoading { ProgressView().controlSize(.mini).padding(4) } else if sessions.isEmpty { Text("No sessions").font(.caption2).foregroundColor(.secondary).padding(4) } else {
-                 ScrollView { LazyVStack(spacing:0) { ForEach(sessions) { s in Button(action: { showSessions = false }) { HStack(spacing:3){ Circle().fill(Color.accentColor.opacity(0.4)).frame(width:5,height:5); Text(s.title ?? "Session").font(.caption2).lineLimit(1).foregroundColor(.primary) }.frame(maxWidth:.infinity, alignment:.leading).padding(.horizontal,5).padding(.vertical,2).background(Color.primary.opacity(0.06)).cornerRadius(5) }.buttonStyle(.plain) } } }
+                 ScrollView { LazyVStack(spacing:0) { ForEach(sessions) { s in Button(action: { selectRunSession(s.id) }) { HStack(spacing:3){ Circle().fill(Color.accentColor.opacity(s.id == selectedRunSession ? 1 : 0.4)).frame(width:5,height:5); Text(s.title ?? "Session").font(.caption2).lineLimit(1).foregroundColor(.primary) }.frame(maxWidth:.infinity, alignment:.leading).padding(.horizontal,5).padding(.vertical,2).background(Color.primary.opacity(0.06)).cornerRadius(5) }.buttonStyle(.plain) } } }
              }
              Divider()
              Button(action: { showSessions = false }) { HStack(spacing:3){ Image(systemName:"xmark").font(.system(size:7)); Text("Close").font(.system(size:7)) }.foregroundColor(.secondary).frame(maxWidth:.infinity) }.buttonStyle(.plain)
@@ -995,6 +1013,16 @@ struct RunPopupView: View {
         // WebSocket events via observeLogs() populate entries, todos and
         // subagents as soon as the agent actually produces new output.
         Task { @MainActor in self.historyReady = true }
+    }
+    /// The session row used to only close the menu, so picking an old session left the
+    /// live run on screen. This records the pick, tells the store which session the
+    /// surface is showing, and loads that session's transcript.
+    private func selectRunSession(_ sessionId: String) {
+        showSessions = false
+        selectedRunSession = sessionId
+        historyReady = false
+        LivestreamStore.shared.selectSession(agent: agentName, sessionId: sessionId)
+        fetchMessagesForHistory(sessionId: sessionId)
     }
     private func fetchMessagesForHistory(sessionId: String){
         guard let url = URL(string: "\(baseURL)/sessions/\(agentName)?session_id=\(sessionId)&limit=30") else { historyReady = true; return }
@@ -1379,7 +1407,13 @@ struct SubagentBubbleView: View {
     let key: LivestreamStore.SubagentKey
     let baseURL: String
     var onClose: (() -> Void)? = nil
-    @ObservedObject private var store = LivestreamStore.shared
+    @ObservedObject private var feed: LivestreamStore.SubagentFeed
+    @MainActor init(key: LivestreamStore.SubagentKey, baseURL: String, onClose: (() -> Void)? = nil) {
+        self.key = key
+        self.baseURL = baseURL
+        self.onClose = onClose
+        _feed = ObservedObject(wrappedValue: LivestreamStore.SubagentFeed(key: key))
+    }
     @State private var isPinned = true
     @State private var pending: DispatchWorkItem? = nil
     @State private var pendingFalse: DispatchWorkItem? = nil
@@ -1388,8 +1422,8 @@ struct SubagentBubbleView: View {
 
     private struct BottomKey: PreferenceKey { static var defaultValue: CGFloat=0; static func reduce(value:inout CGFloat,nextValue:()->CGFloat){ value=nextValue() } }
 
-    private var entries: [LivestreamEntry] { store.subagentStream(for: key) }
-    private var todos: [LivestreamTodoItem] { store.subagentTodo(for: key) }
+    private var entries: [LivestreamEntry] { feed.entries }
+    private var todos: [LivestreamTodoItem] { feed.todos }
 
     var body: some View {
         VStack(alignment:.leading, spacing:4){

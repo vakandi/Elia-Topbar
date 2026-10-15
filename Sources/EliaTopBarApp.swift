@@ -3063,48 +3063,67 @@ extension AppDelegate: NSMenuDelegate {    func menuNeedsUpdate(_ menu: NSMenu) 
         let currentModel = subworkerManager.currentModel(for: agentName)
         let currentVariant = subworkerManager.currentVariant(for: agentName)
 
-        for m in models {
-            let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-            let star = m.provider == "opencode" ? "⭐ " : ""
-            // Plan §2.1: NEW badge for fresh roster ids; deprecated ids stay
-            // listed one cycle, greyed + struck through. Old servers omit
-            // both flags (default false) → titles render exactly as before.
-            let newPrefix = m.isNew ? "NEW " : ""
-            item.attributedTitle = emojiAwareTitle("\(star)\(newPrefix)\(m.name)  (\(m.provider))", color: m.isDeprecated ? .secondaryLabelColor : .labelColor)
-            if m.isDeprecated, let base = item.attributedTitle {
-                let struck = NSMutableAttributedString(attributedString: base)
-                struck.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: NSRange(location: 0, length: struck.length))
-                item.attributedTitle = struck
+        let groups = ProviderGrouping.ordered(models.map {
+            ModelRow(id: $0.id, name: $0.name, provider: $0.provider)
+        })
+        for (index, group) in groups.enumerated() {
+            // Titled separator, so each provider reads as its own block.
+            if index > 0 {
+                let header = NSMenuItem.separator()
+                header.attributedTitle = emojiAwareTitle(group.provider, color: .secondaryLabelColor)
+                header.isEnabled = false
+                menu.addItem(header)
             }
-            item.state = m.id == currentModel ? .on : .off
-            item.target = self
-            item.representedObject = ["name": agentName, "model": m.id]
-
-            if m.variants.isEmpty {
-                item.action = #selector(setSubworkerModel(_:))
-            } else {
-                // Thinking levels — selection happens in the nested menu.
-                let thinkMenu = NSMenu()
-                thinkMenu.autoenablesItems = false
-
-                let noneItem = NSMenuItem(title: "no extra thinking", action: #selector(setSubworkerModel(_:)), keyEquivalent: "")
-                noneItem.state = (m.id == currentModel && currentVariant.isEmpty) ? .on : .off
-                noneItem.target = self
-                noneItem.representedObject = ["name": agentName, "model": m.id, "variant": ""]
-                thinkMenu.addItem(noneItem)
-
-                for v in m.variants {
-                    let vi = NSMenuItem(title: "thinking: \(v)", action: #selector(setSubworkerModel(_:)), keyEquivalent: "")
-                    vi.state = (m.id == currentModel && currentVariant == v) ? .on : .off
-                    vi.target = self
-                    vi.representedObject = ["name": agentName, "model": m.id, "variant": v]
-                    thinkMenu.addItem(vi)
-                }
-
-                item.submenu = thinkMenu
+            for m in group.rows {
+                guard let model = models.first(where: { $0.id == m.id }) else { continue }
+                menu.addItem(makeModelItem(model, agentName: agentName,
+                                          currentModel: currentModel, currentVariant: currentVariant))
             }
-            menu.addItem(item)
         }
+    }
+
+    private func makeModelItem(_ m: ModelOption, agentName: String,
+                               currentModel: String?, currentVariant: String) -> NSMenuItem {
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        let star = m.provider == "opencode" ? "⭐ " : ""
+        // Plan §2.1: NEW badge for fresh roster ids; deprecated ids stay
+        // listed one cycle, greyed + struck through. Old servers omit
+        // both flags (default false) → titles render exactly as before.
+        let newPrefix = m.isNew ? "NEW " : ""
+        item.attributedTitle = emojiAwareTitle("\(star)\(newPrefix)\(m.name)  (\(m.provider))", color: m.isDeprecated ? .secondaryLabelColor : .labelColor)
+        if m.isDeprecated, let base = item.attributedTitle {
+            let struck = NSMutableAttributedString(attributedString: base)
+            struck.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: NSRange(location: 0, length: struck.length))
+            item.attributedTitle = struck
+        }
+        item.state = m.id == currentModel ? .on : .off
+        item.target = self
+        item.representedObject = ["name": agentName, "model": m.id]
+
+        if m.variants.isEmpty {
+            item.action = #selector(setSubworkerModel(_:))
+        } else {
+            // Thinking levels — selection happens in the nested menu.
+            let thinkMenu = NSMenu()
+            thinkMenu.autoenablesItems = false
+
+            let noneItem = NSMenuItem(title: "no extra thinking", action: #selector(setSubworkerModel(_:)), keyEquivalent: "")
+            noneItem.state = (m.id == currentModel && currentVariant.isEmpty) ? .on : .off
+            noneItem.target = self
+            noneItem.representedObject = ["name": agentName, "model": m.id, "variant": ""]
+            thinkMenu.addItem(noneItem)
+
+            for v in m.variants {
+                let vi = NSMenuItem(title: "thinking: \(v)", action: #selector(setSubworkerModel(_:)), keyEquivalent: "")
+                vi.state = (m.id == currentModel && currentVariant == v) ? .on : .off
+                vi.target = self
+                vi.representedObject = ["name": agentName, "model": m.id, "variant": v]
+                thinkMenu.addItem(vi)
+            }
+
+            item.submenu = thinkMenu
+        }
+        return item
     }
 }
 
