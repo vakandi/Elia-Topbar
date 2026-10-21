@@ -114,7 +114,7 @@ enum SubworkerModels {
             return (stored as NSString).expandingTildeInPath
         }
         return FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("EliaAI/ui_electron/model-selections.json").path
+            .appendingPathComponent("Documents/subworker-opencode-rust/ui_electron/model-selections.json").path
     }
 
     static var defaultModel = "opencode/big-pickle"
@@ -410,7 +410,7 @@ final class SubworkerManager: ObservableObject {
                 let sid = json["session_id"] as? String
                 Task { @MainActor in
                     if let sid { LivestreamStore.shared.observeLive(agent: name, sessionId: sid) }
-                    LivestreamStore.shared.appendDelta(agent: name, field: field, delta: delta)
+                    LivestreamStore.shared.appendDelta(agent: name, field: field, delta: delta, sessionId: sid)
                 }
                 NotificationCenter.default.post(
                     name: SubworkerManager.runLogNotification,
@@ -566,6 +566,12 @@ final class SubworkerManager: ObservableObject {
     private func handleSubworkerStarted(_ json: [String: Any]) {
         guard let name = json["name"] as? String else { return }
         AppLog.d("Subworker started: \(name)")
+
+        // Run boundary. The popup for this run opens on this very event, so the
+        // previous run's transcript, todo list and subagent streams have to go
+        // now — otherwise the fresh panel renders them as if they were this
+        // run's, until the first delta of the new run lands.
+        Task { @MainActor in LivestreamStore.shared.noteRunStarted(agent: name) }
 
         if let idx = subworkers.firstIndex(where: { $0.name == name }) {
             subworkers[idx].running = true
@@ -847,6 +853,11 @@ final class SubworkerManager: ObservableObject {
         AppLog.d("Triggering subworker: \(name)")
         var request = EliaAuth.authorize(url)
         request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let model = modelSelections[name] ?? ""
+        let variant = modelVariants[name] ?? ""
+        let body: [String: String] = ["model": model, "variant": variant]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
             Task { @MainActor [weak self] in
@@ -1035,28 +1046,33 @@ final class SubworkerManager: ObservableObject {
     }
 
     func fetchModels() {
+
         guard let url = URL(string: "\(baseURL)/models") else { return }
         URLSession.shared.dataTask(with: EliaAuth.authorize(url)) { [weak self] data, _, _ in
             Task { @MainActor [weak self] in
                 guard let self, let data,
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let raw = json["models"] as? [[String: Any]] else { return }
+
                 let options: [ModelOption] = raw.compactMap { m -> ModelOption? in
                     guard let id = m["id"] as? String else { return nil }
+                    // Drop deprecated rows so the menu stays clean (opencode-TUI style).
+                    guard (m["deprecated"] as? Bool ?? false) == false else { return nil }
                     return ModelOption(
                         id: id,
                         name: m["name"] as? String ?? id,
                         provider: m["provider"] as? String ?? "",
                         variants: m["variants"] as? [String] ?? [],
-                        isNew: m["is_new"] as? Bool ?? false,
-                        isDeprecated: m["deprecated"] as? Bool ?? false
+                        isNew: false,
+                        isDeprecated: false
                     )
                 }
+
                 let favoriteProvider = "opencode"
                 let favorites = options.filter { $0.provider == favoriteProvider }
                 let rest = options.filter { $0.provider != favoriteProvider }
                 self.availableModels = favorites + rest
-                AppLog.d("Loaded \(options.count) models")
+                AppLog.d("Fetched \(options.count) models")
                 NotificationCenter.default.post(name: Self.modelsLoadedNotification, object: nil)
             }
         }.resume()

@@ -159,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let limited = Array(newly.sorted().prefix(maxConcurrentDrops - RunPopupController.shared.panelCount))
          guard !limited.isEmpty else { return }
          for name in limited {
-             RunPopupController.shared.show(for: name, dropX: dropX, duration: duration, baseURL: subworkerManager.currentBaseURL)
+             RunPopupController.shared.show(for: name, dropX: dropX, duration: duration, baseURL: subworkerManager.currentBaseURL, openedForRunStart: true)
          }
      }
      @objc private func handleRunPopupEnabledChanged() {
@@ -172,7 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard available > 0 else { return }
         let limited = Array(running.filter { !RunPopupController.shared.hasPanel(for: $0) }.sorted().prefix(available))
          for name in limited {
-             RunPopupController.shared.show(for: name, dropX: dropX, duration: duration, baseURL: subworkerManager.currentBaseURL)
+             RunPopupController.shared.show(for: name, dropX: dropX, duration: duration, baseURL: subworkerManager.currentBaseURL, openedForRunStart: true)
          }
      }
      @objc private func handleShowMiniBubble(_ note: Notification) {
@@ -240,6 +240,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // only needs to confirm.
                 autoHideAfter: outcome.ok ? 2.5 : 6.0
             )
+            // The bridge is now listening on a port the WebSocket was already
+            // failing to reach, so reconnect through the same path the
+            // 🔄 Reconnect item uses. Without it the menu keeps reading
+            // "Disconnected" with an empty agent list until something else
+            // happens to retry — and Start looks like it half-worked.
+            if outcome.ok, outcome.action == .start {
+                self.reconnectServer()
+            }
         }
         subworkerManager = SubworkerManager()
         // Touch the bridge singleton at launch. Its health poll starts in init(),
@@ -253,6 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             subworkerManager.updateBaseURL(savedURL)
         }
         subworkerManager.start()
+        subworkerManager.fetchModels()
         NotificationCenter.default.addObserver(self, selector: #selector(handleRunPopupEnabledChanged), name: .eliaRunPopupEnabledChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowMiniBubble(_:)), name: .eliaShowMiniBubble, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleCloseLogViewer), name: .eliaCloseLogViewer, object: nil)
@@ -3171,8 +3180,7 @@ extension AppDelegate: NSMenuDelegate {    func menuNeedsUpdate(_ menu: NSMenu) 
         // Plan §2.1: NEW badge for fresh roster ids; deprecated ids stay
         // listed one cycle, greyed + struck through. Old servers omit
         // both flags (default false) → titles render exactly as before.
-        let newPrefix = m.isNew ? "NEW " : ""
-        item.attributedTitle = emojiAwareTitle("\(star)\(newPrefix)\(m.name)  (\(m.provider))", color: m.isDeprecated ? .secondaryLabelColor : .labelColor)
+        item.attributedTitle = emojiAwareTitle("\(star)\(m.name)  (\(m.provider))", color: .labelColor)
         if m.isDeprecated, let base = item.attributedTitle {
             let struck = NSMutableAttributedString(attributedString: base)
             struck.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: NSRange(location: 0, length: struck.length))

@@ -25,7 +25,7 @@ import EliaTopBarKit
         BoundedLogWriter.sharedDrop.log(msg)
         AppLog.d(msg)
     }
-     func show(for agentName: String, dropX: CGFloat, duration: TimeInterval, baseURL: String = "http://localhost:5656", showSessionSelector: Bool = false, disableAutoClose: Bool = false) {
+     func show(for agentName: String, dropX: CGFloat, duration: TimeInterval, baseURL: String = "http://localhost:5656", showSessionSelector: Bool = false, disableAutoClose: Bool = false, openedForRunStart: Bool = false) {
          logPopup("show agent=\(agentName) dropX=\(dropX) duration=\(duration) panelsBefore=\(panels.count) screen=\(String(describing: NSScreen.main?.frame))")
          guard duration > 0, let screen = NSScreen.main else { logPopup("show abort duration<=0 or no screen"); return }
          if panels[agentName] != nil { logPopup("show already has panel for \(agentName) reschedule"); if !disableAutoClose { scheduleRetract(for: agentName, after: duration) }; return }
@@ -45,7 +45,7 @@ import EliaTopBarKit
          let finalFrame = NSRect(x: x, y: barBottom-height, width: width, height: height)
          let hiddenFrame = NSRect(x: x, y: screen.frame.maxY, width: width, height: height)
          let panel = takePanel(hiddenFrame: hiddenFrame, agentName: agentName)
-        let popupView = RunPopupView(agentName: agentName, onTap: { [weak self] in self?.retract(for: agentName) }, baseURL: baseURL, showSessionSelector: showSessionSelector, disableAutoClose: disableAutoClose)
+        let popupView = RunPopupView(agentName: agentName, onTap: { [weak self] in self?.retract(for: agentName) }, baseURL: baseURL, showSessionSelector: showSessionSelector, disableAutoClose: disableAutoClose, openedForRunStart: openedForRunStart)
         // Reuse the existing NSHostingView and swap its rootView. Building a
         // fresh one per popup left the SwiftUI render graph behind every time:
         // with the panel pooled, RSS was flat at 20 MB when the content was
@@ -252,15 +252,27 @@ struct RunPopupView: View {
     private static let bubbleBottomId = "run-bubble-bottom"
     private static let bubbleScrollSpace = "run-bubble-scroll"
     @ObservedObject private var feed: LivestreamStore.AgentFeed
-    @MainActor init(agentName: String, onTap: @escaping () -> Void, baseURL: String, showSessionSelector: Bool, disableAutoClose: Bool) {
+    /// True when the popup was dropped because a run started, false when the user
+    /// opened it from the menu. A dropped popup is mid-run by definition: a status
+    /// poll that says "not running" there means the run has not reported in yet, so
+    /// it must never be read as the end of a run. On a menu-opened popup the same
+    /// poll is a truthful "this agent is idle".
+    private let openedForRunStart: Bool
+    @MainActor init(agentName: String, onTap: @escaping () -> Void, baseURL: String, showSessionSelector: Bool, disableAutoClose: Bool, openedForRunStart: Bool = false) {
         self.agentName = agentName
         self.onTap = onTap
         self.baseURL = baseURL
         self.showSessionSelector = showSessionSelector
         self.disableAutoClose = disableAutoClose
+        self.openedForRunStart = openedForRunStart
         _feed = ObservedObject(wrappedValue: LivestreamStore.AgentFeed(agent: agentName))
     }
     @State private var agentRunning: Bool? = nil
+    /// True once this popup has seen the agent report `running`. The done banner
+    /// is only ever fired from `true → false`, never from a `false` that arrived
+    /// before the run had reported in.
+    @State private var sawRunning = false
+    @State private var runStartedObserver: NSObjectProtocol? = nil
     @State private var agentLastError: String? = nil
     @State private var agentEnabled: Bool? = nil
     @State private var trafficInWindow: Int = 0
@@ -368,7 +380,7 @@ struct RunPopupView: View {
         .animation(.easeInOut(duration:0.22), value: showSticker)
         .animation(.easeInOut(duration:0.2), value: effectiveTodos.isEmpty)
         .animation(.easeInOut(duration:0.2), value: subagentKeys.isEmpty)
-        .onAppear{ showStickerPinned=false; isHoveringLive=false; historyReady=false; verticalTodos=[]; subagentKeys=[]; expandedSubagent=nil; isLockedCached=RunPopupController.shared.isLocked(for: agentName); draggableEnabledState=UserDefaults.standard.bool(forKey:"dropDraggableEnabled"); observeDraggable(); observeTraffic(); fetchAgentStatus(); fetchRunHistory(); observeLogs(); startTick(); startStatusRefresh() }.onDisappear{ if let o=observer{NotificationCenter.default.removeObserver(o)}; if let d=draggableObserver{NotificationCenter.default.removeObserver(d)}; if let t=trafficObserver{NotificationCenter.default.removeObserver(t)}; releaseTimers() }.onHover{ h in RunPopupController.shared.setHover(h, for:agentName) }
+        .onAppear{ showStickerPinned=false; isHoveringLive=false; historyReady=false; verticalTodos=[]; subagentKeys=[]; expandedSubagent=nil; sawRunning=false; showDoneOverlay=false; doneCloseScheduled=false; isLockedCached=RunPopupController.shared.isLocked(for: agentName); draggableEnabledState=UserDefaults.standard.bool(forKey:"dropDraggableEnabled"); observeDraggable(); observeRunStarted(); observeTraffic(); fetchAgentStatus(); fetchRunHistory(); observeLogs(); startTick(); startStatusRefresh() }.onDisappear{ if let o=observer{NotificationCenter.default.removeObserver(o)}; if let d=draggableObserver{NotificationCenter.default.removeObserver(d)}; if let r=runStartedObserver{NotificationCenter.default.removeObserver(r)}; if let t=trafficObserver{NotificationCenter.default.removeObserver(t)}; releaseTimers() }.onHover{ h in RunPopupController.shared.setHover(h, for:agentName) }
         .onChange(of: showStickerPinned){ _ in updatePanelForSubagents() }
         .onChange(of: isHoveringLive){ _ in updatePanelForSubagents() }
         .onReceive(LivestreamStore.shared.throttled){ agent in if agent==agentName { refreshSubagentsFromLive(); feed.reload() } }
@@ -539,6 +551,9 @@ struct RunPopupView: View {
     private var liveStatus: (text:String, color:Color, dot:Color?) {
         if let running = agentRunning {
             if running { return ("live", .orange, .orange) }
+            // A popup dropped for a run that has not reported in yet: "not running"
+            // here is the gap before the server flips the flag, not an ended run.
+            if openedForRunStart && !sawRunning { return ("starting", .secondary, .orange) }
             if let err=agentLastError, !err.isEmpty { return ("error", .red, .red) }
             if let en=agentEnabled, !en { return ("disabled", .secondary, nil) }
             return ("done", .secondary, nil)
@@ -550,10 +565,21 @@ struct RunPopupView: View {
         URLSession.shared.dataTask(with: EliaAuth.authorize(url)){ data,_,_ in
             guard let data=data, let json=try? JSONSerialization.jsonObject(with:data) as? [String:Any] else { return }
             DispatchQueue.main.async{
-                agentRunning = json["running"] as? Bool
+                let running = json["running"] as? Bool
+                agentRunning = running
                 agentLastError = json["last_error"] as? String
                 agentEnabled = json["enabled"] as? Bool
-                if json["running"] as? Bool == false { fireDoneFlow() }
+                guard let running else { return }
+                if running {
+                    sawRunning = true
+                    liveRunning = true
+                    // A new run outranks a banner left over from the previous one.
+                    if showDoneOverlay { withAnimation(.easeInOut(duration:0.2)){ showDoneOverlay = false } }
+                } else if sawRunning {
+                    // Only a run this popup watched go live can end here. An agent
+                    // that was already idle when its popup opened has no run to end.
+                    fireDoneFlow()
+                }
             }
         }.resume()
     }
@@ -1138,6 +1164,7 @@ struct RunPopupView: View {
         // messages, banners, todos — which is what kept ~19 MB per popup burst.
         if let o = observer { NotificationCenter.default.removeObserver(o); observer = nil }
         if let d = draggableObserver { NotificationCenter.default.removeObserver(d); draggableObserver = nil }
+        if let r = runStartedObserver { NotificationCenter.default.removeObserver(r); runStartedObserver = nil }
         if let t = trafficObserver { NotificationCenter.default.removeObserver(t); trafficObserver = nil }
     }
 
@@ -1150,6 +1177,29 @@ struct RunPopupView: View {
     }
     private func observeDraggable(){
         draggableObserver=NotificationCenter.default.addObserver(forName:.eliaRunPopupDraggableChanged, object:nil, queue:.main){ _ in self.draggableEnabledState=UserDefaults.standard.bool(forKey:"dropDraggableEnabled") }
+    }
+    /// A panel outlives its run: the same agent can start again while its popup is
+    /// still open, and `show()` then only reschedules the close. Everything this view
+    /// cached for the previous run — todos, subagents, the session pick, the done
+    /// banner — has to be released at that boundary too, not just the shared store's.
+    private func observeRunStarted(){
+        runStartedObserver=NotificationCenter.default.addObserver(forName:SubworkerManager.subworkerStartedNotification, object:nil, queue:.main){ note in
+            guard let name=note.userInfo?["name"] as? String, name==agentName else { return }
+            Task { @MainActor in
+                stopAllSubagentPolling()
+                subagentKeys = []
+                verticalTodos = []
+                expandedSubagent = nil
+                selectedRunSession = nil
+                showSessions = false
+                // The run has been requested, not confirmed live. The banner gate
+                // stays shut until a poll actually reports `running: true`.
+                sawRunning = false
+                agentRunning = true
+                liveRunning = true
+                if showDoneOverlay { withAnimation(.easeInOut(duration:0.2)){ showDoneOverlay = false } }
+            }
+        }
     }
     private func appendLiveDelta(field: String, delta: String){
         if delta.isEmpty { return }

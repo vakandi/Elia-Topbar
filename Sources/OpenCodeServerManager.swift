@@ -738,11 +738,18 @@ final class OpenCodeServerManager: ObservableObject {
             // Ask macOS first: the repo lives in ~/Documents, so the launch fails with
             // exit 126 until the user grants access. A stored grant skips the panel.
             let granted = await self.requestRepoAccess()
-            guard granted else {
+            if granted, await self.startViaBridgeScripts() { return }
+
+            // Refused, or this checkout has no bridge scripts at all. When the
+            // scripts do exist, stopping here is deliberate: the bare binary
+            // would bring up the engine with no bridge behind it, which is the
+            // half-started state this whole path was rewritten to avoid. A
+            // checkout with no scripts is a different case — the binary may well
+            // be reachable, so let it try.
+            if self.bridgeScriptsExist {
                 await self.failStart("Access to \(self.subworkerRoot) was not granted — start.sh cannot be run without it.")
                 return
             }
-            if await self.startViaBridgeScripts() { return }
             AppLog.important("start: falling back to bare binary at \(Self.repoPath)")
             await self.startStandalone()
         }

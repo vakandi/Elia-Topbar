@@ -125,6 +125,53 @@ EliaTopBarApp.swift (AppDelegate)
 - Ad-hoc codesigned (`codesign --sign -`). No notarization. Users: `xattr -dr com.apple.quarantine EliaTopBar.app`.
 - Version patched at build time via PlistBuddy (Info.plist hardcodes `1.0.1` but is overridden).
 
+### Cutting a release — `brew update` is mandatory
+
+**Never skip step 5.** `brew update` is what pulls the new cask into Homebrew's
+local clone of the tap. Without it, `brew reinstall --cask` resolves the *stale*
+cask from that clone and silently reinstalls the previous version — the same
+class of trap as installing the wrong build, just pointing the other way.
+
+```bash
+VERSION=2.5
+
+# 1. build both artifacts
+./build-app.sh $VERSION
+./build-dmg.sh $VERSION
+mv EliaTopBar-$VERSION.dmg EliaTopBar-v$VERSION.dmg   # build-dmg.sh omits the `v`
+
+# 2. commit + push the source, then publish the release
+git status --short          # nothing may be left unstaged
+git commit -am "…" && git push origin main
+gh release create v$VERSION EliaTopBar-v$VERSION.dmg --title "v$VERSION — …" --notes-file notes.md
+
+# 3. point the cask at it: version + sha256 (`shasum -a 256 EliaTopBar-v$VERSION.dmg`)
+git commit -am "chore(cask): eliatopbar $VERSION" && git push origin main
+./scripts/sync-brew-tap.sh
+
+# 4. MANDATORY. Without this, step 5 reinstalls the old version.
+brew update
+
+# 5. only now does brew serve the release you just cut
+brew reinstall --cask vakandi/tap/eliatopbar
+```
+
+`build-dmg.sh` writes `EliaTopBar-<version>.dmg`, but the cask URL and every
+existing release use `EliaTopBar-v<version>.dmg`. Rename it or the cask 404s.
+
+`sync-brew-tap.sh` only proves it pushed a file — it does not prove anyone can
+install it. Check the tap through GitHub, and confirm the download resolves:
+
+```bash
+gh api repos/vakandi/homebrew-tap/contents/Casks/eliatopbar.rb --jq .content | base64 -d | grep -E 'version|sha256'
+curl -sIL -o /dev/null -w "%{http_code}\n" "https://github.com/vakandi/Elia-Topbar/releases/download/v$VERSION/EliaTopBar-v$VERSION.dmg"
+brew info --cask vakandi/tap/eliatopbar | head -1   # expect "2.4 → 2.5", not "2.5"
+```
+
+The tap can drift *further* back than the repo cask: `Casks/eliatopbar.rb` read
+`2.3` while the tap still served `2.2`. Trust `brew info` over the cask file for
+what is actually live.
+
 ### Install the build you just made — not the last release
 
 **`brew reinstall --cask eliatopbar` does NOT install your working tree.** The
@@ -142,18 +189,21 @@ cp -R ~/Documents/EliaTopBar/EliaTopBar.app /Applications/EliaTopBar.app
 open /Applications/EliaTopBar.app
 ```
 
-Confirm which binary is actually running before trusting any menu behaviour:
+Confirm which binary is actually running before trusting any menu behaviour.
+Use `grep`, **not `strings`**: Swift stores literals of 15 bytes or fewer inline
+as "small strings" instead of pointers into `__cstring`, so `strings` reports 0
+for a short marker that is genuinely present — which reads as "my fix isn't
+shipped". Pick a marker longer than 15 bytes.
 
 ```bash
-strings /Applications/EliaTopBar.app/Contents/MacOS/EliaTopBar | grep -c "<a-string-from-your-fix>"
+LC_ALL=C grep -c -a -F "<a-long-string-from-your-fix>" /Applications/EliaTopBar.app/Contents/MacOS/EliaTopBar
 stat -f "%Sm" /Applications/EliaTopBar.app/Contents/MacOS/EliaTopBar
 ```
 
-Only use `brew reinstall --cask` after cutting a release, so the cask and the
-DMG on GitHub carry the same build. Bumping the version in `Casks/eliatopbar.rb`
-and running `./scripts/sync-brew-tap.sh` does not help on its own — the script
-verifies the sha256 against the local DMG, but the tap is only useful once that
-DMG is published.
+Bumping `Casks/eliatopbar.rb` and running `./scripts/sync-brew-tap.sh` alone
+installs nothing: the script only verifies the sha256 against the local DMG, and
+the tap is only useful once that DMG is actually published. Use the release
+checklist above.
 
 ## Server API (Bun bridge at localhost:5656)
 | Endpoint | Method | Purpose |

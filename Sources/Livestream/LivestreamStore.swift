@@ -21,6 +21,11 @@ import EliaTopBarKit
     /// stale per-session state (e.g. previous run's todo list) when a new run
     /// with a different sessionId arrives.
     private(set) var sessionForAgent: [String: String] = [:]
+    /// Session whose output currently sits in `streams`. Nil after a run boundary,
+    /// before anything has been recorded for the new run. This is what tells a new
+    /// run's first `session_id` apart from a late one belonging to the run already
+    /// on screen: the second must not wipe output that just streamed in.
+    private var streamSession: [String: String] = [:]
 
     /// Which session each agent surface is showing, and the transcript of a session
     /// the user picked from the history list. Kept apart from `streams` so a live
@@ -54,9 +59,35 @@ import EliaTopBarKit
     func observeLive(agent: String, sessionId: String) {
         var sel = selections[agent] ?? SessionSelection()
         guard sel.live != sessionId else { return }
+        // A session id we have not recorded output for means the run on screen
+        // belongs to the previous run. `streamSession == nil` means nothing has
+        // streamed for this run yet, so there is nothing stale to drop — and
+        // wiping there would throw away deltas that arrived before the first
+        // event that carried the id.
+        if let recorded = streamSession[agent], recorded != sessionId {
+            dropStaleRunState(agent: agent)
+        }
         sel.observeLive(sessionId)
         selections[agent] = sel
         throttled.send(agent)
+    }
+
+    /// Run boundary. Everything the previous run left in the live buckets is dead:
+    /// its entries, its todo list, its subagent streams. Cleared here, on the
+    /// `subworker_started` event, because the popup opens on that event — it must
+    /// render an empty panel waiting for output rather than the previous run.
+    func noteRunStarted(agent: String) {
+        dropStaleRunState(agent: agent)
+    }
+
+    private func dropStaleRunState(agent: String) {
+        streams[agent] = AgentStream()
+        todos[agent] = nil
+        sessionForAgent[agent] = nil
+        streamSession[agent] = nil
+        throttled.send(agent)
+        let keys = subagentStreams.keys.filter { $0.parentAgent == agent }
+        for k in keys { subagentStreams[k] = nil; subagentTodos[k] = nil; subagentThrottled.send(k) }
     }
 
     func setViewedEntries(agent: String, _ entries: [LivestreamEntry]) {
@@ -92,9 +123,12 @@ import EliaTopBarKit
     func stream(for agent: String) -> [LivestreamEntry] { streams[agent]?.entries ?? [] }
     func todo(for agent: String) -> [LivestreamTodoItem] { todos[agent] ?? [] }
 
-    func appendDelta(agent: String, field: String, delta: String) {
+    /// `sessionId` is the run this delta belongs to. Recorded so the next run's
+    /// session id can be told apart from a late event for the run already on screen.
+    func appendDelta(agent: String, field: String, delta: String, sessionId: String? = nil) {
         if delta.isEmpty { return }
         if streams[agent] == nil { streams[agent] = AgentStream() }
+        if let sessionId { streamSession[agent] = sessionId }
         var entries = streams[agent]!.entries
 
         switch field {
@@ -267,6 +301,7 @@ import EliaTopBarKit
         }
 
         var current = streams[agent]!.entries
+        streamSession[agent] = sessionId
         if current.isEmpty {
             let capped = historyEntries.count > 80 ? Array(historyEntries.suffix(80)) : historyEntries
             streams[agent]!.entries = capped
@@ -300,6 +335,8 @@ import EliaTopBarKit
     func clear(agent: String, reason: String) {
         streams[agent] = AgentStream()
         todos[agent] = nil
+        sessionForAgent[agent] = nil
+        streamSession[agent] = nil
         throttled.send(agent)
         let keys = subagentStreams.keys.filter { $0.parentAgent == agent }
         for k in keys { subagentStreams[k] = nil; subagentTodos[k] = nil; subagentThrottled.send(k) }
