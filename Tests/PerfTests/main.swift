@@ -219,6 +219,172 @@ func testSessionSelectionSeparatesLiveFromViewing() {
 
 testSessionSelectionSeparatesLiveFromViewing()
 
+// --- VoiceCommandParser: never fire at the wrong agent ---------------------
+
+let voiceRoster = [
+    "elia", "mirorpay-community-organic", "mirrorpay-telegram", "mirorpay-seo",
+    "reddit-saas-scraper", "vcam-community-organic", "vcam-seo", "deploymates-watch",
+    "cve-hunter", "app-clone-factory", "app-qa-store-gate", "test-delegator",
+    "job-hunter-ch-lu", "linkedin-connector-ch-lu-fr", "boxing-audience-scout",
+    "gilfoyle",
+]
+
+func voice(_ text: String, requireAgent: Bool = true) -> VoiceCommandParser.Parsed {
+    VoiceCommandParser.parse(text, roster: voiceRoster, requireAgent: requireAgent)
+}
+
+do {
+    let p = voice("ok gilfoyle")
+    check("'ok gilfoyle' resolves to gilfoyle", p.agent == "gilfoyle", "got \(p.agent ?? "nil")")
+    check("'ok gilfoyle' has no command", p.command.isEmpty, "got '\(p.command)'")
+    check("'ok gilfoyle' consumed the wake token", p.usedWakeToken)
+
+    let c = voice("Ok Gilfoyle, deploy the api")
+    check("'Ok Gilfoyle, deploy the api' resolves to gilfoyle", c.agent == "gilfoyle", "got \(c.agent ?? "nil")")
+    check("the command is what was said after the name",
+          c.command.lowercased() == "deploy the api", "got '\(c.command)'")
+
+    let e = voice("okay elia what's up")
+    check("'okay elia what's up' resolves to elia", e.agent == "elia", "got \(e.agent ?? "nil")")
+    check("'okay elia what's up' keeps the command verbatim",
+          e.command == "what's up", "got '\(e.command)'")
+
+    let h = voice("hey gilfoyle, check the logs")
+    check("'hey gilfoyle' resolves to gilfoyle", h.agent == "gilfoyle", "got \(h.agent ?? "nil")")
+
+    let typo = voice("ok gilfoyl")
+    check("'ok gilfoyl' still resolves to gilfoyle", typo.agent == "gilfoyle", "got \(typo.agent ?? "nil")")
+
+    let two = voice("ok gilfoyle and elia")
+    check("the first name wins", two.agent == "gilfoyle", "got \(two.agent ?? "nil")")
+    check("the rest of the sentence is the command",
+          two.command.lowercased() == "and elia", "got '\(two.command)'")
+
+    let bare = voice("ok")
+    check("'ok' alone resolves to no agent", bare.agent == nil, "got \(bare.agent ?? "nil")")
+
+    let noName = voice("ok deploy the api")
+    check("'ok deploy the api' resolves to no agent", noName.agent == nil, "got \(noName.agent ?? "nil")")
+
+    let mid = voice("i went to the store ok")
+    check("a trailing 'ok' is not a wake token", mid.agent == nil, "got \(mid.agent ?? "nil")")
+    check("a trailing 'ok' is not consumed", !mid.usedWakeToken)
+
+    let accent = voice("ok Gïlfoyle")
+    check("diacritics fold", accent.agent == "gilfoyle", "got \(accent.agent ?? "nil")")
+
+    let empty = voice("")
+    check("an empty transcript resolves to no agent", empty.agent == nil)
+    check("an empty transcript has no command", empty.command.isEmpty)
+
+    let blank = voice("   ")
+    check("a blank transcript resolves to no agent", blank.agent == nil)
+
+    let huge = voice(String(repeating: "ok gilfoyle deploy the api ", count: 300))
+    check("a 6k character transcript does not crash", huge.agent == "gilfoyle", "got \(huge.agent ?? "nil")")
+
+    // Ambiguity must never pick a winner.
+    let amb = voice("ok mirorpay")
+    check("'ok mirorpay' stays ambiguous", amb.agent == nil, "got \(amb.agent ?? "nil")")
+    check("'ok mirorpay' offers candidates", amb.candidates.count >= 2, "got \(amb.candidates)")
+
+    let seo = voice("ok mirorpay seo")
+    check("'ok mirorpay seo' picks the longer name", seo.agent == "mirorpay-seo", "got \(seo.agent ?? "nil")")
+
+    let app = voice("ok app")
+    check("'ok app' stays ambiguous", app.agent == nil, "got \(app.agent ?? "nil")")
+
+    let optional = voice("ok deploy the api", requireAgent: false)
+    check("requireAgent=false keeps the command", optional.command.lowercased() == "deploy the api",
+          "got '\(optional.command)'")
+
+    check("normalise folds case and punctuation",
+          VoiceCommandParser.normalize("  Ok,  GILFOYLE! ") == "ok gilfoyle",
+          "got '\(VoiceCommandParser.normalize("  Ok,  GILFOYLE! "))'")
+
+    // The real transcript produced by Whisper on a "say" render of
+    // "Ok Gilfoyle, deploy the api to production".
+    let real = voice("Okay, Gilfoyle, deploy the AP to production.")
+    check("the real Whisper transcript resolves to gilfoyle",
+          real.agent == "gilfoyle", "got \(real.agent ?? "nil")")
+    check("the real Whisper transcript keeps the command",
+          real.command.lowercased() == "deploy the ap to production.",
+          "got '\(real.command)'")
+
+    // The wake phrase must not fire on ordinary speech.
+    check("'ok gilfoyle' wakes", VoiceCommandParser.detectWake("ok gilfoyle", roster: voiceRoster))
+    check("'okay gilfoyle' wakes", VoiceCommandParser.detectWake("okay gilfoyle", roster: voiceRoster))
+    check("'ok gilfoyl' wakes (one letter off)",
+          VoiceCommandParser.detectWake("ok gilfoyl", roster: voiceRoster))
+    check("'ok mirorpay' wakes even though the name is ambiguous",
+          VoiceCommandParser.detectWake("ok mirorpay", roster: voiceRoster))
+    check("'okay so what time is it' does not wake",
+          !VoiceCommandParser.detectWake("okay so what time is it", roster: voiceRoster))
+    check("'ok app' wakes (exact but ambiguous)",
+          VoiceCommandParser.detectWake("ok app", roster: voiceRoster))
+    check("'ok' alone does not wake",
+          !VoiceCommandParser.detectWake("ok", roster: voiceRoster))
+    check("'deploy the api' does not wake",
+          !VoiceCommandParser.detectWake("deploy the api", roster: voiceRoster))
+    check("'what time is it' does not wake",
+          !VoiceCommandParser.detectWake("what time is it", roster: voiceRoster))
+    check("'okay so' does not wake",
+          !VoiceCommandParser.detectWake("okay so", roster: voiceRoster))
+}
+
+// --- The live transcript and the tail have to join without repeating ------
+
+do {
+    let m = VoiceTranscriptMerger.merge
+
+    check("an empty tail leaves the settled text alone",
+          m("ok gilfoyle", "") == "ok gilfoyle")
+    check("an empty settled text leaves the tail alone",
+          m("", "ok gilfoyle") == "ok gilfoyle")
+
+    let overlap = m("ok gilfoyle deploy", "deploy the api")
+    check("the repeated words are dropped",
+          overlap == "ok gilfoyle deploy the api", "got '\(overlap)'")
+
+    let full = m("ok gilfoyle", "Okay Gilfoyle, deploy the api")
+    check("the tail wins when it heard everything",
+          full == "Okay Gilfoyle, deploy the api", "got '\(full)'")
+
+    let disjoint = m("ok gilfoyle", "the api is slow")
+    check("unrelated halves are joined",
+          disjoint == "ok gilfoyle the api is slow", "got '\(disjoint)'")
+
+    let punctuation = m("ok gilfoyle, deploy", "deploy the api.")
+    check("punctuation does not hide the overlap",
+          punctuation == "ok gilfoyle, deploy the api.", "got '\(punctuation)'")
+
+    let caseFold = m("OK Gilfoyle", "gilfoyle deploy")
+    check("the overlap ignores case",
+          caseFold == "OK Gilfoyle deploy", "got '\(caseFold)'")
+}
+
+// --- The suffix prompt ----------------------------------------------------
+
+do {
+    let template = "Agent {{agent}} said {{command}} at {{date}}."
+    let rendered = VoiceSuffixPrompt.render(template,
+                                            agent: "gilfoyle",
+                                            command: "deploy the api",
+                                            transcript: "ok gilfoyle deploy the api")
+    check("the agent variable is replaced",
+          rendered.contains("Agent gilfoyle said"), "got '\(rendered)'")
+    check("the command variable is replaced",
+          rendered.contains("said deploy the api"), "got '\(rendered)'")
+    check("the date variable is replaced",
+          !rendered.contains("{{date}}"), "got '\(rendered)'")
+    check("an unknown variable is left alone",
+          VoiceSuffixPrompt.render("{{nope}}") == "{{nope}}")
+    check("the default suffix tells the agent it was spoken",
+          VoiceSuffixPrompt.defaultText.lowercased().contains("out loud"))
+    check("the default suffix points at the macos popup",
+          VoiceSuffixPrompt.defaultText.contains("macos-popup show_popup"))
+}
+
 print("")
 print("\(passes) passed, \(failures) failed")
 exit(failures == 0 ? 0 : 1)

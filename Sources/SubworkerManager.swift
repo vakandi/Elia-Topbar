@@ -19,7 +19,8 @@ enum AppLog {
     /// trace: `d` is compiled out, and the error only ever appears in a popup
     /// too narrow to read, so a failed launch is indistinguishable from no attempt.
     static func important(_ msg: String) {
-        let line = "[IMPORTANT] \(msg)\n"
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        let line = "[\(stamp)] [IMPORTANT] \(msg)\n"
         let path = NSString(string: "~/Library/Logs/EliaTopBar/server-start.log").expandingTildeInPath
         try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
         if let handle = FileHandle(forWritingAtPath: path) {
@@ -848,7 +849,12 @@ final class SubworkerManager: ObservableObject {
         }
     }
 
-    func triggerSubworker(_ name: String) {
+    /// Trigger a subworker.
+    ///
+    /// - Parameter prompt: when set, it replaces the agent's `PROMPT.md` for
+    ///   that run. The bridge takes it verbatim, so the caller must send the
+    ///   full prompt — see `VoicePromptBuilder`.
+    func triggerSubworker(_ name: String, prompt: String? = nil) {
         guard let url = URL(string: "\(baseURL)/trigger/\(name)") else { return }
         AppLog.d("Triggering subworker: \(name)")
         var request = EliaAuth.authorize(url)
@@ -856,7 +862,10 @@ final class SubworkerManager: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let model = modelSelections[name] ?? ""
         let variant = modelVariants[name] ?? ""
-        let body: [String: String] = ["model": model, "variant": variant]
+        var body: [String: String] = ["model": model, "variant": variant]
+        if let prompt, !prompt.isEmpty {
+            body["prompt"] = prompt
+        }
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         URLSession.shared.dataTask(with: request) { [weak self] _, response, error in

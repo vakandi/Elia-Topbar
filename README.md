@@ -331,6 +331,24 @@ xattr -dr com.apple.quarantine /Applications/EliaTopBar.app
 
 ---
 
+## 🎙️ Voice control
+
+Push-to-talk is working (hold key or global hotkey). Wake word (`Ok <agent>`) is
+not working yet — use push-to-talk for now.
+
+Spoken answers use the macOS popup MCP so the agent can reach Wael on any screen:
+
+```bash
+mcp-cli call macos-popup show_popup '{"title": "Elia", "message": "the answer", "level": "info", "duration": 10}'
+```
+
+The popup MCP is published as `mcp-macos-popup` and supports multiple displays:
+`list_screens`, `get_focused_screen`, and `screen` on `show_popup`/`show_docs`.
+
+Full MCP usage: `/Users/vakandi/Documents/subworker-opencode-rust/subworkers/context/TOOLS.md`.
+
+---
+
 ## 🤝 Contributing
 
 PRs welcome! Keep it lightweight — this app is intentionally a thin client. Bug reports

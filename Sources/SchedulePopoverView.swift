@@ -61,7 +61,10 @@ struct SchedulePopoverView: View {
             Text("Hourly").tag(Mode.hourly)
             Text("Frequent").tag(Mode.frequent)
             Text("Cron").tag(Mode.cron)
-        }.pickerStyle(.segmented).labelsHidden()
+        }
+        // Not segmented: NSSegmentedControl inside a hosting view crashes the
+        // app on this OS (see TopbarSettingsView, the same picker style).
+        .pickerStyle(.menu).labelsHidden()
     }
 
     private var hourlySection: some View {

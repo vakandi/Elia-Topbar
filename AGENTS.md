@@ -250,3 +250,38 @@ checklist above.
 - `Sources/*.swift` — all application logic
 - `Package.swift` — only if adding targets or dependencies
 - `docs/superpowers/` — feature specs and implementation plans
+
+## Audio / voice testing with BlackHole
+
+The built-in MacBook mic is dead on this machine, so every voice test goes through BlackHole.
+
+1. Point EliaTopBar at a BlackHole input (one-time, or per test):
+   ```bash
+   defaults write com.elia.elia-topbar voiceInputDeviceUID "BlackHole2ch_UID"
+   # or BlackHole64ch_UID
+   ```
+   The UIDs are `BlackHole2ch_UID` and `BlackHole64ch_UID`; the built-in mic is `BuiltInMicrophoneDevice`.
+
+2. Isolate the injection from the rest of the system audio (optional but recommended):
+   ```bash
+   ~/Documents/EliaTopBar/tools/audio-dev default "MacBook Pro Speakers"
+   ```
+   This sends Spotify / films / browsers to the speakers and keeps BlackHole clean.
+
+3. Inject a file into BlackHole while EliaTopBar is capturing it:
+   ```bash
+   ffmpeg -y -loglevel error -i /path/to/clip.wav -f audiotoolbox "BlackHole 2ch"
+   ```
+   `afplay` also works for simple cases, but `ffmpeg ... -f audiotoolbox "BlackHole 2ch"` is the reliable path because it writes straight to the device.
+
+4. Generate test voices with macOS `say`:
+   ```bash
+   say -v Thomas -o /tmp/fr_ok.aiff "Ok Gilfoyle, dis-moi bonjour."
+   say -v Alex   -o /tmp/en_ok.aiff "Okay Gilfoyle, say hello."
+   ffmpeg -y -loglevel error -i /tmp/fr_ok.aiff -af "volume=4" /tmp/fr_ok.wav
+   ```
+
+5. Restore the normal audio routing when finished:
+   ```bash
+   ~/Documents/EliaTopBar/tools/audio-dev default "BlackHole 2ch"
+   ```

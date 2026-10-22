@@ -22,5 +22,20 @@
     <true/>
     <key>NSAppleEventsUsageDescription</key>
     <string>EliaTopBar opens Terminal to start an SSH session into your Colima instance.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>EliaTopBar listens when you hold the push-to-talk key so it can turn your voice into a command for an agent.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>EliaTopBar uses on-device speech recognition to hear the wake word and show you what it heard.</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.elia.elia-topbar.voice</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>elia</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>

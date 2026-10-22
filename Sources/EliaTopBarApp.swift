@@ -72,6 +72,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var colimaManager: ColimaManager!
     private var opencodeServerManager: OpenCodeServerManager!
     private var subworkerManager: SubworkerManager!
+    /// The voice feature: capture → Whisper → wake phrase → subworker.
+    private var voiceRouter: VoiceCommandRouter!
     private var cancellables = Set<AnyCancellable>()
     private var logPopover: NSPopover?
     /// Nil-ing an NSHostingController can skip SwiftUI onDisappear, so we hold
@@ -250,6 +252,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         subworkerManager = SubworkerManager()
+        setupVoiceRouter()
+
+        // LSUIElement apps do not always receive `application(_:open:)` for
+        // URL events. Register the Apple Event handler explicitly, so
+        // `elia://` links reach the voice router.
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
         // Touch the bridge singleton at launch. Its health poll starts in init(),
         // and until something referenced it the timer never ran, so the server
         // state stayed .stopped and Stop stayed greyed out while the server was
@@ -1045,6 +1058,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settingsItem = NSMenuItem(title: "⚙️ Topbar Settings…", action: #selector(openTopbarSettings(_:)), keyEquivalent: "")
         settingsItem.target = self
         menu.addItem(settingsItem)
+
+        // A quick microphone check, without opening the settings.
+        let micTestItem = NSMenuItem(title: "🎤 Test the microphone", action: #selector(testMicrophone), keyEquivalent: "")
+        micTestItem.target = self
+        micTestItem.isHidden = !AudioSettings.enabled
+        menu.addItem(micTestItem)
 
         let launchItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         launchItem.target = self
@@ -2431,8 +2450,85 @@ if let popover = subworkerLogPopover {
         scheduleWindow = window
     }
 
-    @objc private func openTopbarSettings(_ sender: NSMenuItem) {
-        if let w = topbarSettingsWindow { w.close() }
+    /// Wires the voice router to the bridge and arms the trigger.
+    ///
+    /// The roster comes from the live subworker list, not a hardcoded list:
+    /// a wake phrase that names an agent the bridge does not know would
+    /// 404 on the trigger.
+    private func setupVoiceRouter() {
+        let router = VoiceCommandRouter.shared
+        router.rosterProvider = { [weak self] in
+            guard let self else { return [] }
+            var names = self.subworkerManager.subworkers.map(\.name)
+            let main = self.subworkerManager.mainAgentName
+            if !main.isEmpty, !names.contains(main) {
+                names.insert(main, at: 0)
+            }
+            return names
+        }
+        router.triggerHandler = { [weak self] agent, prompt in
+            self?.subworkerManager.triggerSubworker(agent, prompt: prompt)
+        }
+        router.repoPathProvider = { SubworkerServerManager.configuredRepoPath }
+        router.serverConnectedProvider = { [weak self] in
+            guard let self else { return false }
+            return self.subworkerManager.wsConnected && self.subworkerManager.statusError == nil
+        }
+        // Picking an agent in the panel shows the run animation, so the
+        // user sees which agent the command is going to.
+        router.pickerSelectHandler = { [weak self] agent in
+            guard let self else { return }
+            let dropX = self.menuBarAnchorX()
+            RunPopupController.shared.show(for: agent,
+                                           dropX: dropX,
+                                           duration: 5,
+                                           baseURL: self.subworkerManager.currentBaseURL,
+                                           disableAutoClose: false)
+        }
+        voiceRouter = router
+        router.applySettings()
+        // The panel only opens when the voice flow needs it — after a
+        // finished transcription. The roster is kept in sync so the panel
+        // is never stale when it does open.
+        subworkerManager.$subworkers
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                VoiceAgentPickerController.shared.setRoster(self.subworkerManager.subworkers.map(\.name))
+            }
+            .store(in: &cancellables)
+    }
+
+    /// `elia://voice?text=…` — the route the OS-owned dictation uses.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            voiceRouter?.handle(url: url)
+        }
+    }
+
+    @objc private func handleGetURLEvent(_ event: NSAppleEventDescriptor,
+                                         withReplyEvent reply: NSAppleEventDescriptor) {
+        let urlString = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue
+        AppLog.important("handleGetURLEvent url=\(urlString ?? "<nil>")")
+        guard let urlString, let url = URL(string: urlString) else { return }
+        voiceRouter?.handle(url: url)
+    }
+
+    /// Record a few seconds and transcribe them, without firing any agent.
+    @objc private func testMicrophone() {
+        guard AudioSettings.enabled else { return }
+        voiceRouter?.runMicTest { [weak self] result in
+            let text = result ?? "nothing was heard"
+            Task { @MainActor [weak self] in
+                self?.showTopbarToast(emoji: result == nil ? "❌" : "🎤",
+                                       message: text,
+                                       spinning: false,
+                                       autoHideAfter: 6.0)
+            }
+        }
+    }
+
+    @objc private func openTopbarSettings(_ sender: NSMenuItem) {        if let w = topbarSettingsWindow { w.close() }
         let contentView = NSHostingView(rootView: TopbarSettingsView(
             iconProvider: { [weak self] in self?.statusItem.button?.image },
             onRefresh: { [weak self] in
@@ -2449,6 +2545,9 @@ if let popover = subworkerLogPopover {
             onOrderChange: { [weak self] mode in
                 self?.subworkerManager.fleetOrderMode = mode
                 self?.updateStatusIcon()
+            },
+            onVoiceSettingsChanged: { [weak self] in
+                self?.voiceRouter?.applySettings()
             }
         ))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 420),

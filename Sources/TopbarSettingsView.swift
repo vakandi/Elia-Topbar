@@ -14,6 +14,8 @@ struct TopbarSettingsView: View {
     var onRefresh: () -> Void
     var onTestRunPopup: () -> Void = {}
     var onOrderChange: (String) -> Void
+    /// Called when a voice setting changed, so the app can re-arm the trigger.
+    var onVoiceSettingsChanged: () -> Void = {}
 
     @State private var barOrder: [BarSlot] = BarSlot.storedOrDefault
     @State private var photosSide: String = UserDefaults.standard.string(forKey: "fleetPhotosSide") ?? "left"
@@ -46,9 +48,25 @@ struct TopbarSettingsView: View {
 
     private let defaults = UserDefaults.standard
 
+    /// The settings window has two tabs: the topbar layout, and the audio
+    /// and voice controls.
+    enum SettingsTab: String, CaseIterable, Identifiable {
+        case topbar = "Topbar"
+        case audio = "Audio & Voice"
+
+        var id: String { rawValue }
+    }
+
+    @State private var selectedTab: SettingsTab = .topbar
+
+
     var body: some View {
-        ScrollView(.vertical, showsIndicators: true) {
+        VStack(spacing: 0) {
+            tabBar
+            Divider()
+            ScrollView(.vertical, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 12) {
+                if selectedTab == .topbar {
                 HStack(spacing: 7) {
                     if let logo = BrandAssets.sherlock {
                         Image(nsImage: logo)
@@ -156,12 +174,20 @@ struct TopbarSettingsView: View {
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 8) {
+                    // NOT a segmented picker. The segmented style is backed by
+                    // NSSegmentedControl, and putting one inside a SwiftUI
+                    // hosting view on this OS crashes the app: the control
+                    // lands in a window, AppKit re-lays the SwiftUI tree
+                    // outside any Swift task, and the runtime's executor
+                    // check then reads a stale pointer and dies in
+                    // `MainActor.assumeIsolated`.
                     Picker("Profile", selection: $profile) {
                         Text("Developer").tag("developer")
                         Text("Calm").tag("calm")
                         Text("Minimal").tag("minimal")
                     }
-                    .pickerStyle(.segmented)
+                    .pickerStyle(.menu)
+                    .labelsHidden()
                     .onChange(of: profile) { v in applyProfile(v) }
                     Text(profileCaption)
                         .font(.caption2).foregroundColor(.secondary)
@@ -347,12 +373,49 @@ struct TopbarSettingsView: View {
             } label: {
                 Text("Placement (system-managed)").font(.caption).foregroundColor(.secondary)
             }
+
+                } else {
+                    AudioSettingsSection(onSettingsChanged: onVoiceSettingsChanged)
+                }
             }
             .padding(14)
+        }
         }
         .frame(width: 430)
         .frame(maxHeight: 600)
         .onReceive(previewTimer) { _ in previewPhase += 0.13 }
+    }
+
+    /// The tab bar. Plain buttons on purpose: a segmented picker is backed
+    /// by NSSegmentedControl, and putting one inside a hosting view on this
+    /// OS crashes the app when the control lands in a window.
+    private var tabBar: some View {
+        HStack(spacing: 8) {
+            ForEach(SettingsTab.allCases) { tab in
+                let isSelected = selectedTab == tab
+                Button {
+                    selectedTab = tab
+                } label: {
+                    Text(tab.rawValue)
+                        .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 7)
+                                .stroke(isSelected ? Color.accentColor.opacity(0.6) : Color.clear, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
     }
 
     private var profileCaption: String {
