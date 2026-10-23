@@ -15,7 +15,7 @@ final class VoiceHUDController {
 
     private var panel: NSPanel?
     private var host: NSHostingView<AnyView>?
-    private let model = VoiceHUDModel()
+    let model = VoiceHUDModel()
     private var expansionObserver: AnyCancellable?
 
     private static let compactSize = NSSize(width: 360, height: 84)
@@ -43,7 +43,9 @@ final class VoiceHUDController {
                 agent: String? = nil,
                 candidates: [String] = [],
                 onSelect: ((String) -> Void)? = nil,
-                onChangeAgent: (() -> Void)? = nil) {
+                onChangeAgent: (() -> Void)? = nil,
+                onCancel: (() -> Void)? = nil) {
+        if let onCancel { model.onCancel = onCancel }
         model.status = status
         model.transcript = transcript
         model.level = level
@@ -172,6 +174,13 @@ enum VoiceHUDStatus: Equatable {
         case .failed: return .red
         }
     }
+
+    var showsCancel: Bool {
+        switch self {
+        case .idle, .sent: return false
+        default: return true
+        }
+    }
 }
 
 /// The observable state of the bar.
@@ -184,6 +193,7 @@ final class VoiceHUDModel: ObservableObject {
     @Published var candidates: [String] = []
     @Published var isExpanded = false
     @Published var changeAgent: (() -> Void)?
+    @Published var onCancel: (() -> Void)?
     /// An optional banner shown above the transcript (e.g. "server offline").
     @Published var banner: String?
     /// The agent's photo, resolved outside the view body.
@@ -223,6 +233,17 @@ struct VoiceHUDView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Show the transcript")
+
+                    if model.onCancel != nil, model.status.showsCancel {
+                        Button {
+                            model.onCancel?()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Cancel")
+                    }
                 }
 
                 if model.isExpanded {

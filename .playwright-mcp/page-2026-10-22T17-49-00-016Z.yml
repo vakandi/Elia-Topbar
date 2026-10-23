@@ -1,0 +1,732 @@
+- generic [ref=f11e1]:
+  - generic [ref=f11e2]:
+    - paragraph [ref=f11e3]:
+      - text: This site uses a sign-in cookie and, only if you allow it, Google Analytics cookies that count visits. No advertising cookies.
+      - link "Cookie policy" [ref=f11e4] [cursor=pointer]:
+        - /url: /cookie-policy
+      - text: .
+    - generic [ref=f11e5]:
+      - button "Only necessary" [ref=f11e6] [cursor=pointer]
+      - button "Allow analytics" [ref=f11e7] [cursor=pointer]
+  - navigation [ref=f11e8]:
+    - generic [ref=f11e9]:
+      - link [ref=f11e11] [cursor=pointer]:
+        - /url: /
+        - img "SMM PWR" [ref=f11e12]
+      - list [ref=f11e14]:
+        - listitem [ref=f11e15]:
+          - link "Sign in" [ref=f11e16] [cursor=pointer]:
+            - /url: /
+        - listitem [ref=f11e17]:
+          - link "Services" [ref=f11e18] [cursor=pointer]:
+            - /url: /services
+        - listitem [ref=f11e19]:
+          - link "API" [ref=f11e20] [cursor=pointer]:
+            - /url: /api
+        - listitem [ref=f11e21]:
+          - link "Sign up" [ref=f11e22] [cursor=pointer]:
+            - /url: /signup
+        - listitem [ref=f11e23]:
+          - link "Blog" [ref=f11e24] [cursor=pointer]:
+            - /url: /blog
+        - listitem [ref=f11e25]:
+          - link "Affiliates" [ref=f11e26] [cursor=pointer]:
+            - /url: /affiliate-program
+        - listitem [ref=f11e27]:
+          - group "Display mode" [ref=f11e28]:
+            - button "Day — light mode" [ref=f11e29] [cursor=pointer]: ☀️
+            - button "Soft — easy on the eyes" [ref=f11e30] [cursor=pointer]: ⛅
+            - button "Night — dark mode" [ref=f11e31] [cursor=pointer]: 🌧️
+  - main [ref=f11e32]:
+    - generic [ref=f11e36]:
+      - heading "Report SMM Panel" [level=1] [ref=f11e37]
+      - paragraph [ref=f11e38]:
+        - text: Last updated
+        - time [ref=f11e39]: 13 Oct 2026
+      - paragraph [ref=f11e40]:
+        - text: We currently carry
+        - strong [ref=f11e41]: 41 Report services
+        - text: across
+        - strong [ref=f11e42]: 2 categories
+        - text: ", priced from"
+        - strong [ref=f11e43]: $2.376
+        - text: to
+        - strong [ref=f11e44]: $285.12
+        - text: per 1000.
+        - strong [ref=f11e45]: "0"
+        - text: of them carry a refill guarantee. Every price on this page is the live rate you are charged — there is no separate checkout markup.
+      - heading "What we carry for Report" [level=2] [ref=f11e46]
+      - table [ref=f11e47]:
+        - rowgroup [ref=f11e48]:
+          - row [ref=f11e49]:
+            - columnheader "Category" [ref=f11e50]
+            - columnheader "Services" [ref=f11e51]
+            - columnheader "From (per 1000)" [ref=f11e52]
+        - rowgroup [ref=f11e53]:
+          - row [ref=f11e54]:
+            - cell [ref=f11e55]:
+              - link "Report Services | Real Tasks" [ref=f11e56] [cursor=pointer]:
+                - /url: /service/780/whatsapp-group-channel-reports-max-10k-no-refill
+            - cell "23" [ref=f11e57]
+            - cell "$19.80" [ref=f11e58]
+          - row [ref=f11e59]:
+            - cell [ref=f11e60]:
+              - link "Report Services | From Bots" [ref=f11e61] [cursor=pointer]:
+                - /url: /service/806/youtube-report-spam-account-max-1m-no-refill
+            - cell "18" [ref=f11e62]
+            - cell "$2.376" [ref=f11e63]
+      - heading "Report prices" [level=2] [ref=f11e64]
+      - table [ref=f11e65]:
+        - rowgroup [ref=f11e66]:
+          - row [ref=f11e67]:
+            - columnheader "ID" [ref=f11e68]
+            - columnheader "Service" [ref=f11e69]
+            - columnheader "Per 1000" [ref=f11e70]
+            - columnheader "Min" [ref=f11e71]
+            - columnheader "Max" [ref=f11e72]
+        - rowgroup [ref=f11e73]:
+          - row [ref=f11e74]:
+            - cell "806" [ref=f11e75]
+            - cell [ref=f11e76]:
+              - link "YouTube Report Spam Account | Max 1M | No Refill" [ref=f11e77] [cursor=pointer]:
+                - /url: /service/806/youtube-report-spam-account-max-1m-no-refill
+            - cell "$2.376" [ref=f11e78]
+            - cell "100" [ref=f11e79]
+            - cell "1000000" [ref=f11e80]
+          - row [ref=f11e81]:
+            - cell "816" [ref=f11e82]
+            - cell [ref=f11e83]:
+              - link "TikTok Report Spam Video | Max 100K | No Refill" [ref=f11e84] [cursor=pointer]:
+                - /url: /service/816/tiktok-report-spam-video-max-100k-no-refill
+            - cell "$5.94" [ref=f11e85]
+            - cell "100" [ref=f11e86]
+            - cell "100000" [ref=f11e87]
+          - row [ref=f11e88]:
+            - cell "804" [ref=f11e89]
+            - cell [ref=f11e90]:
+              - link "TikTok Report Spam Video | Max 3M | No Refill" [ref=f11e91] [cursor=pointer]:
+                - /url: /service/804/tiktok-report-spam-video-max-3m-no-refill
+            - cell "$6.60" [ref=f11e92]
+            - cell "100" [ref=f11e93]
+            - cell "3000000" [ref=f11e94]
+          - row [ref=f11e95]:
+            - cell "808" [ref=f11e96]
+            - cell [ref=f11e97]:
+              - link "Instagram Report Spam Post | Max 5M | No Refill" [ref=f11e98] [cursor=pointer]:
+                - /url: /service/808/instagram-report-spam-post-max-5m-no-refill
+            - cell "$9.24" [ref=f11e99]
+            - cell "100" [ref=f11e100]
+            - cell "5000000" [ref=f11e101]
+          - row [ref=f11e102]:
+            - cell "813" [ref=f11e103]
+            - cell [ref=f11e104]:
+              - link "TikTok Report Spam Account | Max 1M | No Refill" [ref=f11e105] [cursor=pointer]:
+                - /url: /service/813/tiktok-report-spam-account-max-1m-no-refill
+            - cell "$10.56" [ref=f11e106]
+            - cell "100" [ref=f11e107]
+            - cell "1000000" [ref=f11e108]
+          - row [ref=f11e109]:
+            - cell "805" [ref=f11e110]
+            - cell [ref=f11e111]:
+              - link "Instagram Report Spam Account | Max 3M | No Refill" [ref=f11e112] [cursor=pointer]:
+                - /url: /service/805/instagram-report-spam-account-max-3m-no-refill
+            - cell "$11.88" [ref=f11e113]
+            - cell "100" [ref=f11e114]
+            - cell "3000000" [ref=f11e115]
+          - row [ref=f11e116]:
+            - cell "809" [ref=f11e117]
+            - cell [ref=f11e118]:
+              - link "TikTok Report Spam Video | Max 3M | No Refill" [ref=f11e119] [cursor=pointer]:
+                - /url: /service/809/tiktok-report-spam-video-max-3m-no-refill
+            - cell "$13.20" [ref=f11e120]
+            - cell "100" [ref=f11e121]
+            - cell "3000000" [ref=f11e122]
+          - row [ref=f11e123]:
+            - cell "815" [ref=f11e124]
+            - cell [ref=f11e125]:
+              - link "TikTok Report Spam Account | Max 10K | No Refill" [ref=f11e126] [cursor=pointer]:
+                - /url: /service/815/tiktok-report-spam-account-max-10k-no-refill
+            - cell "$13.20" [ref=f11e127]
+            - cell "100" [ref=f11e128]
+            - cell "10000" [ref=f11e129]
+          - row [ref=f11e130]:
+            - cell "812" [ref=f11e131]
+            - cell [ref=f11e132]:
+              - link "Instagram Report Spam Reels | Max 3M | No Refill" [ref=f11e133] [cursor=pointer]:
+                - /url: /service/812/instagram-report-spam-reels-max-3m-no-refill
+            - cell "$13.20" [ref=f11e134]
+            - cell "100" [ref=f11e135]
+            - cell "3000000" [ref=f11e136]
+          - row [ref=f11e137]:
+            - cell "817" [ref=f11e138]
+            - cell [ref=f11e139]:
+              - link "Real Acs TikTok Report Spam Video | Max 5K | No Refill" [ref=f11e140] [cursor=pointer]:
+                - /url: /service/817/real-acs-tiktok-report-spam-video-max-5k-no-refill
+            - cell "$14.52" [ref=f11e141]
+            - cell "100" [ref=f11e142]
+            - cell "5000" [ref=f11e143]
+          - row [ref=f11e144]:
+            - cell "803" [ref=f11e145]
+            - cell [ref=f11e146]:
+              - link "Instagram Report Spam Account | Max 3M | No Refill" [ref=f11e147] [cursor=pointer]:
+                - /url: /service/803/instagram-report-spam-account-max-3m-no-refill
+            - cell "$15.84" [ref=f11e148]
+            - cell "100" [ref=f11e149]
+            - cell "3000000" [ref=f11e150]
+          - row [ref=f11e151]:
+            - cell "811" [ref=f11e152]
+            - cell [ref=f11e153]:
+              - link "Twitter Report Spam Tweet | Max 400K | No Refill" [ref=f11e154] [cursor=pointer]:
+                - /url: /service/811/twitter-report-spam-tweet-max-400k-no-refill
+            - cell "$15.84" [ref=f11e155]
+            - cell "100" [ref=f11e156]
+            - cell "400000" [ref=f11e157]
+          - row [ref=f11e158]:
+            - cell "819" [ref=f11e159]
+            - cell [ref=f11e160]:
+              - link "Twitter Report Spam Tweet | Max 20K | No Refill" [ref=f11e161] [cursor=pointer]:
+                - /url: /service/819/twitter-report-spam-tweet-max-20k-no-refill
+            - cell "$15.84" [ref=f11e162]
+            - cell "100" [ref=f11e163]
+            - cell "20000" [ref=f11e164]
+          - row [ref=f11e165]:
+            - cell "814" [ref=f11e166]
+            - cell [ref=f11e167]:
+              - link "Twitter Report Spam Video | Max 110K | No Refill" [ref=f11e168] [cursor=pointer]:
+                - /url: /service/814/twitter-report-spam-video-max-110k-no-refill
+            - cell "$17.16" [ref=f11e169]
+            - cell "100" [ref=f11e170]
+            - cell "110000" [ref=f11e171]
+          - row [ref=f11e172]:
+            - cell "820" [ref=f11e173]
+            - cell [ref=f11e174]:
+              - link "Twitter Report Spam Video | Max 20K | No Refill" [ref=f11e175] [cursor=pointer]:
+                - /url: /service/820/twitter-report-spam-video-max-20k-no-refill
+            - cell "$17.16" [ref=f11e176]
+            - cell "100" [ref=f11e177]
+            - cell "20000" [ref=f11e178]
+          - row [ref=f11e179]:
+            - cell "807" [ref=f11e180]
+            - cell [ref=f11e181]:
+              - link "Twitter Report Spam Account | Max 3M | No Refill" [ref=f11e182] [cursor=pointer]:
+                - /url: /service/807/twitter-report-spam-account-max-3m-no-refill
+            - cell "$19.80" [ref=f11e183]
+            - cell "100" [ref=f11e184]
+            - cell "3000000" [ref=f11e185]
+          - row [ref=f11e186]:
+            - cell "780" [ref=f11e187]
+            - cell [ref=f11e188]:
+              - link "WhatsApp Group/Channel Reports | Max 10K | No Refill" [ref=f11e189] [cursor=pointer]:
+                - /url: /service/780/whatsapp-group-channel-reports-max-10k-no-refill
+            - cell "$19.80" [ref=f11e190]
+            - cell "100" [ref=f11e191]
+            - cell "10000" [ref=f11e192]
+          - row [ref=f11e193]:
+            - cell "810" [ref=f11e194]
+            - cell [ref=f11e195]:
+              - link "Real Acs Instagram Report Spam Account | Max 3M | No Refill" [ref=f11e196] [cursor=pointer]:
+                - /url: /service/810/real-acs-instagram-report-spam-account-max-3m-no-refill
+            - cell "$19.80" [ref=f11e197]
+            - cell "100" [ref=f11e198]
+            - cell "3000000" [ref=f11e199]
+          - row [ref=f11e200]:
+            - cell "818" [ref=f11e201]
+            - cell [ref=f11e202]:
+              - link "Real Bot Mix Twitter Report Spam Account | Max 20K | No Refill" [ref=f11e203] [cursor=pointer]:
+                - /url: /service/818/real-bot-mix-twitter-report-spam-account-max-20k-no-refill
+            - cell "$19.80" [ref=f11e204]
+            - cell "100" [ref=f11e205]
+            - cell "20000" [ref=f11e206]
+          - row [ref=f11e207]:
+            - cell "782" [ref=f11e208]
+            - cell [ref=f11e209]:
+              - link "Facebook Post Reports | Max 5K | No Refill" [ref=f11e210] [cursor=pointer]:
+                - /url: /service/782/facebook-post-reports-max-5k-no-refill
+            - cell "$26.928" [ref=f11e211]
+            - cell "100" [ref=f11e212]
+            - cell "5000" [ref=f11e213]
+          - row [ref=f11e214]:
+            - cell "781" [ref=f11e215]
+            - cell [ref=f11e216]:
+              - link "Telegram Group/Channel Reports | Max 5K | No Refill" [ref=f11e217] [cursor=pointer]:
+                - /url: /service/781/telegram-group-channel-reports-max-5k-no-refill
+            - cell "$26.928" [ref=f11e218]
+            - cell "100" [ref=f11e219]
+            - cell "5000" [ref=f11e220]
+          - row [ref=f11e221]:
+            - cell "791" [ref=f11e222]
+            - cell [ref=f11e223]:
+              - link "Twitch Reports | Max 10K | No Refill" [ref=f11e224] [cursor=pointer]:
+                - /url: /service/791/twitch-reports-max-10k-no-refill
+            - cell "$28.512" [ref=f11e225]
+            - cell "100" [ref=f11e226]
+            - cell "10000" [ref=f11e227]
+          - row [ref=f11e228]:
+            - cell "790" [ref=f11e229]
+            - cell [ref=f11e230]:
+              - link "LinkedIn Post Reports | Max 10K | No Refill" [ref=f11e231] [cursor=pointer]:
+                - /url: /service/790/linkedin-post-reports-max-10k-no-refill
+            - cell "$28.512" [ref=f11e232]
+            - cell "50" [ref=f11e233]
+            - cell "10000" [ref=f11e234]
+          - row [ref=f11e235]:
+            - cell "792" [ref=f11e236]
+            - cell [ref=f11e237]:
+              - link "Discord Server Reports | Max 10K | No Refill" [ref=f11e238] [cursor=pointer]:
+                - /url: /service/792/discord-server-reports-max-10k-no-refill
+            - cell "$28.512" [ref=f11e239]
+            - cell "20" [ref=f11e240]
+            - cell "10000" [ref=f11e241]
+          - row [ref=f11e242]:
+            - cell "787" [ref=f11e243]
+            - cell [ref=f11e244]:
+              - link "Facebook Group Reports | Max 5K | No Refill" [ref=f11e245] [cursor=pointer]:
+                - /url: /service/787/facebook-group-reports-max-5k-no-refill
+            - cell "$28.512" [ref=f11e246]
+            - cell "100" [ref=f11e247]
+            - cell "5000" [ref=f11e248]
+          - row [ref=f11e249]:
+            - cell "785" [ref=f11e250]
+            - cell [ref=f11e251]:
+              - link "Facebook Page Reports | Max 5K | No Refill" [ref=f11e252] [cursor=pointer]:
+                - /url: /service/785/facebook-page-reports-max-5k-no-refill
+            - cell "$28.512" [ref=f11e253]
+            - cell "100" [ref=f11e254]
+            - cell "5000" [ref=f11e255]
+          - row [ref=f11e256]:
+            - cell "783" [ref=f11e257]
+            - cell [ref=f11e258]:
+              - link "Quora Reports | Max 10K | No Refill" [ref=f11e259] [cursor=pointer]:
+                - /url: /service/783/quora-reports-max-10k-no-refill
+            - cell "$28.512" [ref=f11e260]
+            - cell "100" [ref=f11e261]
+            - cell "10000" [ref=f11e262]
+          - row [ref=f11e263]:
+            - cell "789" [ref=f11e264]
+            - cell [ref=f11e265]:
+              - link "Live Reports | Max 10K | No Refill" [ref=f11e266] [cursor=pointer]:
+                - /url: /service/789/live-reports-max-10k-no-refill
+            - cell "$28.512" [ref=f11e267]
+            - cell "50" [ref=f11e268]
+            - cell "10000" [ref=f11e269]
+          - row [ref=f11e270]:
+            - cell "788" [ref=f11e271]
+            - cell [ref=f11e272]:
+              - link "TikTok Account Reports | Max 10K | No Refill" [ref=f11e273] [cursor=pointer]:
+                - /url: /service/788/tiktok-account-reports-max-10k-no-refill
+            - cell "$28.512" [ref=f11e274]
+            - cell "50" [ref=f11e275]
+            - cell "10000" [ref=f11e276]
+          - row [ref=f11e277]:
+            - cell "786" [ref=f11e278]
+            - cell [ref=f11e279]:
+              - link "Facebook Profile Reports | Max 5K | No Refill" [ref=f11e280] [cursor=pointer]:
+                - /url: /service/786/facebook-profile-reports-max-5k-no-refill
+            - cell "$28.512" [ref=f11e281]
+            - cell "100" [ref=f11e282]
+            - cell "5000" [ref=f11e283]
+          - row [ref=f11e284]:
+            - cell "784" [ref=f11e285]
+            - cell [ref=f11e286]:
+              - link "Reddit Post Reports | Max 10K | No Refill" [ref=f11e287] [cursor=pointer]:
+                - /url: /service/784/reddit-post-reports-max-10k-no-refill
+            - cell "$28.512" [ref=f11e288]
+            - cell "10" [ref=f11e289]
+            - cell "10000" [ref=f11e290]
+          - row [ref=f11e291]:
+            - cell "794" [ref=f11e292]
+            - cell [ref=f11e293]:
+              - link "Instagram Account Reports | Max 50K | No Refill" [ref=f11e294] [cursor=pointer]:
+                - /url: /service/794/instagram-account-reports-max-50k-no-refill
+            - cell "$57.024" [ref=f11e295]
+            - cell "100" [ref=f11e296]
+            - cell "50000" [ref=f11e297]
+          - row [ref=f11e298]:
+            - cell "793" [ref=f11e299]
+            - cell [ref=f11e300]:
+              - link "Instagram Post Reports | Max 50K | No Refill" [ref=f11e301] [cursor=pointer]:
+                - /url: /service/793/instagram-post-reports-max-50k-no-refill
+            - cell "$57.024" [ref=f11e302]
+            - cell "100" [ref=f11e303]
+            - cell "50000" [ref=f11e304]
+          - row [ref=f11e305]:
+            - cell "795" [ref=f11e306]
+            - cell [ref=f11e307]:
+              - link "Snapchat Account Reports | Max 50K | No Refill" [ref=f11e308] [cursor=pointer]:
+                - /url: /service/795/snapchat-account-reports-max-50k-no-refill
+            - cell "$57.024" [ref=f11e309]
+            - cell "100" [ref=f11e310]
+            - cell "50000" [ref=f11e311]
+          - row [ref=f11e312]:
+            - cell "796" [ref=f11e313]
+            - cell [ref=f11e314]:
+              - link "Twitter User Reports | Max 15K | No Refill" [ref=f11e315] [cursor=pointer]:
+                - /url: /service/796/twitter-user-reports-max-15k-no-refill
+            - cell "$57.024" [ref=f11e316]
+            - cell "100" [ref=f11e317]
+            - cell "15000" [ref=f11e318]
+          - row [ref=f11e319]:
+            - cell "797" [ref=f11e320]
+            - cell [ref=f11e321]:
+              - link "Twitter Tweet Reports | Max 15K | No Refill" [ref=f11e322] [cursor=pointer]:
+                - /url: /service/797/twitter-tweet-reports-max-15k-no-refill
+            - cell "$57.024" [ref=f11e323]
+            - cell "100" [ref=f11e324]
+            - cell "15000" [ref=f11e325]
+          - row [ref=f11e326]:
+            - cell "799" [ref=f11e327]
+            - cell [ref=f11e328]:
+              - link "YouTube Channel Reports | Max 5K | No Refill" [ref=f11e329] [cursor=pointer]:
+                - /url: /service/799/youtube-channel-reports-max-5k-no-refill
+            - cell "$106.128" [ref=f11e330]
+            - cell "100" [ref=f11e331]
+            - cell "5000" [ref=f11e332]
+          - row [ref=f11e333]:
+            - cell "800" [ref=f11e334]
+            - cell [ref=f11e335]:
+              - link "Fiver Reports | Max 50K | No Refill" [ref=f11e336] [cursor=pointer]:
+                - /url: /service/800/fiver-reports-max-50k-no-refill
+            - cell "$106.128" [ref=f11e337]
+            - cell "100" [ref=f11e338]
+            - cell "50000" [ref=f11e339]
+          - row [ref=f11e340]:
+            - cell "798" [ref=f11e341]
+            - cell [ref=f11e342]:
+              - link "YouTube Video Reports | Max 5K | No Refill" [ref=f11e343] [cursor=pointer]:
+                - /url: /service/798/youtube-video-reports-max-5k-no-refill
+            - cell "$106.128" [ref=f11e344]
+            - cell "100" [ref=f11e345]
+            - cell "5000" [ref=f11e346]
+          - row [ref=f11e347]:
+            - cell "801" [ref=f11e348]
+            - cell [ref=f11e349]:
+              - link "YouTube Channel Reports + 60% Dislikes | Max 25K | No Refill" [ref=f11e350] [cursor=pointer]:
+                - /url: /service/801/youtube-channel-reports-60-dislikes-max-25k-no-refill
+            - cell "$126.72" [ref=f11e351]
+            - cell "50" [ref=f11e352]
+            - cell "25000" [ref=f11e353]
+          - row [ref=f11e354]:
+            - cell "802" [ref=f11e355]
+            - cell [ref=f11e356]:
+              - link "Application Reports | Max 5K | No Refill" [ref=f11e357] [cursor=pointer]:
+                - /url: /service/802/application-reports-max-5k-no-refill
+            - cell "$285.12" [ref=f11e358]
+            - cell "100" [ref=f11e359]
+            - cell "5000" [ref=f11e360]
+      - paragraph [ref=f11e361]:
+        - text: The full list with the delivery figure each supplier reports is on the
+        - link "price list" [ref=f11e362] [cursor=pointer]:
+          - /url: /services
+        - text: . Resellers can pull the same catalogue through the
+        - link "API" [ref=f11e363] [cursor=pointer]:
+          - /url: /api
+        - text: .
+        - link "Open an account" [ref=f11e364] [cursor=pointer]:
+          - /url: /signup
+        - text: to order.
+      - heading "Other platforms we cover" [level=2] [ref=f11e365]
+      - paragraph [ref=f11e366]:
+        - link "Instagram SMM panel" [ref=f11e367] [cursor=pointer]:
+          - /url: /instagram-smm-panel
+        - text: ·
+        - link "YouTube SMM panel" [ref=f11e368] [cursor=pointer]:
+          - /url: /youtube-smm-panel
+        - text: ·
+        - link "Facebook SMM panel" [ref=f11e369] [cursor=pointer]:
+          - /url: /facebook-smm-panel
+        - text: ·
+        - link "Telegram SMM panel" [ref=f11e370] [cursor=pointer]:
+          - /url: /telegram-smm-panel
+        - text: ·
+        - link "X (Twitter) SMM panel" [ref=f11e371] [cursor=pointer]:
+          - /url: /x-smm-panel
+        - text: ·
+        - link "TikTok SMM panel" [ref=f11e372] [cursor=pointer]:
+          - /url: /tiktok-smm-panel
+        - text: ·
+        - link "LinkedIn SMM panel" [ref=f11e373] [cursor=pointer]:
+          - /url: /linkedin-smm-panel
+        - text: ·
+        - link "Spotify SMM panel" [ref=f11e374] [cursor=pointer]:
+          - /url: /spotify-smm-panel
+        - text: ·
+        - link "Kick SMM panel" [ref=f11e375] [cursor=pointer]:
+          - /url: /kick-smm-panel
+        - text: ·
+        - link "Twitch SMM panel" [ref=f11e376] [cursor=pointer]:
+          - /url: /twitch-smm-panel
+        - text: ·
+        - link "Pinterest SMM panel" [ref=f11e377] [cursor=pointer]:
+          - /url: /pinterest-smm-panel
+        - text: ·
+        - link "WhatsApp SMM panel" [ref=f11e378] [cursor=pointer]:
+          - /url: /whatsapp-smm-panel
+        - text: ·
+        - link "Audiomack SMM panel" [ref=f11e379] [cursor=pointer]:
+          - /url: /audiomack-smm-panel
+        - text: ·
+        - link "Website Traffic SMM panel" [ref=f11e380] [cursor=pointer]:
+          - /url: /website-smm-panel
+        - text: ·
+        - link "Threads SMM panel" [ref=f11e381] [cursor=pointer]:
+          - /url: /threads-smm-panel
+        - text: ·
+        - link "BlueSky SMM panel" [ref=f11e382] [cursor=pointer]:
+          - /url: /bluesky-smm-panel
+        - text: ·
+        - link "GitHub SMM panel" [ref=f11e383] [cursor=pointer]:
+          - /url: /github-smm-panel
+        - text: ·
+        - link "Google SMM panel" [ref=f11e384] [cursor=pointer]:
+          - /url: /google-smm-panel
+        - text: ·
+        - link "Backlink SMM panel" [ref=f11e385] [cursor=pointer]:
+          - /url: /backlink-smm-panel
+        - text: ·
+        - link "Yandex SMM panel" [ref=f11e386] [cursor=pointer]:
+          - /url: /yandex-smm-panel
+      - heading "Refill guarantees on Report" [level=2] [ref=f11e387]
+      - paragraph [ref=f11e388]:
+        - strong [ref=f11e389]: None of our 41 Report services carry a refill guarantee.
+        - text: No supplier behind them offers one for Report, so we do not advertise one. If that changes we write the term into the service name; its absence here is the accurate state, not an omission.
+      - heading "Why Report prices range from $2.376 to $285.12" [level=2] [ref=f11e390]
+      - paragraph [ref=f11e391]:
+        - text: Price is not a quality scale you can read off on its own. At the bottom is
+        - emphasis [ref=f11e392]: YouTube Report Spam Account | Max 1M | No Refill
+        - text: at $2.376 per 1000; at the top,
+        - emphasis [ref=f11e393]: Application Reports | Max 5K | No Refill
+        - text: "at $285.12. They are not the same product at different prices — what moves the number is what the service does: country or language targeting, the refill term, order limits and the source behind it. A dearer service is not automatically better for your case; it is usually more specific."
+      - heading "Further reading" [level=2] [ref=f11e394]
+      - list [ref=f11e395]:
+        - listitem [ref=f11e396]:
+          - 'link "Mass Reporting: What the Report Services Cost and How They Behave" [ref=f11e397] [cursor=pointer]':
+            - /url: /blog/mass-report-services-price-and-delivery
+        - listitem [ref=f11e398]:
+          - link "SMM Panel Delivery Time Report — August 2026 (Open Dataset)" [ref=f11e399] [cursor=pointer]:
+            - /url: /blog/smm-panel-delivery-time-report
+        - listitem [ref=f11e400]:
+          - 'link "SMM Panel Delivery Data: What the Services Actually Report (September 2026 Snapshot)" [ref=f11e401] [cursor=pointer]':
+            - /url: /blog/smm-panel-delivery-data-report
+      - generic [ref=f11e402]:
+        - 'heading "Report SMM panel: frequently asked questions" [level=2] [ref=f11e403]'
+        - heading "How much does a Report SMM panel cost?" [level=3] [ref=f11e404]
+        - paragraph [ref=f11e405]: We list 41 Report services. Prices run from $2.376 to $285.12 per 1000, and the rate you see is the rate you are charged - there is no separate checkout markup. There is no subscription and no minimum monthly spend.
+        - heading "What is the smallest Report order I can place?" [level=3] [ref=f11e406]
+        - paragraph [ref=f11e407]: The smallest order across our Report catalogue is 10 units. Each service sets its own minimum and maximum, both shown next to it on the price list, because they come from what the supplier behind that service accepts.
+        - heading "How fast are Report orders delivered?" [level=3] [ref=f11e408]
+        - paragraph [ref=f11e409]: "Delivery speed is published per service rather than promised as one number: 25 of our 41 Report services currently carry a live delivery figure taken from the supplier behind them. Services without one are left blank rather than given an invented estimate."
+        - heading "Do Report services come with a refill guarantee?" [level=3] [ref=f11e410]
+        - paragraph [ref=f11e411]: None of our 41 Report services currently carry a refill guarantee. When a supplier offers one we write the term into the service name, so its absence here is the accurate state rather than an omission.
+        - heading "Which Report service is cheapest?" [level=3] [ref=f11e412]
+        - paragraph [ref=f11e413]: YouTube Report Spam Account | Max 1M | No Refill, at $2.376 per 1000 with a minimum order of 100 units. It is the lowest rate in our Report section; the most expensive line there runs $285.12 per 1000, and the gap is what you are paying for in account quality, refill cover and delivery speed rather than a different headline number.
+        - heading "Which Report service is measured fastest?" [level=3] [ref=f11e414]
+        - paragraph [ref=f11e415]: TikTok Report Spam Video | Max 3M | No Refill, which the supplier behind it reports at 1 hour 37 minutes. That figure comes from the supplier's own statistics rather than a promise in the description, and it is refreshed every four minutes. Services that report a live rate instead of a finish time are not ranked here, because a speed and a completion time are not the same measurement.
+        - heading "Can I order Report services through an API?" [level=3] [ref=f11e416]
+        - paragraph [ref=f11e417]: Yes. The same 41 Report services are available through our API, which follows the standard SMM panel API v2 specification. If your panel already talks to other providers it will talk to ours without code changes.
+  - contentinfo [ref=f11e418]:
+    - generic [ref=f11e419]:
+      - generic [ref=f11e420]:
+        - generic [ref=f11e421]:
+          - generic [ref=f11e422]:
+            - generic [ref=f11e423]: ⚡
+            - generic [ref=f11e424]: SMM PWR
+          - paragraph [ref=f11e425]: "The cheapest SMM panel we can run: 1,782 services for Instagram, Telegram, YouTube, X (Twitter), TikTok, Facebook, WhatsApp and Google reviews — with measured delivery time on most of them, plus queue and drop rate wherever the provider publishes one."
+          - paragraph [ref=f11e426]: Provider data refreshed every four minutes. Where a provider publishes no figure, we leave the field blank.
+          - generic [ref=f11e427]:
+            - link " WhatsApp +995 595 709 861" [ref=f11e428] [cursor=pointer]:
+              - /url: https://wa.me/995595709861
+              - generic [ref=f11e429]: 
+              - text: WhatsApp +995 595 709 861
+            - link " Telegram @SMM_PWR" [ref=f11e430] [cursor=pointer]:
+              - /url: https://t.me/SMM_PWR
+              - generic [ref=f11e431]: 
+              - text: Telegram @SMM_PWR
+            - link " Guides on YouTube" [ref=f11e432] [cursor=pointer]:
+              - /url: https://www.youtube.com/@SmmPWRS
+              - generic [ref=f11e433]: 
+              - text: Guides on YouTube
+          - generic [ref=f11e434]:
+            - generic [ref=f11e435]: Protected & hosted by
+            - generic [ref=f11e436]:
+              - generic [ref=f11e437]: Cloudflare
+              - generic [ref=f11e438]: OVHcloud
+            - generic [ref=f11e439]: Payments
+            - generic [ref=f11e440]:
+              - generic [ref=f11e441]: Cryptomus
+              - generic [ref=f11e442]: Heleket
+              - generic [ref=f11e443]: Binance
+        - generic [ref=f11e444]:
+          - heading "Panel" [level=2] [ref=f11e445]
+          - list [ref=f11e446]:
+            - listitem [ref=f11e447]:
+              - link "All services & prices" [ref=f11e448] [cursor=pointer]:
+                - /url: /services
+            - listitem [ref=f11e449]:
+              - link "Fast services (fastest first)" [ref=f11e450] [cursor=pointer]:
+                - /url: /fast-services
+            - listitem [ref=f11e451]:
+              - link "API for resellers" [ref=f11e452] [cursor=pointer]:
+                - /url: /api
+            - listitem [ref=f11e453]:
+              - link "Create an account" [ref=f11e454] [cursor=pointer]:
+                - /url: /signup
+            - listitem [ref=f11e455]:
+              - link "Sign in" [ref=f11e456] [cursor=pointer]:
+                - /url: /
+        - generic [ref=f11e457]:
+          - heading "Company" [level=2] [ref=f11e458]
+          - list [ref=f11e459]:
+            - listitem [ref=f11e460]:
+              - link "About SMM PWR" [ref=f11e461] [cursor=pointer]:
+                - /url: /about
+            - listitem [ref=f11e462]:
+              - link "Contact & support" [ref=f11e463] [cursor=pointer]:
+                - /url: /contact
+            - listitem [ref=f11e464]:
+              - link "FAQ" [ref=f11e465] [cursor=pointer]:
+                - /url: /faq
+            - listitem [ref=f11e466]:
+              - link "How we measure delivery" [ref=f11e467] [cursor=pointer]:
+                - /url: /methodology
+            - listitem [ref=f11e468]:
+              - link "Affiliate program" [ref=f11e469] [cursor=pointer]:
+                - /url: /affiliate-program
+            - listitem [ref=f11e470]:
+              - link "Terms of service" [ref=f11e471] [cursor=pointer]:
+                - /url: /terms
+            - listitem [ref=f11e472]:
+              - link "Privacy policy" [ref=f11e473] [cursor=pointer]:
+                - /url: /privacy
+            - listitem [ref=f11e474]:
+              - link "Refund policy" [ref=f11e475] [cursor=pointer]:
+                - /url: /refund-policy
+            - listitem [ref=f11e476]:
+              - link "Cookie policy" [ref=f11e477] [cursor=pointer]:
+                - /url: /cookie-policy
+        - generic [ref=f11e478]:
+          - heading "Guides" [level=2] [ref=f11e479]
+          - list [ref=f11e480]:
+            - listitem [ref=f11e481]:
+              - 'link "SMM panel: what we list" [ref=f11e482] [cursor=pointer]':
+                - /url: /smm-panel
+            - listitem [ref=f11e483]:
+              - link "SMM panel API for resellers" [ref=f11e484] [cursor=pointer]:
+                - /url: /smm-panel-api
+            - listitem [ref=f11e485]:
+              - link "What “per hour” means" [ref=f11e486] [cursor=pointer]:
+                - /url: /blog/smm-panel-live-delivery-rate-explained
+            - listitem [ref=f11e487]:
+              - link "Cheap SMM panel prices" [ref=f11e488] [cursor=pointer]:
+                - /url: /cheap-smm-panel
+            - listitem [ref=f11e489]:
+              - 'link "Best SMM panel: five checks" [ref=f11e490] [cursor=pointer]':
+                - /url: /best-smm-panel
+            - listitem [ref=f11e491]:
+              - link "Choosing an SMM panel" [ref=f11e492] [cursor=pointer]:
+                - /url: /blog/how-to-choose-an-smm-panel
+            - listitem [ref=f11e493]:
+              - link "Drop rate & delivery data" [ref=f11e494] [cursor=pointer]:
+                - /url: /blog/smm-panel-drop-rate-average-time-explained
+            - listitem [ref=f11e495]:
+              - link "Reseller API guide" [ref=f11e496] [cursor=pointer]:
+                - /url: /blog/smm-panel-api-reseller-guide
+            - listitem [ref=f11e497]:
+              - link "Follower pricing explained" [ref=f11e498] [cursor=pointer]:
+                - /url: /blog/instagram-followers-price-difference-explained
+            - listitem [ref=f11e499]:
+              - link "Custom vs random comments" [ref=f11e500] [cursor=pointer]:
+                - /url: /blog/instagram-custom-comments-vs-random-comments
+            - listitem [ref=f11e501]:
+              - link "Story views & targeting" [ref=f11e502] [cursor=pointer]:
+                - /url: /blog/instagram-story-views-country-targeting
+            - listitem [ref=f11e503]:
+              - link "Delivery time report (open data)" [ref=f11e504] [cursor=pointer]:
+                - /url: /blog/smm-panel-delivery-time-report
+            - listitem [ref=f11e505]:
+              - link "Monthly data archive" [ref=f11e506] [cursor=pointer]:
+                - /url: /smm-panel-data
+            - listitem [ref=f11e507]:
+              - link "Telegram members & reactions" [ref=f11e508] [cursor=pointer]:
+                - /url: /blog/telegram-members-reactions-what-to-buy
+            - listitem [ref=f11e509]:
+              - link "X views vs impressions" [ref=f11e510] [cursor=pointer]:
+                - /url: /blog/twitter-x-views-impressions-engagements-explained
+            - listitem [ref=f11e511]:
+              - link "WhatsApp channel members" [ref=f11e512] [cursor=pointer]:
+                - /url: /blog/whatsapp-channel-members-reactions-guide
+            - listitem [ref=f11e513]:
+              - link "All guides" [ref=f11e514] [cursor=pointer]:
+                - /url: /blog
+        - generic [ref=f11e515]:
+          - heading "What we cover" [level=2] [ref=f11e516]
+          - list [ref=f11e517]:
+            - listitem [ref=f11e518]:
+              - link "Instagram SMM panel — 480 services" [ref=f11e519] [cursor=pointer]:
+                - /url: /instagram-smm-panel
+            - listitem [ref=f11e520]:
+              - link "YouTube SMM panel — 188 services" [ref=f11e521] [cursor=pointer]:
+                - /url: /youtube-smm-panel
+            - listitem [ref=f11e522]:
+              - link "Facebook SMM panel — 173 services" [ref=f11e523] [cursor=pointer]:
+                - /url: /facebook-smm-panel
+            - listitem [ref=f11e524]:
+              - link "X (Twitter) SMM panel — 153 services" [ref=f11e525] [cursor=pointer]:
+                - /url: /x-smm-panel
+            - listitem [ref=f11e526]:
+              - link "LinkedIn SMM panel — 75 services" [ref=f11e527] [cursor=pointer]:
+                - /url: /linkedin-smm-panel
+            - listitem [ref=f11e528]:
+              - link "TikTok SMM panel — 133 services" [ref=f11e529] [cursor=pointer]:
+                - /url: /tiktok-smm-panel
+            - listitem [ref=f11e530]:
+              - link "Spotify SMM panel — 64 services" [ref=f11e531] [cursor=pointer]:
+                - /url: /spotify-smm-panel
+            - listitem [ref=f11e532]:
+              - link "Twitch SMM panel — 57 services" [ref=f11e533] [cursor=pointer]:
+                - /url: /twitch-smm-panel
+            - listitem [ref=f11e534]:
+              - link "Telegram SMM panel — 171 services" [ref=f11e535] [cursor=pointer]:
+                - /url: /telegram-smm-panel
+            - listitem [ref=f11e536]:
+              - link "Pinterest SMM panel — 28 services" [ref=f11e537] [cursor=pointer]:
+                - /url: /pinterest-smm-panel
+            - listitem [ref=f11e538]:
+              - link "Kick SMM panel — 58 services" [ref=f11e539] [cursor=pointer]:
+                - /url: /kick-smm-panel
+            - listitem [ref=f11e540]:
+              - link "WhatsApp SMM panel — 23 services" [ref=f11e541] [cursor=pointer]:
+                - /url: /whatsapp-smm-panel
+            - listitem [ref=f11e542]:
+              - link "Report SMM panel — 41 services" [ref=f11e543] [cursor=pointer]:
+                - /url: /report-smm-panel
+            - listitem [ref=f11e544]:
+              - link "All 21 platforms & prices" [ref=f11e545] [cursor=pointer]:
+                - /url: /services
+            - listitem [ref=f11e546]:
+              - link "Auto services" [ref=f11e547] [cursor=pointer]:
+                - /url: /blog/instagram-auto-services-subscriptions-guide
+      - generic [ref=f11e548]:
+        - generic [ref=f11e549]: © 2026 SMM PWR. Crypto payments via Cryptomus, Heleket, Binance · card top-ups via support.
+        - navigation [ref=f11e550]:
+          - link "About" [ref=f11e551] [cursor=pointer]:
+            - /url: /about
+          - link "Contact" [ref=f11e552] [cursor=pointer]:
+            - /url: /contact
+          - link "FAQ" [ref=f11e553] [cursor=pointer]:
+            - /url: /faq
+          - link "Terms" [ref=f11e554] [cursor=pointer]:
+            - /url: /terms
+          - link "Privacy" [ref=f11e555] [cursor=pointer]:
+            - /url: /privacy
+          - link "Refunds" [ref=f11e556] [cursor=pointer]:
+            - /url: /refund-policy
+          - link "Cookies" [ref=f11e557] [cursor=pointer]:
+            - /url: /cookie-policy
+          - link "Services" [ref=f11e558] [cursor=pointer]:
+            - /url: /services
+          - link "API" [ref=f11e559] [cursor=pointer]:
+            - /url: /api
+          - link "Blog" [ref=f11e560] [cursor=pointer]:
+            - /url: /blog
+  - link [ref=f11e561] [cursor=pointer]:
+    - /url: https://api.whatsapp.com/send?phone=995595709861

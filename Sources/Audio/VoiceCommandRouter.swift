@@ -92,6 +92,7 @@ final class VoiceCommandRouter: ObservableObject {
 
     /// Re-read the settings and re-arm the trigger.
     func applySettings() {
+        hud.model.onCancel = { [weak self] in self?.cancelCurrent() }
         AppLog.important("voice: applySettings enabled=\(AudioSettings.enabled) mode=\(AudioSettings.triggerMode.rawValue)")
         guard AudioSettings.enabled else {
             idleDisarmTask?.cancel()
@@ -939,6 +940,9 @@ final class VoiceCommandRouter: ObservableObject {
     private func showAgentPicker(for transcript: String, command: String, candidates: [String] = []) {
         let roster = rosterProvider()
         guard !roster.isEmpty else { return }
+        // The picker replaces the listening bar: hide the bar so its status
+        // ring stops spinning and the picker is the only thing on screen.
+        hud.hide()
         pendingTranscript = transcript
         pendingCommand = command
         VoiceAgentPickerController.shared.show(agents: roster,
@@ -975,6 +979,7 @@ final class VoiceCommandRouter: ObservableObject {
             self.pendingTranscript = nil
             self.pendingCommand = nil
             VoiceAgentPickerController.shared.hide()
+            self.hud.hide()
         }
     }
 
@@ -1088,6 +1093,41 @@ final class VoiceCommandRouter: ObservableObject {
                 self.hud.hide()
             }
         }
+    }
+
+    /// Cancel whatever the voice flow is doing right now: capture,
+    /// transcription, dispatch countdown, picker. The X button on the
+    /// listening popup calls this.
+    func cancelCurrent() {
+        dispatchTask?.cancel()
+        dispatchTask = nil
+        pendingDispatchAgent = nil
+        pendingDispatchTranscript = nil
+        pendingDispatchCommand = nil
+        transcriptionTask?.cancel()
+        transcriptionTask = nil
+        liveTranscriptionTask?.cancel()
+        liveTranscriptionTask = nil
+        maxDurationTask?.cancel()
+        maxDurationTask = nil
+        idleDisarmTask?.cancel()
+        idleDisarmTask = nil
+        hudFadeTask?.cancel()
+        hudFadeTask = nil
+        pickerHideTask?.cancel()
+        pickerHideTask = nil
+        if isCapturing {
+            recorder.stop()
+            recorder.discardRecording()
+            analyzer?.cancel()
+            analyzer = nil
+            captureURL = nil
+        }
+        phase = .idle
+        partial = ""
+        hud.setBanner(nil)
+        hud.hide()
+        hideAgentPicker()
     }
 
     private func showFailure(_ message: String) {

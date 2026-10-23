@@ -213,7 +213,7 @@ func testSessionSelectionSeparatesLiveFromViewing() {
     pinned.select("ses_live")
     check("picking the live session is still viewing live", pinned.isViewingLive)
 
-    var unknownCursor = SessionSelection(live: "ses_live", viewing: "ses_gone")
+    let unknownCursor = SessionSelection(live: "ses_live", viewing: "ses_gone")
     check("renders() defaults to showing when nothing is picked", unknownCursor.renders("ses_live") == false)
 }
 

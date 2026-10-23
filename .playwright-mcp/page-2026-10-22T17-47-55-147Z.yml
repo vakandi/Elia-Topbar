@@ -1,0 +1,474 @@
+- generic [ref=f4e2]:
+  - banner [ref=f4e3]:
+    - generic [ref=f4e4]:
+      - link [ref=f4e6] [cursor=pointer]:
+        - /url: /
+        - img "Just Another Panel" [ref=f4e7]
+      - list [ref=f4e8]:
+        - listitem [ref=f4e9]:
+          - link "Sign In" [ref=f4e10] [cursor=pointer]:
+            - /url: /#signin-form
+        - listitem [ref=f4e11]:
+          - link "Sign Up" [ref=f4e12] [cursor=pointer]:
+            - /url: /signup
+        - listitem [ref=f4e13]:
+          - link "API" [ref=f4e14] [cursor=pointer]:
+            - /url: /api
+        - listitem [ref=f4e15]:
+          - link "Blog" [ref=f4e16] [cursor=pointer]:
+            - /url: /blog
+  - generic [ref=f4e79]:
+    - generic [ref=f4e80]:
+      - heading "#1 SMM PANEL IN THE WORLD!" [level=1] [ref=f4e81]
+      - paragraph [ref=f4e82]: With JustAnotherPanel, you'll revolutionize your social media growth – together; we lead, they follow!
+      - paragraph [ref=f4e83]: The online world is run by industry leaders who know exactly what their customers want, and what to offer them in return. Here, we provide the best and most affordable SMM panel services to those leaders just like you, and we assure you that you’ll be the one who generates the most website traffic to your business online or your social media accounts after you use the best SMM panel.
+    - link "SIGN UP NOW" [ref=f4e84] [cursor=pointer]:
+      - /url: /signup
+  - generic [ref=f4e86]:
+    - generic [ref=f4e89]:
+      - paragraph [ref=f4e91]: Sign In
+      - generic [ref=f4e92]:
+        - generic [ref=f4e94]:
+          - textbox "Username" [ref=f4e97]
+          - textbox "Password" [ref=f4e100]
+          - generic [ref=f4e102]:
+            - checkbox "Remember me" [ref=f4e103]
+            - generic [ref=f4e104]: Remember me
+          - link "Forgot password?" [ref=f4e106] [cursor=pointer]:
+            - /url: /resetpassword
+        - button "Login" [ref=f4e108] [cursor=pointer]
+      - generic [ref=f4e109]:
+        - text: Do not have an account?
+        - link "Sign up" [ref=f4e110] [cursor=pointer]:
+          - /url: /signup
+    - generic [ref=f4e111]:
+      - generic [ref=f4e114]:
+        - paragraph [ref=f4e115]: Every 0.14 SEC
+        - paragraph [ref=f4e116]: An order
+      - generic [ref=f4e119]:
+        - paragraph [ref=f4e120]: "1028286443"
+        - paragraph [ref=f4e121]: Orders Completed
+      - generic [ref=f4e124]:
+        - paragraph [ref=f4e125]: $0.01/1K
+        - paragraph [ref=f4e126]: Prices starting from
+    - generic [ref=f4e127]:
+      - heading "How Does JustAnotherPanel - SMM Panel Works?" [level=2] [ref=f4e129]
+      - generic [ref=f4e130]:
+        - generic [ref=f4e139]:
+          - paragraph [ref=f4e140]: "1"
+          - paragraph [ref=f4e141]: You need to sign up for the Social Media panel with just a few clicks. Once you are registered, all the services will be waiting for you to choose.
+        - generic [ref=f4e151]:
+          - paragraph [ref=f4e152]: "2"
+          - paragraph [ref=f4e153]: Take time to pick what you require, we have plenty of options here.
+        - generic [ref=f4e164]:
+          - paragraph [ref=f4e165]: "3"
+          - paragraph [ref=f4e166]: Paste the URL of which account/post/website you’d like to boost with the SMM provider panel of JustAnotherPanel.
+        - generic [ref=f4e176]:
+          - paragraph [ref=f4e177]: "4"
+          - paragraph [ref=f4e178]: Check all the details given about the order.
+        - generic [ref=f4e187]:
+          - paragraph [ref=f4e188]: "5"
+          - paragraph [ref=f4e189]: If everything looks perfect, submit it.
+        - generic [ref=f4e201]:
+          - paragraph [ref=f4e202]: "6"
+          - paragraph [ref=f4e203]: We'll get to work immediately.
+    - generic [ref=f4e204]:
+      - paragraph [ref=f4e205]: What if You Wish to Place a Repeat Order?
+      - list [ref=f4e206]:
+        - paragraph [ref=f4e207]: Congratulations, you're now a valued member of our community! To streamline your repeat ordering process, we've introduced a dedicated section where you can easily review your past orders and favorites. This feature allows you to quickly locate and reorder the services you love, with the added convenience of searching by service ID. Whether you're looking to explore new options or stick with your tried-and-true favorites, JustAnotherPanel has made it simpler and more efficient to boost your social media presence again.
+    - generic [ref=f4e208]:
+      - generic [ref=f4e210]:
+        - heading "JustAnotherPanel - SMM Services Insight" [level=2] [ref=f4e211]
+        - paragraph [ref=f4e212]: You can choose the monthly packages, time frame, speed, and no-drops by clicking on the right package for your needs. Also, all the engagement quality can be drawn from target audiences, NFT, or bot accounts. Did we mention that you can even choose the target gender? It’s an option, too. And, you’ll love the “per minute” growth options, which allow you to get the desired package substance per minute each.
+      - generic [ref=f4e213]:
+        - button "Previous" [ref=f4e214] [cursor=pointer]: Previous
+        - generic [ref=f4e216]:
+          - generic [ref=f4e220]:
+            - heading [level=3] [ref=f4e222]: "Youtube SMM Panel Services:"
+            - paragraph [ref=f4e224]: Well, it's time to get lost in the second-largest search engine, YouTube. People are really making a good amount of money after uploading the right video content, and this has become an obsession for internet users who want to be the next YouTube millionaire. Yet, it's more challenging than you could imagine. People need help managing to make money from YouTube so easily. But, once they do, they are unstoppable! Get closer, JustAnotherPanel tells you the secret of your social media marketing needs - there are YouTube live streams, YouTube views, YouTube subscribers, YouTube likes, YouTube watch time, YouTube comments, YouTube shares, and YouTube shorts you could ever buy from an SMM panel reseller, and no one will ever know it - these are the target audience that no YouTube algorithm can detect as fake.
+            - link [ref=f4e226] [cursor=pointer]:
+              - /url: javascript:void(0);
+              - text: Show More
+          - generic [ref=f4e230]:
+            - heading [level=3] [ref=f4e232]: "Spotify SMM Panel Services:"
+            - paragraph [ref=f4e234]: Spotify is a digital music and podcast streaming service that provides access to millions of songs, albums, and playlists from artists around the world. If you are looking for how to make yourself heard by millions of people, it is possible with JustAnotherPanel. We have all these Spotify plays (device targeted), Spotify followers, Spotify monthly listeners, and Spotify saves packages just for you.
+            - link [ref=f4e236] [cursor=pointer]:
+              - /url: javascript:void(0);
+              - text: Show More
+          - generic [ref=f4e240]:
+            - heading [level=3] [ref=f4e242]: "Twitter SMM Panel Services:"
+            - paragraph [ref=f4e244]: "A lot is going on Twitter. It has been one of the digital age's most used social media platforms. Therefore, users demand so many things to catch a certain level of engagement. Although various SMM services offer different services, we bet you've found just the perfect SMM panel; JustAnotherPanel. Check all these options: Twitter followers, Twitter likes, Twitter retweets, Twitter mentions, Twitter DM (direct message), Twitter retweets, Twitter mentions, and Twitter space listeners."
+            - link [ref=f4e246] [cursor=pointer]:
+              - /url: javascript:void(0);
+              - text: Show More
+          - generic [ref=f4e250]:
+            - heading [level=3] [ref=f4e252]: "Other SMM Panel Services:"
+            - paragraph [ref=f4e254]: "Look at all the other social media growth services you can get from JustAnotherPanel - an SMM panel provider: backlink, crypto, Spinnin’ records, Apple Music, Audiomack, Clubhouse, Coub, Dailymotion, Datpiff, Deezer, Discord, Dribble, Google Reviews, Google Maps citations, Google real visitors, Trovo, Kwai, Likee, line, Mixcloud, Mentimeter, mobile app installs, Napster, ok.ru, Pinterest, podcast iTunes, podcast reviews iTunes, Quora, Reddit, Reverberation, rutube.ru, Trustpilot reviews, other reviews, Shazam, Shopee, SoundCloud, Tidal, TripAdvisor custom reviews, Tumblr, vk.com, Vimeo, rumble.com, Yandex, LinkedIn, Google, Telegram, Discord, Snapchat, Twitch, website traffic, reviews, and Social Signals. With just a few clicks, you can place orders for likes, views, followers, subscribers, and other services from over 100+ providers in the panel. The process is designed for maximum convenience and efficiency; you select your desired product or service, enter payment information, and submit your order. Once submitted, JustAnotherPanel will then coordinate the delivery of your order to ensure it arrives promptly and as requested."
+            - link [ref=f4e256] [cursor=pointer]:
+              - /url: javascript:void(0);
+              - text: Show More
+          - generic [ref=f4e260]:
+            - heading "Instagram SMM Panel Services:" [level=3] [ref=f4e262]
+            - paragraph [ref=f4e264]: It's almost the SMM heaven you could ever imagine for Instagram. JustAnotherPanel is the cheapest Instagram panel, and has multiple services for Instagram, including, Instagram DM (direct message); Instagram likes; Instagram followers; Instagram views; Instagram IGTV; Instagram Reels; Instagram mentions; Instagram comments; Instagram live video; Instagram story; Instagram impressions; Instagram saves; Instagram reach; Instagram shares; and Instagram profile visits. No doubt that your social media presence will shine like a diamond.
+            - link "Show More" [ref=f4e266] [cursor=pointer]:
+              - /url: javascript:void(0);
+          - generic [ref=f4e270]:
+            - heading "Facebook SMM Panel Services:" [level=3] [ref=f4e272]
+            - paragraph [ref=f4e274]: Facebook was everyone's favorite before every other social media platforms hit the online world. You could have started building your money page by using the platform effectively. At some point, everyone may require more Facebook page likes, Facebook comments, Facebook video views, Facebook followers, Facebook live streams, Facebook shares, and Facebook reach. That's why we're here. We cover and restock all for you with the cheapest social media panel.
+            - link "Show More" [ref=f4e276] [cursor=pointer]:
+              - /url: javascript:void(0);
+          - generic [ref=f4e280]:
+            - heading "TikTok SMM Panel Services:" [level=3] [ref=f4e282]
+            - paragraph [ref=f4e284]: Those short videos are everyone's favorite at the moment; even other social media platforms are adding new features to themselves to catch the vibe TikTok is spreading all over the social media world. That means people love becoming famous one night with those short videos. It'd be a great investment to get what is needed to become one. This is where we come in stage, after getting enough TikTok likes, TikTok followers, TikTok views, TikTok comments, TikTok live, TikTok shares, and TikTok saves - what the algorithm favors, you'll definitely be a great TikToker. Go check out our packages now!
+            - link "Show More" [ref=f4e286] [cursor=pointer]:
+              - /url: javascript:void(0);
+          - generic [ref=f4e290]:
+            - heading "Youtube SMM Panel Services:" [level=3] [ref=f4e292]
+            - paragraph [ref=f4e294]: Well, it's time to get lost in the second-largest search engine, YouTube. People are really making a good amount of money after uploading the right video content, and this has become an obsession for internet users who want to be the next YouTube millionaire. Yet, it's more challenging than you could imagine. People need help managing to make money from YouTube so easily. But, once they do, they are unstoppable! Get closer, JustAnotherPanel tells you the secret of your social media marketing needs - there are YouTube live streams, YouTube views, YouTube subscribers, YouTube likes, YouTube watch time, YouTube comments, YouTube shares, and YouTube shorts you could ever buy from an SMM panel reseller, and no one will ever know it - these are the target audience that no YouTube algorithm can detect as fake.
+            - link "Show More" [ref=f4e296] [cursor=pointer]:
+              - /url: javascript:void(0);
+          - generic [ref=f4e300]:
+            - heading [level=3] [ref=f4e302]: "Spotify SMM Panel Services:"
+            - paragraph [ref=f4e304]: Spotify is a digital music and podcast streaming service that provides access to millions of songs, albums, and playlists from artists around the world. If you are looking for how to make yourself heard by millions of people, it is possible with JustAnotherPanel. We have all these Spotify plays (device targeted), Spotify followers, Spotify monthly listeners, and Spotify saves packages just for you.
+            - link [ref=f4e306] [cursor=pointer]:
+              - /url: javascript:void(0);
+              - text: Show More
+          - generic [ref=f4e310]:
+            - heading [level=3] [ref=f4e312]: "Twitter SMM Panel Services:"
+            - paragraph [ref=f4e314]: "A lot is going on Twitter. It has been one of the digital age's most used social media platforms. Therefore, users demand so many things to catch a certain level of engagement. Although various SMM services offer different services, we bet you've found just the perfect SMM panel; JustAnotherPanel. Check all these options: Twitter followers, Twitter likes, Twitter retweets, Twitter mentions, Twitter DM (direct message), Twitter retweets, Twitter mentions, and Twitter space listeners."
+            - link [ref=f4e316] [cursor=pointer]:
+              - /url: javascript:void(0);
+              - text: Show More
+          - generic [ref=f4e320]:
+            - heading [level=3] [ref=f4e322]: "Other SMM Panel Services:"
+            - paragraph [ref=f4e324]: "Look at all the other social media growth services you can get from JustAnotherPanel - an SMM panel provider: backlink, crypto, Spinnin’ records, Apple Music, Audiomack, Clubhouse, Coub, Dailymotion, Datpiff, Deezer, Discord, Dribble, Google Reviews, Google Maps citations, Google real visitors, Trovo, Kwai, Likee, line, Mixcloud, Mentimeter, mobile app installs, Napster, ok.ru, Pinterest, podcast iTunes, podcast reviews iTunes, Quora, Reddit, Reverberation, rutube.ru, Trustpilot reviews, other reviews, Shazam, Shopee, SoundCloud, Tidal, TripAdvisor custom reviews, Tumblr, vk.com, Vimeo, rumble.com, Yandex, LinkedIn, Google, Telegram, Discord, Snapchat, Twitch, website traffic, reviews, and Social Signals. With just a few clicks, you can place orders for likes, views, followers, subscribers, and other services from over 100+ providers in the panel. The process is designed for maximum convenience and efficiency; you select your desired product or service, enter payment information, and submit your order. Once submitted, JustAnotherPanel will then coordinate the delivery of your order to ensure it arrives promptly and as requested."
+            - link [ref=f4e326] [cursor=pointer]:
+              - /url: javascript:void(0);
+              - text: Show More
+          - generic [ref=f4e330]:
+            - heading [level=3] [ref=f4e332]: "Instagram SMM Panel Services:"
+            - paragraph [ref=f4e334]: It's almost the SMM heaven you could ever imagine for Instagram. JustAnotherPanel is the cheapest Instagram panel, and has multiple services for Instagram, including, Instagram DM (direct message); Instagram likes; Instagram followers; Instagram views; Instagram IGTV; Instagram Reels; Instagram mentions; Instagram comments; Instagram live video; Instagram story; Instagram impressions; Instagram saves; Instagram reach; Instagram shares; and Instagram profile visits. No doubt that your social media presence will shine like a diamond.
+            - link [ref=f4e336] [cursor=pointer]:
+              - /url: javascript:void(0);
+              - text: Show More
+          - generic [ref=f4e340]:
+            - heading [level=3] [ref=f4e342]: "Facebook SMM Panel Services:"
+            - paragraph [ref=f4e344]: Facebook was everyone's favorite before every other social media platforms hit the online world. You could have started building your money page by using the platform effectively. At some point, everyone may require more Facebook page likes, Facebook comments, Facebook video views, Facebook followers, Facebook live streams, Facebook shares, and Facebook reach. That's why we're here. We cover and restock all for you with the cheapest social media panel.
+            - link [ref=f4e346] [cursor=pointer]:
+              - /url: javascript:void(0);
+              - text: Show More
+          - generic [ref=f4e350]:
+            - heading [level=3] [ref=f4e352]: "TikTok SMM Panel Services:"
+            - paragraph [ref=f4e354]: Those short videos are everyone's favorite at the moment; even other social media platforms are adding new features to themselves to catch the vibe TikTok is spreading all over the social media world. That means people love becoming famous one night with those short videos. It'd be a great investment to get what is needed to become one. This is where we come in stage, after getting enough TikTok likes, TikTok followers, TikTok views, TikTok comments, TikTok live, TikTok shares, and TikTok saves - what the algorithm favors, you'll definitely be a great TikToker. Go check out our packages now!
+            - link [ref=f4e356] [cursor=pointer]:
+              - /url: javascript:void(0);
+              - text: Show More
+          - generic [ref=f4e360]:
+            - heading [level=3] [ref=f4e362]: "Youtube SMM Panel Services:"
+            - paragraph [ref=f4e364]: Well, it's time to get lost in the second-largest search engine, YouTube. People are really making a good amount of money after uploading the right video content, and this has become an obsession for internet users who want to be the next YouTube millionaire. Yet, it's more challenging than you could imagine. People need help managing to make money from YouTube so easily. But, once they do, they are unstoppable! Get closer, JustAnotherPanel tells you the secret of your social media marketing needs - there are YouTube live streams, YouTube views, YouTube subscribers, YouTube likes, YouTube watch time, YouTube comments, YouTube shares, and YouTube shorts you could ever buy from an SMM panel reseller, and no one will ever know it - these are the target audience that no YouTube algorithm can detect as fake.
+            - link [ref=f4e366] [cursor=pointer]:
+              - /url: javascript:void(0);
+              - text: Show More
+          - generic [ref=f4e370]:
+            - heading [level=3] [ref=f4e372]: "Spotify SMM Panel Services:"
+            - paragraph [ref=f4e374]: Spotify is a digital music and podcast streaming service that provides access to millions of songs, albums, and playlists from artists around the world. If you are looking for how to make yourself heard by millions of people, it is possible with JustAnotherPanel. We have all these Spotify plays (device targeted), Spotify followers, Spotify monthly listeners, and Spotify saves packages just for you.
+            - link [ref=f4e376] [cursor=pointer]:
+              - /url: javascript:void(0);
+              - text: Show More
+          - generic [ref=f4e380]:
+            - heading [level=3] [ref=f4e382]: "Twitter SMM Panel Services:"
+            - paragraph [ref=f4e384]: "A lot is going on Twitter. It has been one of the digital age's most used social media platforms. Therefore, users demand so many things to catch a certain level of engagement. Although various SMM services offer different services, we bet you've found just the perfect SMM panel; JustAnotherPanel. Check all these options: Twitter followers, Twitter likes, Twitter retweets, Twitter mentions, Twitter DM (direct message), Twitter retweets, Twitter mentions, and Twitter space listeners."
+            - link [ref=f4e386] [cursor=pointer]:
+              - /url: javascript:void(0);
+              - text: Show More
+          - generic [ref=f4e390]:
+            - heading [level=3] [ref=f4e392]: "Other SMM Panel Services:"
+            - paragraph [ref=f4e394]: "Look at all the other social media growth services you can get from JustAnotherPanel - an SMM panel provider: backlink, crypto, Spinnin’ records, Apple Music, Audiomack, Clubhouse, Coub, Dailymotion, Datpiff, Deezer, Discord, Dribble, Google Reviews, Google Maps citations, Google real visitors, Trovo, Kwai, Likee, line, Mixcloud, Mentimeter, mobile app installs, Napster, ok.ru, Pinterest, podcast iTunes, podcast reviews iTunes, Quora, Reddit, Reverberation, rutube.ru, Trustpilot reviews, other reviews, Shazam, Shopee, SoundCloud, Tidal, TripAdvisor custom reviews, Tumblr, vk.com, Vimeo, rumble.com, Yandex, LinkedIn, Google, Telegram, Discord, Snapchat, Twitch, website traffic, reviews, and Social Signals. With just a few clicks, you can place orders for likes, views, followers, subscribers, and other services from over 100+ providers in the panel. The process is designed for maximum convenience and efficiency; you select your desired product or service, enter payment information, and submit your order. Once submitted, JustAnotherPanel will then coordinate the delivery of your order to ensure it arrives promptly and as requested."
+            - link [ref=f4e396] [cursor=pointer]:
+              - /url: javascript:void(0);
+              - text: Show More
+        - button "Next" [ref=f4e397] [cursor=pointer]: Next
+  - generic [ref=f4e400]:
+    - generic [ref=f4e401]:
+      - heading "JAP Social Media Marketing Backs you up!" [level=2] [ref=f4e402]
+      - paragraph [ref=f4e403]: With JustAnotherPanel SMM panel services, you get the best of both worlds. Not only do we provide you with an amazing platform to easily manage your social media campaigns, but our services also help you optimize your campaigns for maximum results. Our team of professionals understands the nuances and complexities of different platforms. They can ensure that your posts are targeted at the right audience, receive maximum engagement and visibility, and drive conversions.
+    - generic [ref=f4e405]:
+      - heading "Cheapest Reseller Panel +" [level=4] [ref=f4e407] [cursor=pointer]
+      - heading "Secure Payment - Reliable Services +" [level=4] [ref=f4e409] [cursor=pointer]
+      - heading "The Anonymity of the Purchase +" [level=4] [ref=f4e411] [cursor=pointer]
+      - heading "Instant SMM Panel works without a hitch +" [level=5] [ref=f4e413] [cursor=pointer]
+      - heading "AI-Powered segmentation technology to target your audience +" [level=5] [ref=f4e415] [cursor=pointer]
+      - heading "Dedicated Support team at JustAnotherPanel +" [level=5] [ref=f4e417] [cursor=pointer]
+      - heading "API support for resellers +" [level=5] [ref=f4e419] [cursor=pointer]
+  - generic [ref=f4e422]:
+    - generic [ref=f4e424]:
+      - generic [ref=f4e425]:
+        - paragraph [ref=f4e426]: We Lead, They Follow
+        - paragraph [ref=f4e427]: Our team of experts has the necessary experience and knowledge to ensure that all Social Media Marketing (SMM) Panel Services provided by us are of the cheapest and beyond quality standards. We take pride in our customer satisfaction, and it partially comes from our services being guaranteed, targeted, and cheap SMM all the time. So, go ahead with confidence, knowing that your SMM Panel services will be taken care of, and you’re a world-famous business & influencer already!
+      - link "Get Started" [ref=f4e428] [cursor=pointer]:
+        - /url: /signup
+    - generic [ref=f4e429]:
+      - generic [ref=f4e436]:
+        - paragraph [ref=f4e437]: Unbelievable
+        - paragraph [ref=f4e438]: Unbelievable prices, lowest in the market.
+      - generic [ref=f4e447]:
+        - paragraph [ref=f4e448]: Friendly Dashboard
+        - paragraph [ref=f4e449]: Engineered Dashboard to accommodate fast and simple use of the panel, best in the market.
+      - generic [ref=f4e458]:
+        - paragraph [ref=f4e459]: Delivered in minutes
+        - paragraph [ref=f4e460]: Super fast delivery, fastest in the market.
+      - generic [ref=f4e472]:
+        - paragraph [ref=f4e473]: Support 24/7
+        - paragraph [ref=f4e474]: Support available around the clock, nothing like it in the market.
+  - generic [ref=f4e476]:
+    - paragraph [ref=f4e478]: "Here's what our clients say:"
+    - generic [ref=f4e479]:
+      - button "Previous" [ref=f4e480] [cursor=pointer]: Previous
+      - generic [ref=f4e482]:
+        - generic [ref=f4e486]:
+          - blockquote [ref=f4e487]: "\"I have been using JAP for a year now, I am very happy with their panel. I never had a problem, and when something wrong occurs they always compensate and more! Simply the best!\""
+          - text: Matt - BODY BUILDER
+        - generic [ref=f4e491]:
+          - blockquote [ref=f4e492]: "\"This service is the best when you want to make your Instagram account more popular! The price is nice. You get followers and likes almost instantly. If something is wrong, the support will explain everything. They will fix it so you won't lose your money. I managed to increase the number of subscribers from 5000 to 11000 in a day! A great result. And no need to waste time doing it yourself 🙂\""
+          - text: Lindsey - INSTAGRAM INFLUENCER
+        - generic [ref=f4e496]:
+          - blockquote [ref=f4e497]: "\"Great service and like that you're given a trial before paying!\""
+          - text: Lindsey - INSTAGRAM INFLUENCER
+        - generic [ref=f4e501]:
+          - blockquote [ref=f4e502]: "\"Jap has helped my shoe company a lot. Over the past my company sales have increased wildly after I started on using Jap on my company's Instagram to boost it!\""
+          - text: Matilda - INSTAGRAM INFLUENCER
+        - generic [ref=f4e506]:
+          - blockquote [ref=f4e507]: "\"JAP has really changed my life. I use JAP to boost my clients' exposure on Youtube and Soundcloud, JAP has made this job a 1000 times easier for me. I cannot thank them enough!\""
+          - text: Julian - SOCIAL MEDIA MANAGER
+        - generic [ref=f4e511]:
+          - blockquote [ref=f4e512]: "\"I have been using JAP for my Social Media Marketing, and I must say I am delighted with the services. They are very responsive, easy to use, and fast in delivering results!\""
+          - text: Jack - SOCIAL MEDIA MANAGER
+        - generic [ref=f4e516]:
+          - blockquote [ref=f4e517]: "\"I have tried different SMM panels, but JAP is by far the best one I've ever used. The customer service team was always prompt in answering my queries and helping me out. The services are top-notch too!\""
+          - text: Alice - INSTAGRAM INFLUENCER
+        - generic [ref=f4e521]:
+          - blockquote [ref=f4e522]: "\"JAP has the most affordable pricing plans, and they offer great packages that provide excellent value for money. Besides that, their delivery time is always very fast, which is a big plus.\""
+          - text: John - SMALL BUSINESS OWNER
+        - generic [ref=f4e526]:
+          - blockquote [ref=f4e527]: "\"I recently started my own reselling business, and JAP made it so easy. It has all the features I need, like an automated payment system, order tracking, secure transactions, and more. Plus, their customer service team was very helpful in answering all my queries.\""
+          - text: Priya - HAPPY CLIENT
+        - generic [ref=f4e531]:
+          - blockquote [ref=f4e532]: "\"I have been using JAP for a few months now, and I must say that their customer service is excellent. They always respond quickly to my queries and help me with anything I need. Highly recommend it!\""
+          - text: Sara - SOCIAL MEDIA MANAGER
+        - generic [ref=f4e536]:
+          - blockquote [ref=f4e537]: "\"I'm an Indian, and I know very well how an Indian SMM panel works. Because I've been working for a company that resells social media marketing services on their own website. While doing my market study, I found JAP years ago. After using JAP services, I must say that they are the best in terms of quality and cost. The company I work for can easily resell these cheap social media services by adding a small amount of commission. So, if you're looking for an SMM panel, then go with JAP. Should I keep it to myself? Everyone can make his own fortune. I'm just saying.\""
+          - text: Abdul - MARKET RESEARCHER
+        - generic [ref=f4e541]:
+          - blockquote [ref=f4e542]: "\"Using JAP was a great experience. They have an excellent user interface which makes it very easy to use and navigate through the website. The panel is simple and efficient, providing me with all the necessary features that I need.\""
+          - text: Ishaan - RESELLER PANEL OWNER
+        - generic [ref=f4e546]:
+          - blockquote [ref=f4e547]: "\"I've posted my single on Apple Music and needed some help with social media promotion, so I decided to use the JAP panel. It was really easy to get started, and it was very affordable compared to other SMM panels. The results were great as well!\""
+          - text: Amar - MUSICIAN
+        - generic [ref=f4e551]:
+          - blockquote [ref=f4e552]: "\"I shouldn't have said that, but... I’m afraid they are offering better services than we are.\""
+          - text: Zain - SMM PANEL OWNER
+        - generic [ref=f4e556]:
+          - blockquote [ref=f4e557]: "\"Due to the high competition run over LinkedIn, I think it would be best to get some healthy trick that hurts no one. So I used these quality services for my account, received job invitations daily, and I got some real connections. Luckily, I have enough!\""
+          - text: Marco - LINKEDIN USER
+        - generic [ref=f4e561]:
+          - blockquote [ref=f4e562]: "\"I've been using JAP's SEO services for some time now, and I must say that the results have been great. The website is ranking higher in search engine results which has helped increase my traffic significantly.\""
+          - text: Jasmin - COMPANY SALES MANAGER
+        - generic [ref=f4e566]:
+          - blockquote [ref=f4e567]: "\"Instagram reseller panel has become a particularly popular way to start and manage an online business. JAP has made it so easy for me to resell social media services as they provide everything I need.\""
+          - text: Ben - SMM RESELLER PANEL USER
+        - generic [ref=f4e571]:
+          - blockquote [ref=f4e572]: "\"Social media platform management is a tricky thing but with JAP's cheap SMM panel service it has been really easy.\""
+          - text: Iram - SEO EXPERT
+        - generic [ref=f4e576]:
+          - blockquote [ref=f4e577]: "\"I recently started using JAP's SMM reseller panel and I'm loving the experience so far. They have a great selection of packages available, making it simple to find one that fits my budget.\""
+          - text: Tahir - RESELLER PANEL OWNER
+        - generic [ref=f4e581]:
+          - blockquote [ref=f4e582]: "\"I've not seen such a platform that offers services this much. They are really doing it, and it is the cheapest SMM panel of all time.\""
+          - text: Mashum - BACKLINK SEO ANALYST
+        - generic [ref=f4e586]:
+          - blockquote [ref=f4e587]: "\"I've been working with reseller panels for a long time, and tested almost all of them to find out which one is actually the top smm panel, but, I go for justanotherpanel all the time.\""
+          - text: Hassan - AUTOMATED SERVICE RESELLER
+        - generic [ref=f4e591]:
+          - blockquote [ref=f4e592]: "\"Making an app is something. You can't expect a million downloads in one day. It just needs a little shaping, and direction. That's what people are looking for. People believe it's worth downloading an app when it's already been downloaded thousands of times. Thanks to this service, I made a secured payment method to get all the installs the app deserves.\""
+          - text: Gordon - MOBILE APP DEVELOPER
+        - generic [ref=f4e596]:
+          - blockquote [ref=f4e597]: "\"My business scaled up its operations faster than ever before.\""
+          - text: James - SMALL BUSINESS OWNER
+        - generic [ref=f4e601]:
+          - blockquote [ref=f4e602]: "\"I have been using JAP for a year now, I am very happy with their panel. I never had a problem, and when something wrong occurs they always compensate and more! Simply the best!\""
+          - text: Matt - BODY BUILDER
+        - generic [ref=f4e606]:
+          - blockquote [ref=f4e607]: "\"This service is the best when you want to make your Instagram account more popular! The price is nice. You get followers and likes almost instantly. If something is wrong, the support will explain everything. They will fix it so you won't lose your money. I managed to increase the number of subscribers from 5000 to 11000 in a day! A great result. And no need to waste time doing it yourself 🙂\""
+          - text: Lindsey - INSTAGRAM INFLUENCER
+        - generic [ref=f4e611]:
+          - blockquote [ref=f4e612]: "\"Great service and like that you're given a trial before paying!\""
+          - text: Lindsey - INSTAGRAM INFLUENCER
+        - generic [ref=f4e616]:
+          - blockquote [ref=f4e617]: "\"Jap has helped my shoe company a lot. Over the past my company sales have increased wildly after I started on using Jap on my company's Instagram to boost it!\""
+          - text: Matilda - INSTAGRAM INFLUENCER
+        - generic [ref=f4e621]:
+          - blockquote [ref=f4e622]: "\"JAP has really changed my life. I use JAP to boost my clients' exposure on Youtube and Soundcloud, JAP has made this job a 1000 times easier for me. I cannot thank them enough!\""
+          - text: Julian - SOCIAL MEDIA MANAGER
+        - generic [ref=f4e626]:
+          - blockquote [ref=f4e627]: "\"I have been using JAP for my Social Media Marketing, and I must say I am delighted with the services. They are very responsive, easy to use, and fast in delivering results!\""
+          - text: Jack - SOCIAL MEDIA MANAGER
+        - generic [ref=f4e631]:
+          - blockquote [ref=f4e632]: "\"I have tried different SMM panels, but JAP is by far the best one I've ever used. The customer service team was always prompt in answering my queries and helping me out. The services are top-notch too!\""
+          - text: Alice - INSTAGRAM INFLUENCER
+        - generic [ref=f4e636]:
+          - blockquote [ref=f4e637]: "\"JAP has the most affordable pricing plans, and they offer great packages that provide excellent value for money. Besides that, their delivery time is always very fast, which is a big plus.\""
+          - text: John - SMALL BUSINESS OWNER
+        - generic [ref=f4e641]:
+          - blockquote [ref=f4e642]: "\"I recently started my own reselling business, and JAP made it so easy. It has all the features I need, like an automated payment system, order tracking, secure transactions, and more. Plus, their customer service team was very helpful in answering all my queries.\""
+          - text: Priya - HAPPY CLIENT
+        - generic [ref=f4e646]:
+          - blockquote [ref=f4e647]: "\"I have been using JAP for a few months now, and I must say that their customer service is excellent. They always respond quickly to my queries and help me with anything I need. Highly recommend it!\""
+          - text: Sara - SOCIAL MEDIA MANAGER
+        - generic [ref=f4e651]:
+          - blockquote [ref=f4e652]: "\"I'm an Indian, and I know very well how an Indian SMM panel works. Because I've been working for a company that resells social media marketing services on their own website. While doing my market study, I found JAP years ago. After using JAP services, I must say that they are the best in terms of quality and cost. The company I work for can easily resell these cheap social media services by adding a small amount of commission. So, if you're looking for an SMM panel, then go with JAP. Should I keep it to myself? Everyone can make his own fortune. I'm just saying.\""
+          - text: Abdul - MARKET RESEARCHER
+        - generic [ref=f4e656]:
+          - blockquote [ref=f4e657]: "\"Using JAP was a great experience. They have an excellent user interface which makes it very easy to use and navigate through the website. The panel is simple and efficient, providing me with all the necessary features that I need.\""
+          - text: Ishaan - RESELLER PANEL OWNER
+        - generic [ref=f4e661]:
+          - blockquote [ref=f4e662]: "\"I've posted my single on Apple Music and needed some help with social media promotion, so I decided to use the JAP panel. It was really easy to get started, and it was very affordable compared to other SMM panels. The results were great as well!\""
+          - text: Amar - MUSICIAN
+        - generic [ref=f4e666]:
+          - blockquote [ref=f4e667]: "\"I shouldn't have said that, but... I’m afraid they are offering better services than we are.\""
+          - text: Zain - SMM PANEL OWNER
+        - generic [ref=f4e671]:
+          - blockquote [ref=f4e672]: "\"Due to the high competition run over LinkedIn, I think it would be best to get some healthy trick that hurts no one. So I used these quality services for my account, received job invitations daily, and I got some real connections. Luckily, I have enough!\""
+          - text: Marco - LINKEDIN USER
+        - generic [ref=f4e676]:
+          - blockquote [ref=f4e677]: "\"I've been using JAP's SEO services for some time now, and I must say that the results have been great. The website is ranking higher in search engine results which has helped increase my traffic significantly.\""
+          - text: Jasmin - COMPANY SALES MANAGER
+        - generic [ref=f4e681]:
+          - blockquote [ref=f4e682]: "\"Instagram reseller panel has become a particularly popular way to start and manage an online business. JAP has made it so easy for me to resell social media services as they provide everything I need.\""
+          - text: Ben - SMM RESELLER PANEL USER
+        - generic [ref=f4e686]:
+          - blockquote [ref=f4e687]: "\"Social media platform management is a tricky thing but with JAP's cheap SMM panel service it has been really easy.\""
+          - text: Iram - SEO EXPERT
+        - generic [ref=f4e691]:
+          - blockquote [ref=f4e692]: "\"I recently started using JAP's SMM reseller panel and I'm loving the experience so far. They have a great selection of packages available, making it simple to find one that fits my budget.\""
+          - text: Tahir - RESELLER PANEL OWNER
+        - generic [ref=f4e696]:
+          - blockquote [ref=f4e697]: "\"I've not seen such a platform that offers services this much. They are really doing it, and it is the cheapest SMM panel of all time.\""
+          - text: Mashum - BACKLINK SEO ANALYST
+        - generic [ref=f4e701]:
+          - blockquote [ref=f4e702]: "\"I've been working with reseller panels for a long time, and tested almost all of them to find out which one is actually the top smm panel, but, I go for justanotherpanel all the time.\""
+          - text: Hassan - AUTOMATED SERVICE RESELLER
+        - generic [ref=f4e706]:
+          - blockquote [ref=f4e707]: "\"Making an app is something. You can't expect a million downloads in one day. It just needs a little shaping, and direction. That's what people are looking for. People believe it's worth downloading an app when it's already been downloaded thousands of times. Thanks to this service, I made a secured payment method to get all the installs the app deserves.\""
+          - text: Gordon - MOBILE APP DEVELOPER
+        - generic [ref=f4e711]:
+          - blockquote [ref=f4e712]: "\"My business scaled up its operations faster than ever before.\""
+          - text: James - SMALL BUSINESS OWNER
+        - generic [ref=f4e716]:
+          - blockquote [ref=f4e717]: "\"I have been using JAP for a year now, I am very happy with their panel. I never had a problem, and when something wrong occurs they always compensate and more! Simply the best!\""
+          - text: Matt - BODY BUILDER
+        - generic [ref=f4e721]:
+          - blockquote [ref=f4e722]: "\"This service is the best when you want to make your Instagram account more popular! The price is nice. You get followers and likes almost instantly. If something is wrong, the support will explain everything. They will fix it so you won't lose your money. I managed to increase the number of subscribers from 5000 to 11000 in a day! A great result. And no need to waste time doing it yourself 🙂\""
+          - text: Lindsey - INSTAGRAM INFLUENCER
+        - generic [ref=f4e726]:
+          - blockquote [ref=f4e727]: "\"Great service and like that you're given a trial before paying!\""
+          - text: Lindsey - INSTAGRAM INFLUENCER
+      - button "Next" [ref=f4e728] [cursor=pointer]: Next
+  - generic [ref=f4e731]:
+    - heading "How JAP works" [level=2] [ref=f4e734]
+    - generic [ref=f4e735]:
+      - generic [ref=f4e737]:
+        - generic [ref=f4e738]:
+          - heading "01. SIGN UP" [level=3] [ref=f4e739]
+          - paragraph [ref=f4e740]: First, you need to create an account to log in. Then, you can access the dashboard. We've made the sign-up process easy and straightforward, similar to creating a social media account. And don't worry, all your details are safe with us; we will not share your information with others.
+          - link "SIGN UP NOW" [ref=f4e741] [cursor=pointer]:
+            - /url: /signup
+        - generic [ref=f4e743]:
+          - generic [ref=f4e744]:
+            - heading "Sign Up" [level=4] [ref=f4e745]
+            - paragraph [ref=f4e746]: Please enter your details.
+          - generic [ref=f4e748]:
+            - textbox "Username" [disabled] [ref=f4e750]
+            - textbox "First Name" [disabled] [ref=f4e752]
+            - textbox "Last Name" [disabled] [ref=f4e754]
+            - textbox "Email" [disabled] [ref=f4e756]
+            - textbox "Skype" [disabled] [ref=f4e758]
+            - textbox "Password" [disabled] [ref=f4e760]
+            - textbox "Confirm Password" [disabled] [ref=f4e762]
+            - generic [ref=f4e763]:
+              - button "Sign Up Now" [disabled]
+      - generic [ref=f4e766]:
+        - heading "02. ADD FUNDS" [level=3] [ref=f4e767]
+        - paragraph [ref=f4e768]: Second, you need to deposit funds into your account. At JustAnotherPanel, depositing is easy and secure, and we offer a variety of payment channels for your convenience. To deposit, please go to "Add Funds."
+        - link "SIGN UP NOW" [ref=f4e769] [cursor=pointer]:
+          - /url: /signup
+      - generic [ref=f4e798]:
+        - generic [ref=f4e799]:
+          - heading "03. CREATE ORDER" [level=3] [ref=f4e800]
+          - paragraph [ref=f4e801]: Third, once you have a balance in your account, you can place orders using the form. Follow the step-by-step guide to view all services and prices.
+          - link "SIGN UP NOW" [ref=f4e802] [cursor=pointer]:
+            - /url: /signup
+        - generic [ref=f4e804]:
+          - heading "New Order" [level=4] [ref=f4e805]
+          - list [ref=f4e806]:
+            - listitem [ref=f4e807]:
+              - link " Instagram" [ref=f4e808] [cursor=pointer]:
+                - /url: /signup
+                - generic [ref=f4e809]: 
+                - text: Instagram
+            - listitem [ref=f4e810]:
+              - link " Facebook" [ref=f4e811] [cursor=pointer]:
+                - /url: /signup
+                - generic [ref=f4e812]: 
+                - text: Facebook
+            - listitem [ref=f4e813]:
+              - link " Spotify" [ref=f4e814] [cursor=pointer]:
+                - /url: /signup
+                - generic [ref=f4e815]: 
+                - text: Spotify
+            - listitem [ref=f4e816]:
+              - link " TikTok" [ref=f4e817] [cursor=pointer]:
+                - /url: /signup
+                - generic [ref=f4e818]: 
+                - text: TikTok
+            - listitem [ref=f4e819]:
+              - link " Telegram" [ref=f4e820] [cursor=pointer]:
+                - /url: /signup
+                - generic [ref=f4e821]: 
+                - text: Telegram
+            - listitem [ref=f4e822]:
+              - link " Discord" [ref=f4e823] [cursor=pointer]:
+                - /url: /signup
+                - generic [ref=f4e824]: 
+                - text: Discord
+            - listitem [ref=f4e825]:
+              - link " Website Traffic" [ref=f4e826] [cursor=pointer]:
+                - /url: /signup
+                - generic [ref=f4e827]: 
+                - text: Website Traffic
+            - listitem [ref=f4e828]:
+              - link " Reviews" [ref=f4e829] [cursor=pointer]:
+                - /url: /signup
+                - generic [ref=f4e830]: 
+                - text: Reviews
+  - generic [ref=f4e832]:
+    - paragraph [ref=f4e834]: Payment methods
+    - generic [ref=f4e835]:
+      - button "Previous" [ref=f4e836] [cursor=pointer]: Previous
+      - button "Next" [ref=f4e1099] [cursor=pointer]: Next
+  - contentinfo [ref=f4e1100]:
+    - generic [ref=f4e1101]:
+      - generic [ref=f4e1102]:
+        - link [ref=f4e1104] [cursor=pointer]:
+          - /url: https://justanotherpanel.com
+          - img "Just Another Panel" [ref=f4e1105]
+        - list [ref=f4e1106]:
+          - listitem [ref=f4e1107]:
+            - link "Blog" [ref=f4e1108] [cursor=pointer]:
+              - /url: /blog
+          - listitem [ref=f4e1109]:
+            - link "FAQ" [ref=f4e1110] [cursor=pointer]:
+              - /url: /faq
+          - listitem [ref=f4e1111]:
+            - link "Terms & Policy" [ref=f4e1112] [cursor=pointer]:
+              - /url: /terms
+      - paragraph [ref=f4e1114]: © Copyright JAP. All Rights Reserved.

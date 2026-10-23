@@ -1,0 +1,252 @@
+- generic [ref=f5e1]:
+  - navigation [ref=f5e2]:
+    - generic [ref=f5e3]:
+      - link " 7xPanel" [ref=f5e4] [cursor=pointer]:
+        - /url: https://7xpanel.com
+        - generic [ref=f5e5]: 
+        - generic [ref=f5e7]: 7xPanel
+      - generic [ref=f5e8]:
+        - link "Home" [ref=f5e9] [cursor=pointer]:
+          - /url: https://7xpanel.com
+        - link "Services" [ref=f5e10] [cursor=pointer]:
+          - /url: https://7xpanel.com/services
+        - link "How it works" [ref=f5e11] [cursor=pointer]:
+          - /url: https://7xpanel.com#how
+        - link "API" [ref=f5e12] [cursor=pointer]:
+          - /url: https://7xpanel.com/api
+        - link "Support" [ref=f5e13] [cursor=pointer]:
+          - /url: https://7xpanel.com/support
+      - generic [ref=f5e14]:
+        - button "Toggle theme" [ref=f5e15] [cursor=pointer]:
+          - generic [ref=f5e16]: 
+        - link " ع" [ref=f5e17] [cursor=pointer]:
+          - /url: https://7xpanel.com/ar/services
+          - generic [ref=f5e18]: 
+          - text: ع
+        - link "Sign in" [ref=f5e19] [cursor=pointer]:
+          - /url: https://7xpanel.com/login
+        - link "Sign up" [ref=f5e20] [cursor=pointer]:
+          - /url: https://7xpanel.com/register
+  - main [ref=f5e21]:
+    - generic [ref=f5e22]:
+      - generic [ref=f5e23]:
+        - heading "Services and pricing" [level=1] [ref=f5e24]
+        - paragraph [ref=f5e25]: Prices are per 1000 units unless stated otherwise.
+      - generic [ref=f5e26]:
+        - generic [ref=f5e27]:
+          - generic [ref=f5e28]: 
+          - textbox "Search services…" [ref=f5e29]
+        - button "Search services…" [ref=f5e30] [cursor=pointer]
+      - generic [ref=f5e31]:
+        - link "All platforms" [ref=f5e32] [cursor=pointer]:
+          - /url: https://7xpanel.com/services
+        - link "📷 Instagram" [ref=f5e33] [cursor=pointer]:
+          - /url: https://7xpanel.com/services?platform=1
+          - generic [ref=f5e34]: 📷
+          - text: Instagram
+        - link "🎵 TikTok" [ref=f5e35] [cursor=pointer]:
+          - /url: https://7xpanel.com/services?platform=2
+          - generic [ref=f5e36]: 🎵
+          - text: TikTok
+        - link "✈️ Telegram" [ref=f5e37] [cursor=pointer]:
+          - /url: https://7xpanel.com/services?platform=3
+          - generic [ref=f5e38]: ✈️
+          - text: Telegram
+        - link "👥 Facebook" [ref=f5e39] [cursor=pointer]:
+          - /url: https://7xpanel.com/services?platform=4
+          - generic [ref=f5e40]: 👥
+          - text: Facebook
+        - link "📺 YouTube" [ref=f5e41] [cursor=pointer]:
+          - /url: https://7xpanel.com/services?platform=6
+          - generic [ref=f5e42]: 📺
+          - text: YouTube
+        - link "🐦 Twitter (X)" [ref=f5e43] [cursor=pointer]:
+          - /url: https://7xpanel.com/services?platform=5
+          - generic [ref=f5e44]: 🐦
+          - text: Twitter (X)
+        - link "👻 Snapchat" [ref=f5e45] [cursor=pointer]:
+          - /url: https://7xpanel.com/services?platform=7
+          - generic [ref=f5e46]: 👻
+          - text: Snapchat
+        - link "🎮 Twitch" [ref=f5e47] [cursor=pointer]:
+          - /url: https://7xpanel.com/services?platform=8
+          - generic [ref=f5e48]: 🎮
+          - text: Twitch
+        - link "🎧 SoundCloud" [ref=f5e49] [cursor=pointer]:
+          - /url: https://7xpanel.com/services?platform=9
+          - generic [ref=f5e50]: 🎧
+          - text: SoundCloud
+        - link "🎶 Spotify" [ref=f5e51] [cursor=pointer]:
+          - /url: https://7xpanel.com/services?platform=10
+          - generic [ref=f5e52]: 🎶
+          - text: Spotify
+      - generic [ref=f5e53]:
+        - generic [ref=f5e54]:
+          - heading "Instagram Likes - Reels + Posts" [level=2] [ref=f5e55]
+          - generic [ref=f5e56]: "1"
+        - table [ref=f5e58]:
+          - rowgroup [ref=f5e59]:
+            - row [ref=f5e60]:
+              - columnheader "ID" [ref=f5e61]
+              - columnheader "Service" [ref=f5e62]
+              - columnheader "Rate / 1000" [ref=f5e63]
+              - columnheader "Min" [ref=f5e64]
+              - columnheader "Max" [ref=f5e65]
+              - columnheader "Avg. time" [ref=f5e66]
+          - rowgroup [ref=f5e67]:
+            - row [ref=f5e68]:
+              - cell "2103" [ref=f5e69]
+              - cell "Real Iraqi Instagram Likes | Sponsored Reach Support - Real Active IQ Accounts - Instant - non Drop 🇮🇶🇸🇦" [ref=f5e70]
+              - cell "0.75" [ref=f5e71]
+              - cell "10" [ref=f5e72]
+              - cell "50,000" [ref=f5e73]
+              - cell "2 min" [ref=f5e74]
+      - generic [ref=f5e75]:
+        - generic [ref=f5e76]:
+          - heading "𝐓𝐢𝐤𝐓𝐨𝐤 𝐋𝐢𝐤𝐞𝐬 [ 𝐍𝐨𝐧 𝐃𝐫𝐨𝐩 | 𝐑𝐞𝐚𝐥 𝐀𝐜𝐜𝐨𝐮𝐧𝐭𝐬 | 𝐑𝐞𝐚𝐥 𝐃𝐞𝐯𝐢𝐜𝐞𝐬 ]" [level=2] [ref=f5e77]
+          - generic [ref=f5e78]: "2"
+        - table [ref=f5e80]:
+          - rowgroup [ref=f5e81]:
+            - row [ref=f5e82]:
+              - columnheader "ID" [ref=f5e83]
+              - columnheader "Service" [ref=f5e84]
+              - columnheader "Rate / 1000" [ref=f5e85]
+              - columnheader "Min" [ref=f5e86]
+              - columnheader "Max" [ref=f5e87]
+              - columnheader "Avg. time" [ref=f5e88]
+          - rowgroup [ref=f5e89]:
+            - row [ref=f5e90]:
+              - cell "2099" [ref=f5e91]
+              - 'cell "TikTok Likes [Real + HQ] [0% Drop] [30-Day Refill ✅] [Cancel ✅] [Start: 0–10 Min] [Speed: 1K+ Daily] Refill Cancel" [ref=f5e92]':
+                - text: "TikTok Likes [Real + HQ] [0% Drop] [30-Day Refill ✅] [Cancel ✅] [Start: 0–10 Min] [Speed: 1K+ Daily]"
+                - generic [ref=f5e93]: Refill
+                - generic [ref=f5e94]: Cancel
+              - cell "2.00" [ref=f5e95]
+              - cell "10" [ref=f5e96]
+              - cell "500" [ref=f5e97]
+              - cell "40 min" [ref=f5e98]
+            - row [ref=f5e99]:
+              - cell "2098" [ref=f5e100]
+              - 'cell "TikTok Likes [Real + HQ] [0% Drop] [30-Day Refill ✅] [Cancel ✅] [Start: 0–10 Min] [Speed: 1K+ Daily] Refill Cancel" [ref=f5e101]':
+                - text: "TikTok Likes [Real + HQ] [0% Drop] [30-Day Refill ✅] [Cancel ✅] [Start: 0–10 Min] [Speed: 1K+ Daily]"
+                - generic [ref=f5e102]: Refill
+                - generic [ref=f5e103]: Cancel
+              - cell "1.20" [ref=f5e104]
+              - cell "10" [ref=f5e105]
+              - cell "500" [ref=f5e106]
+              - cell "701 min" [ref=f5e107]
+      - generic [ref=f5e108]:
+        - generic [ref=f5e109]:
+          - heading "Instagram Followers NoRefill | Update 7.09.2026 | ᴺᴱᵂ" [level=2] [ref=f5e110]
+          - generic [ref=f5e111]: "6"
+        - table [ref=f5e113]:
+          - rowgroup [ref=f5e114]:
+            - row [ref=f5e115]:
+              - columnheader "ID" [ref=f5e116]
+              - columnheader "Service" [ref=f5e117]
+              - columnheader "Rate / 1000" [ref=f5e118]
+              - columnheader "Min" [ref=f5e119]
+              - columnheader "Max" [ref=f5e120]
+              - columnheader "Avg. time" [ref=f5e121]
+          - rowgroup [ref=f5e122]:
+            - row [ref=f5e123]:
+              - cell "2102" [ref=f5e124]
+              - cell "Instagram Followers | Up to 10K/Day| 10% Extra | No Refill Cancel" [ref=f5e125]:
+                - text: Instagram Followers | Up to 10K/Day| 10% Extra | No Refill
+                - generic [ref=f5e126]: Cancel
+              - cell "0.18" [ref=f5e127]
+              - cell "100" [ref=f5e128]
+              - cell "500,000" [ref=f5e129]
+              - cell "637 min" [ref=f5e130]
+            - row [ref=f5e131]:
+              - cell "2101" [ref=f5e132]
+              - cell "Instagram Followers | Up to 10K/Day| 10% Extra | No Refill Cancel" [ref=f5e133]:
+                - text: Instagram Followers | Up to 10K/Day| 10% Extra | No Refill
+                - generic [ref=f5e134]: Cancel
+              - cell "0.23" [ref=f5e135]
+              - cell "100" [ref=f5e136]
+              - cell "500,000" [ref=f5e137]
+              - cell "337 min" [ref=f5e138]
+            - row [ref=f5e139]:
+              - cell "2095" [ref=f5e140]
+              - cell "Instagram Followers | Up to 10K/Day| 10% Extra | No Refill Cancel" [ref=f5e141]:
+                - text: Instagram Followers | Up to 10K/Day| 10% Extra | No Refill
+                - generic [ref=f5e142]: Cancel
+              - cell "0.23" [ref=f5e143]
+              - cell "100" [ref=f5e144]
+              - cell "500,000" [ref=f5e145]
+              - cell "75 min" [ref=f5e146]
+            - row [ref=f5e147]:
+              - cell "2094" [ref=f5e148]
+              - cell "Instagram Followers | Up to 10K/Day| 10% Extra | No Refill Cancel" [ref=f5e149]:
+                - text: Instagram Followers | Up to 10K/Day| 10% Extra | No Refill
+                - generic [ref=f5e150]: Cancel
+              - cell "0.22" [ref=f5e151]
+              - cell "100" [ref=f5e152]
+              - cell "500,000" [ref=f5e153]
+              - cell "216 min" [ref=f5e154]
+            - row [ref=f5e155]:
+              - cell "2096" [ref=f5e156]
+              - cell "Instagram Followers | Up to 10K/Day| 10% Extra | No Refill Cancel" [ref=f5e157]:
+                - text: Instagram Followers | Up to 10K/Day| 10% Extra | No Refill
+                - generic [ref=f5e158]: Cancel
+              - cell "0.24" [ref=f5e159]
+              - cell "100" [ref=f5e160]
+              - cell "500,000" [ref=f5e161]
+              - cell "103 min" [ref=f5e162]
+            - row [ref=f5e163]:
+              - cell "2097" [ref=f5e164]
+              - cell "Instagram Followers | Up to 10K/Day| 10% Extra | No Refill Cancel" [ref=f5e165]:
+                - text: Instagram Followers | Up to 10K/Day| 10% Extra | No Refill
+                - generic [ref=f5e166]: Cancel
+              - cell "0.25" [ref=f5e167]
+              - cell "100" [ref=f5e168]
+              - cell "500,000" [ref=f5e169]
+              - cell "122 min" [ref=f5e170]
+      - generic [ref=f5e171]:
+        - generic [ref=f5e172]:
+          - heading "Instagram Followers AppData | Update 31.08.2026 | ᴺᴱᵂ" [level=2] [ref=f5e173]
+          - generic [ref=f5e174]: "1"
+        - table [ref=f5e176]:
+          - rowgroup [ref=f5e177]:
+            - row [ref=f5e178]:
+              - columnheader "ID" [ref=f5e179]
+              - columnheader "Service" [ref=f5e180]
+              - columnheader "Rate / 1000" [ref=f5e181]
+              - columnheader "Min" [ref=f5e182]
+              - columnheader "Max" [ref=f5e183]
+              - columnheader "Avg. time" [ref=f5e184]
+          - rowgroup [ref=f5e185]:
+            - row [ref=f5e186]:
+              - cell "2091" [ref=f5e187]
+              - cell "Instagram Real Followers | APP Traffic | Fast Start | Up to 15K/Day | Stable ✅" [ref=f5e188]
+              - cell "0.90" [ref=f5e189]
+              - cell "50" [ref=f5e190]
+              - cell "25,000" [ref=f5e191]
+              - cell "13 min" [ref=f5e192]
+  - contentinfo [ref=f5e193]:
+    - generic [ref=f5e194]:
+      - generic [ref=f5e195]:
+        - generic [ref=f5e196]: © 2026 7xPanel
+        - generic [ref=f5e197]:
+          - link "Services" [ref=f5e198] [cursor=pointer]:
+            - /url: https://7xpanel.com/services
+          - link "API" [ref=f5e199] [cursor=pointer]:
+            - /url: https://7xpanel.com/api
+          - link "Support" [ref=f5e200] [cursor=pointer]:
+            - /url: https://7xpanel.com/support
+          - link "Sign in" [ref=f5e201] [cursor=pointer]:
+            - /url: https://7xpanel.com/login
+      - generic [ref=f5e202]:
+        - generic [ref=f5e203]: "Contact support:"
+        - link " +44 7732 726555" [ref=f5e204] [cursor=pointer]:
+          - /url: https://wa.me/447732726555
+          - generic [ref=f5e205]: 
+          - text: +44 7732 726555
+        - generic [ref=f5e206]: · 24/7
+  - generic:
+    - generic: Contact support
+    - link "Contact support on WhatsApp" [ref=f5e207] [cursor=pointer]:
+      - /url: https://wa.me/447732726555
+      - generic [ref=f5e208]: 
+  - text:  

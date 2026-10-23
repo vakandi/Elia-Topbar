@@ -1,0 +1,17 @@
+[    1207ms] [WARNING] Error with Permissions-Policy header: Unrecognized feature: 'run-ad-auction'. @ :0
+[    1207ms] [WARNING] Error with Permissions-Policy header: Unrecognized feature: 'join-ad-interest-group'. @ :0
+[    1207ms] [WARNING] Error with Permissions-Policy header: Unrecognized feature: 'private-aggregation'. @ :0
+[    1207ms] [WARNING] Error with Permissions-Policy header: Unrecognized feature: 'attribution-reporting'. @ :0
+[    1261ms] [WARNING] Tracking Prevention blocked access to storage for https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css. @ https://justanotherpanel.com/:0
+[    1262ms] [WARNING] Tracking Prevention blocked access to storage for https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css. @ https://justanotherpanel.com/:0
+[    1262ms] [WARNING] Tracking Prevention blocked access to storage for https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css. @ https://justanotherpanel.com/:0
+[    1262ms] [WARNING] Tracking Prevention blocked access to storage for https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css. @ https://justanotherpanel.com/:0
+[    1881ms] TypeError: Cannot read properties of null (reading 'addEventListener')
+    at https://justanotherpanel.com/:1542:58
+[    1881ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://www.chromium.org/developers/design-documents/create-amazing-password-forms) %o @ https://justanotherpanel.com/:0
+[    1881ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "new-password"): (More info: https://www.chromium.org/developers/design-documents/create-amazing-password-forms) %o @ https://justanotherpanel.com/:0
+[    1881ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "new-password"): (More info: https://www.chromium.org/developers/design-documents/create-amazing-password-forms) %o @ https://justanotherpanel.com/:0
+[    2799ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://storage.perfectcdn.com/webfonts/fa-solid-900.woff2:0
+[    2803ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://storage.perfectcdn.com/webfonts/fa-regular-400.woff2:0
+[    2898ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://storage.perfectcdn.com/webfonts/fa-regular-400.ttf:0
+[    2900ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://storage.perfectcdn.com/webfonts/fa-solid-900.ttf:0

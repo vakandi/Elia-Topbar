@@ -1,0 +1,357 @@
+- generic [ref=f2e1]:
+  - generic [ref=f2e2]:
+    - navigation [ref=f2e3]:
+      - generic [ref=f2e4]:
+        - link [ref=f2e6] [cursor=pointer]:
+          - /url: /
+          - img "BulkFollows" [ref=f2e7]
+        - generic [ref=f2e8]:
+          - list [ref=f2e9]:
+            - listitem [ref=f2e10]:
+              - link " Sign in" [ref=f2e11] [cursor=pointer]:
+                - /url: /
+                - generic [ref=f2e12]: 
+                - text: Sign in
+            - listitem [ref=f2e13]:
+              - link " How It Works" [ref=f2e14] [cursor=pointer]:
+                - /url: /how-it-works
+                - generic [ref=f2e15]: 
+                - text: How It Works
+            - listitem [ref=f2e16]:
+              - link " Blog" [ref=f2e17] [cursor=pointer]:
+                - /url: /blog
+                - generic [ref=f2e18]: 
+                - text: Blog
+          - list [ref=f2e19]:
+            - listitem [ref=f2e20]:
+              - link "Register" [ref=f2e21] [cursor=pointer]:
+                - /url: /signup
+    - generic [ref=f2e27]:
+      - generic [ref=f2e28]:
+        - generic [ref=f2e29]: Smm Panel
+        - heading "Welcome to Bulkfollows Smm Panel!" [level=1] [ref=f2e35]
+        - paragraph [ref=f2e36]: In today's fast-changing digital world, businesses are using social media to connect with their target audience more effectively than ever. This has made Social Media Marketing (SMM) a powerful tool for marketers. One platform that stands out for providing SMM services is Bulkfollows.
+        - generic [ref=f2e38]:
+          - generic [ref=f2e39]:
+            - textbox "Username" [ref=f2e47]
+            - textbox "Password" [ref=f2e53]
+            - generic [ref=f2e56] [cursor=pointer]:
+              - checkbox "Remember me" [ref=f2e57]
+              - text: Remember me
+            - link "Forgot password?" [ref=f2e60] [cursor=pointer]:
+              - /url: /resetpassword
+          - generic [ref=f2e61]:
+            - button "Sign in" [ref=f2e62] [cursor=pointer]
+            - generic [ref=f2e67]:
+              - generic [ref=f2e68]: Login with
+              - generic [ref=f2e77]:
+                - button "Se connecter avec Google. S'ouvre dans un nouvel onglet." [ref=f2e79] [cursor=pointer]:
+                  - generic [ref=f2e81]: Se connecter avec Google
+                - iframe
+          - generic [ref=f2e87]:
+            - text: Do not have an account?
+            - link "Sign up" [ref=f2e88] [cursor=pointer]:
+              - /url: /signup
+      - generic [ref=f2e93]:
+        - heading "Bulkfollows VS Others" [level=2] [ref=f2e94]
+        - generic [ref=f2e95]:
+          - list [ref=f2e96]:
+            - listitem [ref=f2e97]:
+              - generic [ref=f2e98]: Bulkfollows
+            - listitem [ref=f2e99]:
+              - generic [ref=f2e100]: Free Childpanel
+            - listitem [ref=f2e103]:
+              - generic [ref=f2e104]: Point for each $spend
+            - listitem [ref=f2e107]:
+              - generic [ref=f2e108]: Upto 10% Discount
+            - listitem [ref=f2e111]:
+              - generic [ref=f2e112]: Upto 15% Deposit Bonus
+            - listitem [ref=f2e115]:
+              - generic [ref=f2e116]: 24/7 Support through ticket, Whatsapp, Telegram
+          - list [ref=f2e119]:
+            - listitem [ref=f2e120]:
+              - generic [ref=f2e121]: Others Site
+            - listitem [ref=f2e122]:
+              - generic [ref=f2e123]: Free Childpanel
+            - listitem [ref=f2e126]:
+              - generic [ref=f2e127]: Point for each $spend
+            - listitem [ref=f2e130]:
+              - generic [ref=f2e131]: Upto 10% Discount
+            - listitem [ref=f2e134]:
+              - generic [ref=f2e135]: Upto 15% Deposit Bonus
+            - listitem [ref=f2e138]:
+              - generic [ref=f2e139]: 24/7 Support through ticket, Whatsapp, Telegram
+    - generic [ref=f2e143]:
+      - heading "About Bulkfollows" [level=2] [ref=f2e146]
+      - generic [ref=f2e147]:
+        - generic [ref=f2e149]:
+          - heading "World's Best Cheap & Easy Smm Panel" [level=3] [ref=f2e150]
+          - paragraph [ref=f2e151]: Bulkfollows is a globally recognized platform offering top-notch SMM services. Whether you're in the United States, India, or Turkey, you can access our services anywhere, anytime. Our panel is designed to be user-friendly and cost-effective, providing the best value for your money.
+          - img "BulkFollows SMM panel dashboard showing available social media services" [ref=f2e152]
+        - generic [ref=f2e154]:
+          - img "BulkFollows SMM reseller panel with wholesale pricing" [ref=f2e156]
+          - generic [ref=f2e157]:
+            - heading "Smm Reseller Panel" [level=3] [ref=f2e158]
+            - paragraph [ref=f2e159]: Our reseller panel allows influencers, marketing enthusiasts, and digital marketing agencies to buy our services at wholesale prices. Whether it's Twitter followers, Soundcloud likes, you can resell them at a profit. With us, you have a chance to start a profitable online business with minimal investment.
+      - generic [ref=f2e160]:
+        - generic [ref=f2e162]:
+          - heading "Sign-Up Process" [level=3] [ref=f2e163]
+          - paragraph [ref=f2e164]: Getting started with Bulkfollows is easy. Simply visit our website, click the 'Sign Up' button, provide the necessary information, and create your account. Once you've registered, you can log in anytime and start leveraging our vast range of SMM services.
+        - img "Illustration of the BulkFollows account sign-up process" [ref=f2e166]
+    - heading "Benefits of Using Bulkfollows" [level=2] [ref=f2e171]
+    - generic [ref=f2e178]:
+      - generic [ref=f2e179]: Paytm
+      - generic [ref=f2e180]: Payeer
+      - generic [ref=f2e181]: bKash
+      - generic [ref=f2e182]: WebMoney
+      - generic [ref=f2e183]: Visa
+      - generic [ref=f2e184]: Mastercard
+      - generic [ref=f2e185]: Credit Card
+      - generic [ref=f2e186]: Bank Transfer
+      - generic [ref=f2e187]: JazzCash
+      - generic [ref=f2e188]: EasyPaisa
+      - generic [ref=f2e189]: PayPal
+      - generic [ref=f2e190]: Crypto (USDT/BTC)
+      - generic [ref=f2e191]: Nagad
+      - generic [ref=f2e192]: Rocket
+      - generic [ref=f2e193]: Skrill
+    - generic [ref=f2e195]:
+      - generic [ref=f2e197]:
+        - heading "Smm Services" [level=2] [ref=f2e198]
+        - paragraph [ref=f2e199]: "Our wide range of SMM services covers all major social networks such as Soundcloud, Twitter, LinkedIn, and Telegram.Here's what you can expect:"
+        - generic [ref=f2e201]:
+          - tablist [ref=f2e202]:
+            - listitem [ref=f2e203]:
+              - tab "Twitter" [selected] [ref=f2e204]
+            - listitem [ref=f2e205]:
+              - tab "Linkedin" [ref=f2e206] [cursor=pointer]
+            - listitem [ref=f2e207]:
+              - tab "Telegram" [ref=f2e208] [cursor=pointer]
+            - listitem [ref=f2e209]:
+              - tab "Soundcloud" [ref=f2e210] [cursor=pointer]
+          - tabpanel "Twitter" [ref=f2e212]:
+            - heading "Twitter" [level=3] [ref=f2e213]
+            - paragraph [ref=f2e214]: At Bulkfollows, our Twitter services can help you get more followers, retweets, and likes. Leverage the power of our Twitter SMM panel to boost your online credibility. Our Services make your work easy to verify your Twitter account because we provide high-quality services.
+      - generic [ref=f2e215]:
+        - img "Social media growth chart illustrating BulkFollows engagement results" [ref=f2e218]
+        - generic [ref=f2e219]:
+          - generic [ref=f2e222]:
+            - generic [ref=f2e224]:
+              - heading "Superior Smm Panel to Boost YourSocial Media Accounts" [level=3] [ref=f2e225]
+              - paragraph [ref=f2e226]: Bulkfollows is a real booster for your social media accounts. We work hard to create results driven strategies to generate social media activities organically. Our packages are very cheap, and we have created all kinds of packages for small, medium and large businesses. Try the Bulkfollows Marketing Panel for your social media growth.
+            - generic [ref=f2e228]:
+              - heading [level=3] [ref=f2e229]: Targeted Social Media (SMM PANEL) Marketing Panel
+              - paragraph [ref=f2e230]: For those looking for extraordinary features and user-friendly services of Bulkfollows, Cheer Up! Because we are providing our Marketing over Multiple platforms. Yes, Our Soundcloud and Telegram Panel Tactics will let you buy thousands of Likes, Shares, Views, and subscribers at very low prices. Plus, The Twitter/X.com Social Media Marketing panel of bulkfollows is fully designed for the user's needs and satisfaction.
+          - generic [ref=f2e231]:
+            - button "" [ref=f2e232] [cursor=pointer]
+            - button "" [ref=f2e234] [cursor=pointer]
+    - generic [ref=f2e238]:
+      - generic [ref=f2e240]:
+        - heading "Cheapest Smm Reseller Panel" [level=2] [ref=f2e241]
+        - img "Cheapest SMM reseller panel pricing overview"
+      - generic [ref=f2e242]:
+        - generic [ref=f2e243]:
+          - heading "X smm panel" [level=3] [ref=f2e244]
+          - paragraph [ref=f2e245]: Boost your X presence with our X SMM services. Get more likes, shares, and followers.
+        - generic [ref=f2e246]:
+          - heading "Telegram SMM Panel" [level=3] [ref=f2e247]
+          - paragraph [ref=f2e248]: Grow your Telegram channel with our Telegram SMM services. Get more members and post views.
+        - generic [ref=f2e249]:
+          - heading "Snapchat SMM Panel" [level=3] [ref=f2e250]
+          - paragraph [ref=f2e251]: Boost your Snapchat story views and followers to increase your customers with our Snapchat SMM services.
+        - generic [ref=f2e252]:
+          - heading "Best SMM Service" [level=3] [ref=f2e253]
+          - paragraph [ref=f2e254]: Our Panel is one of the Best SMM Panels that pride ourselves on offering the best SMM services. With our affordable prices, high-quality services, and exceptional customer support, we aim to provide the best experience for our clients.
+        - generic [ref=f2e255]:
+          - heading "SMM Panel Services" [level=3] [ref=f2e256]
+          - paragraph [ref=f2e257]: "Bulkfollows offers a range of SMM services across various social media platforms. Here's a look at some of them:"
+        - generic [ref=f2e258]:
+          - heading "What Is A Child SMM Panel?" [level=3] [ref=f2e259]
+          - paragraph [ref=f2e260]: A Child SMM Panel is a white-label reseller panel — a fully branded copy of BulkFollows that you can operate under your own brand name and sell services through at your own prices.
+        - generic [ref=f2e261]:
+          - heading "What is an SMM Panel Provider?" [level=3] [ref=f2e262]
+          - paragraph [ref=f2e263]: An SMM panel provider is a platform like Bulkfollows that offers a variety of SMM services. These services can be purchased by individuals or resellers.
+        - generic [ref=f2e264]:
+          - heading "What is an SMM Panel Reseller?" [level=3] [ref=f2e265]
+          - paragraph [ref=f2e266]: An SMM panel reseller is someone who buys SMM services from providers like Bulkfollows at wholesale prices and resells them to their clients at a profit.
+    - generic [ref=f2e268]:
+      - heading "Smm Panel Services" [level=2] [ref=f2e271]
+      - generic [ref=f2e272]:
+        - generic [ref=f2e273]:
+          - generic [ref=f2e274]:
+            - heading "Support 24/7" [level=3] [ref=f2e275]
+            - paragraph [ref=f2e276]: Our top priority is to satisfy our customers. That's why our SMM Panel 24/7 Support Is available for customers to assist you with your queries and concerns. Whether it's a technical glitch or a service-related query, we're here to help round the clock.
+          - generic [ref=f2e277]:
+            - heading "Social Media Marketing Service" [level=3] [ref=f2e278]
+            - paragraph [ref=f2e279]: Social Media Marketing Panel is an essential aspect of digital marketing today. With our range of SMM services, we strive to help businesses expand their online presence, reach their target audience, and achieve their marketing goals.
+        - generic [ref=f2e280]:
+          - generic [ref=f2e281]:
+            - heading "Quick Response from Clients" [level=3] [ref=f2e282]
+            - paragraph [ref=f2e283]: Our client's feedback is important to us. That's why we strive to respond to our clients as quickly as possible. This helps us maintain a strong relationship with our clients and improve our services based on their feedback.
+          - generic [ref=f2e284]:
+            - heading "Achievements" [level=3] [ref=f2e285]
+            - paragraph [ref=f2e286]: We're proud of our achievements. Our panel has been used by thousands of clients worldwide. An order is placed every 0.3 seconds on our platform, which speaks volumes about our reliability. We've completed numerous orders successfully and offer services at competitive prices.
+    - generic [ref=f2e288]:
+      - generic [ref=f2e291]:
+        - heading "Features Of Bulkfollows" [level=2] [ref=f2e292]
+        - link "Register Now" [ref=f2e293] [cursor=pointer]:
+          - /url: /signup
+      - generic [ref=f2e294]:
+        - generic [ref=f2e295]:
+          - generic [ref=f2e296]:
+            - heading "Best Smm Panel" [level=3] [ref=f2e301]
+            - paragraph [ref=f2e302]: A strong community covered under the name Bulkfollow has been created that is working next-level and has made a huge name in Social Media Marketing. Yes! We aim to provide our practical services to our clients so that they get what they're expecting. So, Check Our packages and start earning today with Us!
+          - generic [ref=f2e303]:
+            - heading "Smm Panel Provider" [level=3] [ref=f2e308]
+            - paragraph [ref=f2e309]: We take pride in being the best social media marketing services provider, and that too worldwide. We not only offer 24/7 services but also very instant SMM panel services. We also have the safest and easiest payment options to choose from. Therefore, we are considered the most effective smm panel provider located in India, offering services worldwide.
+        - generic [ref=f2e310]:
+          - generic [ref=f2e311]:
+            - heading "Cheapest smm panel" [level=3] [ref=f2e316]
+            - paragraph [ref=f2e317]: Bulkfollows is a fully established and authentic social media marketing service provider that is working at a very low price. Their aim is to give a chance to everyone who can't afford highly paid panels but can make the world of SMM panels more progressive.
+          - generic [ref=f2e318]:
+            - heading "Reliable Smm Services" [level=3] [ref=f2e323]
+            - paragraph [ref=f2e324]: Our SMM services platform providing social media marketing services offers very reliable and high-quality SMM services. Our services include a great deal of social media marketing on all online platforms. We simply offer the cheapest packages to boost engagements and visibility. Our services are also offered in the form of wholesale packages.
+        - generic [ref=f2e325]:
+          - generic [ref=f2e326]:
+            - heading "Wholesale Smm Services" [level=3] [ref=f2e331]
+            - paragraph [ref=f2e332]: Our wholesale social media marketing service packages are the best you can get online. We offer these packages to a worldwide audience so that anyone can benefit from them anywhere. After all, our social media marketing is world-famous because of its reliability, quickness, availability of 24/7 support, and low prices.
+          - generic [ref=f2e333]:
+            - heading "Smm Reseller Panel" [level=3] [ref=f2e338]
+            - paragraph [ref=f2e339]: If you are someone who is looking to buy social media marketing panel services, then our platform is the best one for you. We have very efficient SMM reseller panel services at the cheapest prices on our online platform. Our SMM reseller panel services are here to increase the visibility and engagement of your social media accounts.
+        - generic [ref=f2e340]: View more
+    - generic [ref=f2e347]:
+      - generic [ref=f2e349]:
+        - heading "Statistics of Bulkfollows" [level=2] [ref=f2e350]
+        - paragraph [ref=f2e351]: Bulkfollow clients exist all over the world, and we have over 50 million active clients with over 5000 active services. Our clients work with us because of the quality we offer. Bulkfollows offers the cheapest services in the world, and at the same time, our team is always working hard to maintain their quality so that you can get long-term results.
+      - generic [ref=f2e352]:
+        - generic [ref=f2e364]:
+          - heading "Prices Starting From" [level=3] [ref=f2e365]
+          - paragraph [ref=f2e366]: 0.001$/1k
+        - generic [ref=f2e375]:
+          - heading "Order Completed" [level=3] [ref=f2e376]
+          - paragraph [ref=f2e377]: "158074346"
+        - generic [ref=f2e386]:
+          - heading "An order is made every" [level=3] [ref=f2e387]
+          - paragraph [ref=f2e388]: 0.3Sec
+    - generic [ref=f2e391]:
+      - generic [ref=f2e393]:
+        - heading "Why should you choose Bulkfollows?" [level=3] [ref=f2e394]
+        - generic [ref=f2e395]:
+          - paragraph [ref=f2e396]: Bulkfollows offers its clients results-oriented services that last forever if you are looking for a SMM panel to increase likes or subscribers.
+          - paragraph [ref=f2e397]: Then you are in the right place because here you can find the cheapest SMM packages for your needs. We offer all major payment methods like Paypal, Paytm, Bitcoin, Jazzcash, Easy Paisa, etc, to complete the process in the most secure way. Bulkfollows build trust with their customers, which is why they keep us in their good book for their future needs.
+        - generic [ref=f2e398] [cursor=pointer]: Read more
+      - generic [ref=f2e404]:
+        - generic [ref=f2e406]:
+          - heading "Quality Service Guarantee" [level=3] [ref=f2e407]
+          - paragraph [ref=f2e408]: The standard of our services is very high because our SMM Panel team is very dedicated and well-trained. Bulkfollows offers a money-back guarantee in case of any drop, and if you run into any problem, so we are always ready to refill your package in case of any issue. We guarantee that the accounts and activities we provide you will stay alive forever.
+        - generic [ref=f2e410]:
+          - heading "24 / 7 Support Service" [level=3] [ref=f2e411]: 24 / 7 SupportService
+          - paragraph [ref=f2e412]: The Bulkfollows support team is well-trained and always ready to help you with everything. We offer 24 / 7 support in a friendly environment. You can contact us at any time via chat or the contact forum. Our support team is aware of all technical issues as well as all custom packages of Bulkfollows.
+        - generic [ref=f2e414]:
+          - heading "100% Organic SMM Services" [level=3] [ref=f2e415]
+          - paragraph [ref=f2e416]: Bulkfollows offers 100% real SMM activities, and for this purpose, our social media team drives millions of visitors to our clients' posts or accounts. We also use PPC to generate real SMM activities, and unlike other SMM reseller panels, we do not use any software or bots to generate social media activity therefore we can say that all of our accounts are real and active.
+    - generic [ref=f2e420]:
+      - heading "Frequently Asked Question" [level=2] [ref=f2e421]
+      - tablist [ref=f2e422]:
+        - listitem [ref=f2e423]:
+          - tab "Getting Started" [selected] [ref=f2e424]
+        - listitem [ref=f2e425]:
+          - tab "Understanding SMM Services" [ref=f2e426] [cursor=pointer]
+      - generic [ref=f2e427]:
+        - tabpanel "Getting Started" [ref=f2e428]:
+          - tablist [ref=f2e429]:
+            - generic [ref=f2e430]:
+              - generic [ref=f2e431]:
+                - tab [ref=f2e433]:
+                  - heading [level=4] [ref=f2e434]:
+                    - button "How do I create an account on BulkFollows? " [ref=f2e435] [cursor=pointer]
+                - tab [ref=f2e437]:
+                  - heading [level=4] [ref=f2e438]:
+                    - button "How do I add funds to my account? " [ref=f2e439] [cursor=pointer]
+              - generic [ref=f2e440]:
+                - tab [ref=f2e442]:
+                  - heading [level=4] [ref=f2e443]:
+                    - button "How do I place an order? " [ref=f2e444] [cursor=pointer]
+                - tab [ref=f2e446]:
+                  - heading [level=4] [ref=f2e447]:
+                    - button "What payment methods are available? " [ref=f2e448] [cursor=pointer]
+        - text:    
+    - list [ref=f2e453]:
+      - generic [ref=f2e455]:
+        - tabpanel [ref=f2e456]:
+          - generic [ref=f2e457]:
+            - heading "Countries where most of our clients live" [level=3] [ref=f2e458]
+            - paragraph [ref=f2e459]: Bulkfollows is highly regarded in the South Asia region, where India, Pakistan, Bangladesh and Sri Lanka frequently use our SMM Panel services. But we also have a huge number of clients in the USA, Canada, Brazil, Germany, UK, France, Russia and the United Arab Emirates. We also have a huge number of clients from West Asian countries such as Indonesia, Philippines, Malaysia and Singapore.
+        - tabpanel [ref=f2e460]:
+          - generic [ref=f2e461]:
+            - heading "Premier SMM Reseller Panel for Twitter Followers, Likes & Views" [level=3] [ref=f2e462]
+            - paragraph [ref=f2e463]: If you want to increase the number of followers on your Twitter account, then Bulkfollows is the only place you can get real and active followers. Bulkfollows offers unlimited Twitter followers, likes and views at the lowest price. Our Twitter users are 100% original, and it will boost your Twitter account as well as your income.
+        - tabpanel [ref=f2e464]:
+          - generic [ref=f2e465]:
+            - heading "You Need Only 1500RS PayTM For SMM Panel India" [level=3] [ref=f2e466]
+            - paragraph [ref=f2e467]: Yes! The minimum amount of 1500Rs is enough for bulkfollows. They also have a huge number of Indian Resellers reselling our social media marketing panel services with the Highest Quality in such a cost-effective budget.
+        - tabpanel [aria-hidden] [ref=f2e468]:
+          - generic [ref=f2e469]:
+            - heading [level=3] [ref=f2e470]: Bulkfollows is an extensive SMM Reseller Panel Provider.
+            - paragraph [ref=f2e471]: If you are looking to improve your social media accounts or if you are facing huge difficulties in promoting your product or services on social media, then Bulkfollows will offer the best solution to your problems. We have targeted packages that will not only increase your following but also increase your social media presence.
+        - tabpanel [aria-hidden] [ref=f2e472]:
+          - generic [ref=f2e473]:
+            - heading [level=3] [ref=f2e474]: Social Media Marketing Panel In Bangladesh
+            - paragraph [ref=f2e475]: Because we are serving Bangladeshi clients very well, Bulkfollow is well known in their SMM community. There are so many resellers from there that have been selling the panel for several years at such an effective budget. We accept Bangladeshi payments via bKash, Nagad, and Rocket, which makes Bulkfollows more interesting.
+      - tablist [ref=f2e476]:
+        - tab "1 of 2" [selected] [ref=f2e477] [cursor=pointer]: "1"
+        - tab "2 of 2" [ref=f2e478] [cursor=pointer]: "2"
+    - generic [ref=f2e483]:
+      - heading "Get Register to Check our Whole Website" [level=2] [ref=f2e484]
+      - paragraph [ref=f2e485]: Bulkfollows offers a wide range of services to make your marketing campaign easier. Our cheapest and performance oriented packages can improve your social media visibility and increase your income. Bulkfollows offers a free trial for Linkedin, X.com, Telegram, Soundcloud and all major social networks. We always promise effective growth in the world of social networks at an affordable price.
+      - link "Register Now" [ref=f2e486] [cursor=pointer]:
+        - /url: /signup
+    - contentinfo [ref=f2e487]:
+      - generic [ref=f2e488]:
+        - generic [ref=f2e489]:
+          - generic [ref=f2e490]:
+            - link [ref=f2e491] [cursor=pointer]:
+              - /url: /
+              - img "BulkFollows" [ref=f2e492]
+            - paragraph [ref=f2e493]: The SMM panel trusted for fast delivery, fair pricing, and round-the-clock support.
+            - generic [ref=f2e494]:
+              - link "Telegram" [ref=f2e495] [cursor=pointer]:
+                - /url: https://t.me/bulkfollowss
+                - generic [ref=f2e496]: 
+              - link "WhatsApp" [ref=f2e497] [cursor=pointer]:
+                - /url: https://wa.me/971582430134
+                - generic [ref=f2e498]: 
+              - link "Email" [ref=f2e499] [cursor=pointer]:
+                - /url: mailto:support@bulkfollows.com
+                - generic [ref=f2e500]: 
+          - generic [ref=f2e501]:
+            - heading "Quick Links" [level=6] [ref=f2e502]
+            - list [ref=f2e503]:
+              - listitem [ref=f2e504]:
+                - link "Sign up" [ref=f2e505] [cursor=pointer]:
+                  - /url: /signup
+              - listitem [ref=f2e506]:
+                - link "Terms" [ref=f2e507] [cursor=pointer]:
+                  - /url: /terms
+              - listitem [ref=f2e508]:
+                - link "How it Works" [ref=f2e509] [cursor=pointer]:
+                  - /url: /how-it-works
+              - listitem [ref=f2e510]:
+                - link "Blog" [ref=f2e511] [cursor=pointer]:
+                  - /url: /blog
+          - generic [ref=f2e512]:
+            - heading "Company" [level=6] [ref=f2e513]
+            - paragraph [ref=f2e514]: Emam Media LTD [ 11855473 ]
+            - paragraph [ref=f2e515]: 20-22 Wenlock Road, London, England, N1 7GU
+            - paragraph [ref=f2e516]:
+              - generic [ref=f2e517]: 
+              - text: support@bulkfollows.com
+        - generic [ref=f2e518]:
+          - paragraph [ref=f2e519]: © 2026 BulkFollows. All rights reserved.
+          - list [ref=f2e520]:
+            - listitem [ref=f2e521]
+            - listitem [ref=f2e523]
+            - listitem [ref=f2e525]
+  - generic:
+    - link "DMCA.com Protection Status":
+      - /url: https://www.dmca.com/Protection/Status.aspx?ID=c2e7db6d-3de0-4a04-bec2-9daa0bd9266b

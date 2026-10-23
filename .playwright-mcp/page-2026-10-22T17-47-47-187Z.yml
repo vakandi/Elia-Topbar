@@ -1,0 +1,891 @@
+- generic [ref=e1]:
+  - navigation [ref=e2]:
+    - generic [ref=e3]:
+      - link " PEAKERR" [ref=e5] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e6]: 
+        - generic [ref=e8]: PEAKERR
+      - list [ref=e10]:
+        - listitem [ref=e11]:
+          - link "Home" [ref=e12] [cursor=pointer]:
+            - /url: /
+        - listitem [ref=e13]:
+          - link "About us" [ref=e14] [cursor=pointer]:
+            - /url: /about-us
+        - listitem [ref=e15]:
+          - link "Contact us" [ref=e16] [cursor=pointer]:
+            - /url: /contact
+        - listitem [ref=e17]:
+          - link "Terms" [ref=e18] [cursor=pointer]:
+            - /url: /terms
+        - listitem [ref=e19]:
+          - link "Free Trial" [ref=e20] [cursor=pointer]:
+            - /url: /free-smm-panel
+        - listitem [ref=e21]:
+          - link " Sign Up Free" [ref=e22] [cursor=pointer]:
+            - /url: /signup
+            - generic [ref=e23]: 
+            - text: Sign Up Free
+  - link "Skip to main content" [ref=e24] [cursor=pointer]:
+    - /url: "#main-content"
+  - main [ref=e25]:
+    - generic [ref=e27]:
+      - generic [ref=e28]:
+        - generic [ref=e30]:
+          - generic [ref=e31]: "PEAKERR - World's #1 Trusted SMM Panel"
+          - heading "The Best SMM Panel At The Cheapest Price" [level=1] [ref=e32]
+          - paragraph [ref=e33]: Grow your social media faster with the Best SMM Panel at the Cheapest Price. Get affordable SMM services for Instagram, YouTube, TikTok, Facebook, X, Telegram, and more. Boost followers, likes, views, subscribers, and engagement with fast, reliable, and easy-to-use social media marketing services.
+          - generic [ref=e34]:
+            - generic [ref=e35]:
+              - generic [aria-hidden] [ref=e36]: 
+              - generic [ref=e37]: InstantDelivery
+            - generic [ref=e38]:
+              - generic [aria-hidden] [ref=e39]: 
+              - generic [ref=e40]: 24/7Support
+            - generic [ref=e41]:
+              - generic [aria-hidden] [ref=e42]: 
+              - generic [ref=e43]: APIEnabled
+            - generic [ref=e44]:
+              - generic [aria-hidden] [ref=e45]: 
+              - generic [ref=e46]: SecurePayments
+            - generic [ref=e47]:
+              - generic [aria-hidden] [ref=e48]: 
+              - generic [ref=e49]: 2,392+ Services
+          - generic [ref=e50]:
+            - link "Get Started Free" [ref=e51] [cursor=pointer]:
+              - /url: /signup
+              - generic [aria-hidden] [ref=e52]: 
+              - text: Get Started Free
+            - link "View Services" [ref=e53] [cursor=pointer]:
+              - /url: /services
+              - generic [aria-hidden] [ref=e54]: 
+              - text: View Services
+          - generic [ref=e55]:
+            - generic [ref=e56]:
+              - generic [aria-hidden] [ref=e57]: 
+              - text: 305,084+ Happy Customers
+            - generic [ref=e58]:
+              - generic [aria-hidden] [ref=e59]: 
+              - text: Secure Payments
+            - generic [ref=e60]:
+              - generic [aria-hidden] [ref=e61]: 
+              - text: 81,444,437+ Orders Delivered
+        - generic [ref=e63]:
+          - generic [aria-hidden]:
+            - generic:
+              - generic [aria-hidden]: 
+            - generic:
+              - generic [aria-hidden]: 
+            - generic:
+              - generic [aria-hidden]: 
+            - generic:
+              - generic [aria-hidden]: 
+            - generic:
+              - generic [aria-hidden]: 
+          - generic [ref=e65]:
+            - heading "Welcome Back 👋" [level=2] [ref=e66]
+            - paragraph [ref=e67]:
+              - text: New here?
+              - link "Sign up" [ref=e68] [cursor=pointer]:
+                - /url: /signup
+            - generic [ref=e69]:
+              - generic [ref=e70]:
+                - generic [ref=e71]: USERNAME
+                - generic [ref=e72]:
+                  - generic [aria-hidden] [ref=e73]: 
+                  - textbox "USERNAME" [ref=e74]:
+                    - /placeholder: Username
+              - generic [ref=e75]:
+                - generic [ref=e76]: PASSWORD
+                - generic [ref=e77]:
+                  - generic [aria-hidden] [ref=e78]: 
+                  - textbox "PASSWORD" [ref=e79]:
+                    - /placeholder: Password
+                  - link "Forgot password?" [ref=e80] [cursor=pointer]:
+                    - /url: /resetpassword
+              - generic [ref=e82] [cursor=pointer]:
+                - checkbox "Remember me" [ref=e83]
+                - text: Remember me
+              - button "Sign in" [ref=e84] [cursor=pointer]:
+                - text: Sign in
+                - generic [aria-hidden] [ref=e85]: 
+              - generic [ref=e86]: or continue with
+              - generic [ref=e89]:
+                - button "Continuer avec Google. S'ouvre dans un nouvel onglet." [ref=e91] [cursor=pointer]:
+                  - generic [ref=e93]: Continuer avec Google
+                - iframe
+      - generic [ref=e103]:
+        - generic [ref=e105]:
+          - generic [aria-hidden] [ref=e107]: 
+          - generic [ref=e108]:
+            - heading "Real & Active Users" [level=4] [ref=e109]
+            - paragraph [ref=e110]: High-quality services for all major social platforms.
+        - generic [ref=e112]:
+          - generic [aria-hidden] [ref=e114]: 
+          - generic [ref=e115]:
+            - heading "Fast & Reliable" [level=4] [ref=e116]
+            - paragraph [ref=e117]: Super-fast delivery with dependable results.
+        - generic [ref=e119]:
+          - generic [aria-hidden] [ref=e121]: 
+          - generic [ref=e122]:
+            - heading "Affordable Prices" [level=4] [ref=e123]
+            - paragraph [ref=e124]: Competitive pricing without compromising quality.
+        - generic [ref=e126]:
+          - generic [aria-hidden] [ref=e128]: 
+          - generic [ref=e129]:
+            - heading "Money Back Guarantee" [level=4] [ref=e130]
+            - paragraph [ref=e131]: Reliable support and customer-focused service.
+    - generic [ref=e133]:
+      - generic [ref=e134]:
+        - generic [ref=e135]: About Us
+        - heading "About PEAKERR SMM Panel" [level=2] [ref=e136]
+        - paragraph [ref=e137]: Discover PEAKERR, a simple and reliable platform built for social media marketing customers, businesses, agencies, and SMM resellers worldwide.
+      - generic [ref=e138]:
+        - generic [ref=e140]:
+          - heading "Who We Are" [level=3] [ref=e141]
+          - paragraph [ref=e142]:
+            - link "PEAKERR" [ref=e143] [cursor=pointer]:
+              - /url: /
+            - text: is a global SMM panel created for individuals, creators, businesses, agencies, and resellers. Customers looking for an easier way to manage social media marketing. Our Social Media Panel combines thousands of services into a single dashboard, providing customers with a simple, organized, and convenient ordering experience worldwide.
+          - link "Sign Up" [ref=e144] [cursor=pointer]:
+            - /url: /signup
+        - generic [ref=e146]:
+          - heading "Social Media Services" [level=3] [ref=e147]
+          - paragraph [ref=e148]:
+            - text: Our
+            - link "SMM Panel" [ref=e149] [cursor=pointer]:
+              - /url: /
+            - text: covers Instagram, YouTube, TikTok, Facebook, Telegram, X, and other popular social Media Services. Customers can buy followers, likes, views, subscribers, comments, watch hours, and additional engagement services from PEAKERR. There are various options available to meet different campaign requirements, budgets, and marketing objectives.
+          - link "Sign Up" [ref=e150] [cursor=pointer]:
+            - /url: /signup
+        - generic [ref=e152]:
+          - heading "Affordable Pricing & Fast Ordering" [level=3] [ref=e153]
+          - paragraph [ref=e154]: PEAKERR focuses on the lowest pricing while keeping the ordering process straightforward. Customers need to sign up, add funds, select their preferred services, then enter the required information and submit an order within minutes. Our system, Automated Order Processing and Order Tracking, makes managing multiple social media campaigns considerably easier.
+          - link "Sign Up" [ref=e155] [cursor=pointer]:
+            - /url: /signup
+        - generic [ref=e157]:
+          - heading "Support for Customers & Resellers" [level=3] [ref=e158]
+          - paragraph [ref=e159]: PEAKERR is built for both everyday customers and professional SMM resellers who manage higher order volumes. We provide 24/7 customer support, secure account management, secure payment methods, bulk ordering, API integration, and useful reseller features. Our SMM panel goal is to provide a dependable platform for long-term social media marketing needs.
+          - link "Sign Up" [ref=e160] [cursor=pointer]:
+            - /url: /signup
+    - generic [ref=e162]:
+      - generic [ref=e163]:
+        - generic [ref=e164]: Popular Services
+        - heading "Buy YouTube, Instagram & TikTok Services" [level=2] [ref=e165]
+        - paragraph [ref=e166]: Buy high-quality YouTube, Instagram, and TikTok followers, likes, views, subscribers, and watch hours with fast delivery, affordable pricing, secure payments, and 24/7 customer support.
+      - generic [ref=e168]:
+        - link "Buy YouTube Views" [ref=e170] [cursor=pointer]:
+          - /url: /buy-youtube-views
+        - link "Buy YouTube Subscribers" [ref=e172] [cursor=pointer]:
+          - /url: /buy-youtube-subscribers
+        - link "Buy YouTube Likes" [ref=e174] [cursor=pointer]:
+          - /url: /buy-youtube-likes
+        - link "Buy YouTube Watch Hours" [ref=e176] [cursor=pointer]:
+          - /url: /buy-youtube-watch-hours
+        - link "Buy Instagram Followers" [ref=e178] [cursor=pointer]:
+          - /url: /buy-instagram-followers
+        - link "Buy Instagram Likes" [ref=e180] [cursor=pointer]:
+          - /url: /buy-instagram-likes
+        - link "Buy Instagram Views" [ref=e182] [cursor=pointer]:
+          - /url: /buy-instagram-views
+        - link "Buy TikTok Followers" [ref=e184] [cursor=pointer]:
+          - /url: /buy-tiktok-followers
+        - link "Buy TikTok Likes" [ref=e186] [cursor=pointer]:
+          - /url: /buy-tiktok-likes
+        - link "Buy TikTok Views" [ref=e188] [cursor=pointer]:
+          - /url: /buy-tiktok-views
+    - generic [ref=e190]:
+      - generic [ref=e191]:
+        - generic [ref=e192]: Affordable Social Media Growth
+        - heading "Buy SMM Services — All Platforms, Lowest Prices" [level=2] [ref=e193]
+        - paragraph [ref=e194]: Choose fast, affordable and reliable SMM services for Instagram, YouTube, TikTok, Facebook, Telegram and Twitter/X.
+      - generic [ref=e195]:
+        - generic [ref=e197]:
+          - generic [aria-hidden] [ref=e199]: 
+          - heading "Instagram Services" [level=3] [ref=e200]
+          - paragraph [ref=e201]: PEAKERR – Best & Cheapest SMM Panel for Instagram Followers, likes, views, story views, comments, saves and more. Real-looking profiles and drip-feed available.
+          - generic [ref=e202]: From $0.001/1000
+          - link "Instagram SMM Panel" [ref=e203] [cursor=pointer]:
+            - /url: /instagram-smm-panel
+            - text: Instagram SMM Panel
+            - generic [aria-hidden] [ref=e204]: 
+        - generic [ref=e206]:
+          - generic [aria-hidden] [ref=e208]: 
+          - heading "YouTube Services" [level=3] [ref=e209]
+          - paragraph [ref=e210]: PEAKERR – Best & Cheapest SMM Panel for YouTube Views, subscribers, watch hours, likes and comments. Boost your channel and monetization eligibility.
+          - generic [ref=e211]: From $0.50/1000
+          - link "YouTube SMM Panel" [ref=e212] [cursor=pointer]:
+            - /url: /youtube-smm-panel
+            - text: YouTube SMM Panel
+            - generic [aria-hidden] [ref=e213]: 
+        - generic [ref=e215]:
+          - generic [aria-hidden] [ref=e217]: 
+          - heading "TikTok Services" [level=3] [ref=e218]
+          - paragraph [ref=e219]: PEAKERR – Best & Cheapest SMM Panel for TikTok Followers, video views, likes and shares. Grow your TikTok presence fast and reach more people.
+          - generic [ref=e220]: From $0.001/1000
+          - link "TikTok SMM Panel" [ref=e221] [cursor=pointer]:
+            - /url: /tiktok-smm-panel
+            - text: TikTok SMM Panel
+            - generic [aria-hidden] [ref=e222]: 
+        - generic [ref=e224]:
+          - generic [aria-hidden] [ref=e226]: 
+          - heading "Facebook Services" [level=3] [ref=e227]
+          - paragraph [ref=e228]: PEAKERR – Best & Cheapest SMM Panel for Facebook Page likes, post likes, followers, shares and video views. Build stronger social proof for your business.
+          - generic [ref=e229]: From $0.15/1000
+          - link "Facebook SMM Panel" [ref=e230] [cursor=pointer]:
+            - /url: /facebook-smm-panel
+            - text: Facebook SMM Panel
+            - generic [aria-hidden] [ref=e231]: 
+        - generic [ref=e233]:
+          - generic [aria-hidden] [ref=e235]: 
+          - heading "Telegram Services" [level=3] [ref=e236]
+          - paragraph [ref=e237]: PEAKERR – Best & Cheapest SMM Panel for Telegram Channel members, post views and reactions. Grow your Telegram community quickly and affordably.
+          - generic [ref=e238]: From $0.001/1000
+          - link "Telegram SMM Panel" [ref=e239] [cursor=pointer]:
+            - /url: /telegram-smm-panel
+            - text: Telegram SMM Panel
+            - generic [aria-hidden] [ref=e240]: 
+        - generic [ref=e242]:
+          - generic [aria-hidden] [ref=e244]: 
+          - heading "Twitter / X Services" [level=3] [ref=e245]
+          - paragraph [ref=e246]: PEAKERR – Best & Cheapest SMM Panel for X (Twitter) Followers, likes, reposts, impressions and poll votes. Increase your Twitter/X reach and engagement.
+          - generic [ref=e247]: From $0.01/1000
+          - link "Twitter/X SMM Panel" [ref=e248] [cursor=pointer]:
+            - /url: /twitter-smm-panel
+            - text: Twitter/X SMM Panel
+            - generic [aria-hidden] [ref=e249]: 
+      - link "View All 2,392+ Services" [ref=e251] [cursor=pointer]:
+        - /url: /services
+        - text: View All 2,392+ Services
+        - generic [aria-hidden] [ref=e252]: 
+    - generic [ref=e254]:
+      - generic [ref=e255]:
+        - generic [ref=e256]: Why Choose Us
+        - heading "Why Order SMM Services Here?" [level=2] [ref=e257]
+        - paragraph [ref=e258]: Learn how you can benefit from ordering affordable and reliable SMM services through our professional panel.
+      - generic [ref=e259]:
+        - generic [ref=e261]:
+          - generic [aria-hidden] [ref=e263]: 
+          - heading "Prime Quality" [level=3] [ref=e264]
+          - paragraph [ref=e265]: Enjoy dependable SMM services designed to deliver strong value, better engagement and consistent performance.
+        - generic [ref=e267]:
+          - generic [aria-hidden] [ref=e269]: 
+          - heading "Various Payment Options" [level=3] [ref=e270]
+          - paragraph [ref=e271]: Add funds using convenient payment methods, including supported local and international payment gateways.
+        - generic [ref=e273]:
+          - generic [aria-hidden] [ref=e275]: 
+          - heading "Cheap SMM Services" [level=3] [ref=e276]
+          - paragraph [ref=e277]: Access affordable social media services for Instagram, YouTube, TikTok, Facebook, Telegram and more.
+        - generic [ref=e279]:
+          - generic [aria-hidden] [ref=e281]: 
+          - heading "Super-Fast Delivery" [level=3] [ref=e282]
+          - paragraph [ref=e283]: Many orders begin quickly after submission, helping you start growing your social media presence without long delays.
+        - generic [ref=e285]:
+          - generic [aria-hidden] [ref=e287]: 
+          - heading "24/7 Customer Support" [level=3] [ref=e288]
+          - paragraph [ref=e289]: Submit a support ticket whenever you need help with orders, payments, service selection or account questions.
+        - generic [ref=e291]:
+          - generic [aria-hidden] [ref=e293]: 
+          - heading "API & Reseller Friendly" [level=3] [ref=e294]
+          - paragraph [ref=e295]: Automate orders through API integration and build a scalable reseller business using competitive wholesale services.
+    - generic [ref=e297]:
+      - generic [ref=e298]:
+        - generic [ref=e299]: Simple Process
+        - heading "How It Works" [level=2] [ref=e300]
+        - paragraph [ref=e301]: Follow these 4 easy steps to learn how to use our panel.
+      - generic [ref=e302]:
+        - generic [ref=e305]:
+          - generic [ref=e306]: "1"
+          - heading "Register & Log In" [level=3] [ref=e308]
+          - paragraph [ref=e309]: Begin by signing up and then log in to your account.
+        - generic [ref=e311]:
+          - generic [ref=e312]: "2"
+          - heading "Add Funds" [level=3] [ref=e314]
+          - paragraph [ref=e315]: Add funds to your account using a preferred payment method.
+        - generic [ref=e317]:
+          - generic [ref=e318]: "3"
+          - heading "Place Your Orders" [level=3] [ref=e320]
+          - paragraph [ref=e321]: Select the services you need to help your business get more popular.
+        - generic [ref=e323]:
+          - generic [ref=e324]: "4"
+          - heading "Amazing Results" [level=3] [ref=e326]
+          - paragraph [ref=e327]: We’ll inform you once your order is ready. Enjoy fantastic results!
+    - generic [ref=e329]:
+      - generic [ref=e330]:
+        - generic [ref=e331]: Transparent Pricing
+        - heading "Sample Prices — World's Cheapest SMM Panel" [level=2] [ref=e332]
+        - paragraph [ref=e333]: No hidden fees. What you see is what you pay. All prices are shown in US Dollars ($).
+      - table [ref=e335]:
+        - rowgroup [ref=e336]:
+          - row [ref=e337]:
+            - columnheader "Service" [ref=e338]
+            - columnheader "Platform" [ref=e339]
+            - columnheader "Quality" [ref=e340]
+            - columnheader "Price per 1000" [ref=e341]
+            - columnheader "Delivery" [ref=e342]
+        - rowgroup [ref=e343]:
+          - row [ref=e344]:
+            - cell "Instagram Followers" [ref=e345]
+            - cell [ref=e346]:
+              - generic [aria-hidden] [ref=e348]: 
+              - text: Instagram
+            - cell "High Quality" [ref=e349]
+            - cell "$0.08" [ref=e350]
+            - cell [ref=e351]:
+              - text: Instant
+              - generic [ref=e352]:
+                - generic [aria-hidden] [ref=e353]: 
+                - text: Fast
+          - row [ref=e354]:
+            - cell "Instagram Likes" [ref=e355]
+            - cell [ref=e356]:
+              - generic [aria-hidden] [ref=e358]: 
+              - text: Instagram
+            - cell "Real-Looking" [ref=e359]
+            - cell "$0.02" [ref=e360]
+            - cell [ref=e361]:
+              - text: Instant
+              - generic [ref=e362]:
+                - generic [aria-hidden] [ref=e363]: 
+                - text: Fast
+          - row [ref=e364]:
+            - cell "YouTube Views" [ref=e365]
+            - cell [ref=e366]:
+              - generic [aria-hidden] [ref=e368]: 
+              - text: YouTube
+            - cell "High Retention" [ref=e369]
+            - cell "$0.05" [ref=e370]
+            - cell "0–2 hrs" [ref=e371]
+          - row [ref=e372]:
+            - cell "YouTube Subscribers" [ref=e373]
+            - cell [ref=e374]:
+              - generic [aria-hidden] [ref=e376]: 
+              - text: YouTube
+            - cell "Real-Looking" [ref=e377]
+            - cell "$0.15" [ref=e378]
+            - cell "Instant" [ref=e379]
+          - row [ref=e380]:
+            - cell "TikTok Followers" [ref=e381]
+            - cell [ref=e382]:
+              - generic [aria-hidden] [ref=e384]: 
+              - text: TikTok
+            - cell "High Quality" [ref=e385]
+            - cell "$0.07" [ref=e386]
+            - cell [ref=e387]:
+              - text: Instant
+              - generic [ref=e388]:
+                - generic [aria-hidden] [ref=e389]: 
+                - text: Fast
+          - row [ref=e390]:
+            - cell "TikTok Video Views" [ref=e391]
+            - cell [ref=e392]:
+              - generic [aria-hidden] [ref=e394]: 
+              - text: TikTok
+            - cell "Standard" [ref=e395]
+            - cell "$0.01" [ref=e396]
+            - cell "Instant" [ref=e397]
+          - row [ref=e398]:
+            - cell "Facebook Page Likes" [ref=e399]
+            - cell [ref=e400]:
+              - generic [aria-hidden] [ref=e402]: 
+              - text: Facebook
+            - cell "Real-Looking" [ref=e403]
+            - cell "$0.04" [ref=e404]
+            - cell "0–6 hrs" [ref=e405]
+          - row [ref=e406]:
+            - cell "Telegram Members" [ref=e407]
+            - cell [ref=e408]:
+              - generic [aria-hidden] [ref=e410]: 
+              - text: Telegram
+            - cell "Real Accounts" [ref=e411]
+            - cell "$0.10" [ref=e412]
+            - cell "Instant" [ref=e413]
+      - paragraph [ref=e414]:
+        - text: "*Prices are indicative."
+        - link "View live pricing" [ref=e415] [cursor=pointer]:
+          - /url: /services
+        - text: on the services page for exact rates.
+    - generic [ref=e417]:
+      - generic [ref=e418]:
+        - generic [ref=e419]: The PEAKERR Difference
+        - heading "Why PEAKERR Beats Other SMM Panels Worldwide" [level=2] [ref=e420]
+        - paragraph [ref=e421]: Not all SMM panels are equal. Here’s what separates a reliable global SMM panel from the rest.
+      - generic [ref=e422]:
+        - generic [ref=e424]:
+          - generic [ref=e425]:
+            - generic [aria-hidden] [ref=e427]: 
+            - heading "PEAKERR — Best SMM Panel Worldwide" [level=3] [ref=e428]
+          - list [ref=e429]:
+            - listitem [ref=e430]:
+              - generic [aria-hidden] [ref=e431]: 
+              - strong [ref=e432]: Prices start at $0.01/1000
+              - text: — affordable rates for users worldwide.
+            - listitem [ref=e433]:
+              - generic [aria-hidden] [ref=e434]: 
+              - strong [ref=e435]: Multiple global payment methods
+              - text: — pay conveniently through supported gateways.
+            - listitem [ref=e436]:
+              - generic [aria-hidden] [ref=e437]: 
+              - strong [ref=e438]: Fast order processing
+              - text: — many services begin within minutes.
+            - listitem [ref=e439]:
+              - generic [aria-hidden] [ref=e440]: 
+              - strong [ref=e441]: 2,392+ SMM services
+              - text: across Instagram, YouTube, TikTok and more.
+            - listitem [ref=e442]:
+              - generic [aria-hidden] [ref=e443]: 
+              - strong [ref=e444]: Refill-enabled services
+              - text: available on selected premium options.
+            - listitem [ref=e445]:
+              - generic [aria-hidden] [ref=e446]: 
+              - strong [ref=e447]: 24/7 ticket support
+              - text: for order, payment and account questions.
+            - listitem [ref=e448]:
+              - generic [aria-hidden] [ref=e449]: 
+              - strong [ref=e450]: Full API access
+              - text: for agencies, developers and resellers.
+            - listitem [ref=e451]:
+              - generic [aria-hidden] [ref=e452]: 
+              - strong [ref=e453]: Trusted by thousands
+              - text: of creators, businesses and marketers.
+        - generic [ref=e455]:
+          - generic [ref=e456]:
+            - generic [aria-hidden] [ref=e458]: 
+            - heading "Other SMM Provider" [level=3] [ref=e459]
+          - list [ref=e460]:
+            - listitem [ref=e461]:
+              - generic [aria-hidden] [ref=e462]: 
+              - text: Limited currency support can be inconvenient for international users.
+            - listitem [ref=e463]:
+              - generic [aria-hidden] [ref=e464]: 
+              - text: Limited payment options may require extra steps for international users.
+            - listitem [ref=e465]:
+              - generic [aria-hidden] [ref=e466]: 
+              - text: Slow processing can cause orders to remain pending for long periods.
+            - listitem [ref=e467]:
+              - generic [aria-hidden] [ref=e468]: 
+              - text: Limited service categories may exclude newer social platforms.
+            - listitem [ref=e469]:
+              - generic [aria-hidden] [ref=e470]: 
+              - text: Missing refill options can create problems when delivered counts drop.
+            - listitem [ref=e471]:
+              - generic [aria-hidden] [ref=e472]: 
+              - text: Limited customer support can delay order and payment resolutions.
+            - listitem [ref=e473]:
+              - generic [aria-hidden] [ref=e474]: 
+              - text: Unstable or missing API access makes reseller automation difficult.
+            - listitem [ref=e475]:
+              - generic [aria-hidden] [ref=e476]: 
+              - text: An unclear track record can make service quality difficult to evaluate.
+      - link "Join PEAKERR Free Today" [ref=e478] [cursor=pointer]:
+        - /url: /signup
+        - generic [aria-hidden] [ref=e479]: 
+        - text: Join PEAKERR Free Today
+    - generic [ref=e481]:
+      - generic [ref=e482]:
+        - generic [ref=e483]: Customer Reviews
+        - heading "Customer Reviews" [level=2] [ref=e484]
+        - paragraph [ref=e485]: Don’t know what to expect when placing orders on our panel? See what our customers say about their experience below.
+      - generic [ref=e486]:
+        - article [ref=e488]:
+          - generic [ref=e489]:
+            - generic "5 out of 5 stars" [ref=e490]: ★★★★★
+            - generic [ref=e491]:
+              - generic [aria-hidden] [ref=e492]: 
+              - text: Verified
+          - paragraph [ref=e493]: “Keep up the great work! If you aren’t sure where to order SMM services, PEAKERR is the answer — you won’t regret it.”
+          - generic [ref=e495]:
+            - generic [ref=e496]: B
+            - generic [ref=e497]:
+              - heading "Brad Garcia" [level=3] [ref=e498]
+              - paragraph [ref=e499]: Verified Customer
+              - text: Instagram Growth
+        - article [ref=e501]:
+          - generic [ref=e502]:
+            - generic "5 out of 5 stars" [ref=e503]: ★★★★★
+            - generic [ref=e504]:
+              - generic [aria-hidden] [ref=e505]: 
+              - text: Verified
+          - paragraph [ref=e506]: “Super-fast delivery and a very easy dashboard. My YouTube views order was smooth from start to finish.”
+          - generic [ref=e508]:
+            - generic [ref=e509]: J
+            - generic [ref=e510]:
+              - heading "Jason Miller" [level=3] [ref=e511]
+              - paragraph [ref=e512]: Verified Customer
+              - text: YouTube Views
+        - article [ref=e514]:
+          - generic [ref=e515]:
+            - generic "5 out of 5 stars" [ref=e516]: ★★★★★
+            - generic [ref=e517]:
+              - generic [aria-hidden] [ref=e518]: 
+              - text: Verified
+          - paragraph [ref=e519]: “Affordable prices, quick support and services that start on time. One of the easiest panels for TikTok growth.”
+          - generic [ref=e521]:
+            - generic [ref=e522]: A
+            - generic [ref=e523]:
+              - heading "Amanda Lee" [level=3] [ref=e524]
+              - paragraph [ref=e525]: Verified Customer
+              - text: TikTok Followers
+        - article [ref=e527]:
+          - generic [ref=e528]:
+            - generic "5 out of 5 stars" [ref=e529]: ★★★★★
+            - generic [ref=e530]:
+              - generic [aria-hidden] [ref=e531]: 
+              - text: Verified
+          - paragraph [ref=e532]: “I use PEAKERR regularly for reseller orders. Excellent pricing, simple navigation and a clean panel for daily use.”
+          - generic [ref=e534]:
+            - generic [ref=e535]: R
+            - generic [ref=e536]:
+              - heading "Ryan Cooper" [level=3] [ref=e537]
+              - paragraph [ref=e538]: Verified Customer
+              - text: Reseller Services
+        - article [ref=e540]:
+          - generic [ref=e541]:
+            - generic "5 out of 5 stars" [ref=e542]: ★★★★★
+            - generic [ref=e543]:
+              - generic [aria-hidden] [ref=e544]: 
+              - text: Verified
+          - paragraph [ref=e545]: “Funds were added quickly, ordering was simple, and my Instagram service started faster than expected.”
+          - generic [ref=e547]:
+            - generic [ref=e548]: S
+            - generic [ref=e549]:
+              - heading "Sophia Turner" [level=3] [ref=e550]
+              - paragraph [ref=e551]: Verified Customer
+              - text: Instagram Followers
+        - article [ref=e553]:
+          - generic [ref=e554]:
+            - generic "5 out of 5 stars" [ref=e555]: ★★★★★
+            - generic [ref=e556]:
+              - generic [aria-hidden] [ref=e557]: 
+              - text: Verified
+          - paragraph [ref=e558]: “Maine pehle kai panels try kiye the, lekin PEAKERR ki speed aur price ne mujhe impress kar diya. One of the best panels worldwide.”
+          - generic [ref=e560]:
+            - generic [ref=e561]: A
+            - generic [ref=e562]:
+              - heading "Arjun Sharma" [level=3] [ref=e563]
+              - paragraph [ref=e564]: Verified Customer
+              - text: YouTube + Instagram
+    - generic [ref=e566]:
+      - generic [ref=e567]:
+        - generic [ref=e568]: FAQ
+        - heading "Frequently Asked Questions About PEAKERR" [level=2] [ref=e569]
+        - paragraph [ref=e570]: Everything you need to know about the world's best and cheapest SMM panel.
+      - generic [ref=e571]:
+        - generic [ref=e573]:
+          - heading [level=3] [ref=e576]:
+            - link [ref=e577] [cursor=pointer]:
+              - /url: "#faq1"
+              - generic [aria-hidden] [ref=e579]: 
+              - text: What is the best SMM panel in the world?
+              - generic [aria-hidden] [ref=e581]: 
+          - heading [level=3] [ref=e584]:
+            - link [ref=e585] [cursor=pointer]:
+              - /url: "#faq2"
+              - generic [aria-hidden] [ref=e587]: 
+              - text: Is PEAKERR safe? Will my account get banned?
+              - generic [aria-hidden] [ref=e589]: 
+          - heading [level=3] [ref=e592]:
+            - link [ref=e593] [cursor=pointer]:
+              - /url: "#faq3"
+              - generic [aria-hidden] [ref=e595]: 
+              - text: How fast is delivery on PEAKERR?
+              - generic [aria-hidden] [ref=e597]: 
+          - heading [level=3] [ref=e600]:
+            - link [ref=e601] [cursor=pointer]:
+              - /url: "#faq4"
+              - generic [aria-hidden] [ref=e603]: 
+              - text: Can I use PEAKERR as a reseller or for my own panel?
+              - generic [aria-hidden] [ref=e605]: 
+          - heading [level=3] [ref=e608]:
+            - link [ref=e609] [cursor=pointer]:
+              - /url: "#faq5"
+              - generic [aria-hidden] [ref=e611]: 
+              - text: Can I buy Instagram followers, likes and views?
+              - generic [aria-hidden] [ref=e613]: 
+          - heading [level=3] [ref=e616]:
+            - link [ref=e617] [cursor=pointer]:
+              - /url: "#faq6"
+              - generic [aria-hidden] [ref=e619]: 
+              - text: Are YouTube services available?
+              - generic [aria-hidden] [ref=e621]: 
+          - heading [level=3] [ref=e624]:
+            - link [ref=e625] [cursor=pointer]:
+              - /url: "#faq7"
+              - generic [aria-hidden] [ref=e627]: 
+              - text: Is customer support available 24/7?
+              - generic [aria-hidden] [ref=e629]: 
+          - heading [level=3] [ref=e632]:
+            - link [ref=e633] [cursor=pointer]:
+              - /url: "#faq8"
+              - generic [aria-hidden] [ref=e635]: 
+              - text: Do I need to share my social media password?
+              - generic [aria-hidden] [ref=e637]: 
+          - heading [level=3] [ref=e640]:
+            - link [ref=e641] [cursor=pointer]:
+              - /url: "#faq9"
+              - generic [aria-hidden] [ref=e643]: 
+              - text: Can businesses and agencies use PEAKERR?
+              - generic [aria-hidden] [ref=e645]: 
+          - heading [level=3] [ref=e648]:
+            - link [ref=e649] [cursor=pointer]:
+              - /url: "#faq10"
+              - generic [aria-hidden] [ref=e651]: 
+              - text: How do I create an account?
+              - generic [aria-hidden] [ref=e653]: 
+        - generic [ref=e655]:
+          - heading [level=3] [ref=e658]:
+            - link [ref=e659] [cursor=pointer]:
+              - /url: "#faq11"
+              - generic [aria-hidden] [ref=e661]: 
+              - text: What is an SMM panel and how does it work?
+              - generic [aria-hidden] [ref=e663]: 
+          - heading [level=3] [ref=e666]:
+            - link [ref=e667] [cursor=pointer]:
+              - /url: "#faq12"
+              - generic [aria-hidden] [ref=e669]: 
+              - text: Does PEAKERR support global payment methods?
+              - generic [aria-hidden] [ref=e671]: 
+          - heading [level=3] [ref=e674]:
+            - link [ref=e675] [cursor=pointer]:
+              - /url: "#faq13"
+              - generic [aria-hidden] [ref=e677]: 
+              - text: What is the minimum price for SMM services?
+              - generic [aria-hidden] [ref=e679]: 
+          - heading [level=3] [ref=e682]:
+            - link [ref=e683] [cursor=pointer]:
+              - /url: "#faq14"
+              - generic [aria-hidden] [ref=e685]: 
+              - text: Does PEAKERR offer refills or refunds?
+              - generic [aria-hidden] [ref=e687]: 
+          - heading [level=3] [ref=e690]:
+            - link [ref=e691] [cursor=pointer]:
+              - /url: "#faq15"
+              - generic [aria-hidden] [ref=e693]: 
+              - text: Does PEAKERR provide API integration?
+              - generic [aria-hidden] [ref=e695]: 
+          - heading [level=3] [ref=e698]:
+            - link [ref=e699] [cursor=pointer]:
+              - /url: "#faq16"
+              - generic [aria-hidden] [ref=e701]: 
+              - text: Can I buy TikTok followers and views?
+              - generic [aria-hidden] [ref=e703]: 
+          - heading [level=3] [ref=e706]:
+            - link [ref=e707] [cursor=pointer]:
+              - /url: "#faq17"
+              - generic [aria-hidden] [ref=e709]: 
+              - text: Are Telegram services available?
+              - generic [aria-hidden] [ref=e711]: 
+          - heading [level=3] [ref=e714]:
+            - link [ref=e715] [cursor=pointer]:
+              - /url: "#faq18"
+              - generic [aria-hidden] [ref=e717]: 
+              - text: How can I track my SMM order?
+              - generic [aria-hidden] [ref=e719]: 
+          - heading [level=3] [ref=e722]:
+            - link [ref=e723] [cursor=pointer]:
+              - /url: "#faq19"
+              - generic [aria-hidden] [ref=e725]: 
+              - text: What link should I submit when ordering?
+              - generic [aria-hidden] [ref=e727]: 
+          - heading [level=3] [ref=e730]:
+            - link [ref=e731] [cursor=pointer]:
+              - /url: "#faq20"
+              - generic [aria-hidden] [ref=e733]: 
+              - text: How do I place my first order?
+              - generic [aria-hidden] [ref=e735]: 
+      - generic [ref=e737]:
+        - generic [ref=e738]:
+          - heading "Still have a question?" [level=3] [ref=e739]
+          - paragraph [ref=e740]: Our support team is available to help with orders, payments and service questions.
+        - link "Contact Support" [ref=e742] [cursor=pointer]:
+          - /url: /contact
+          - text: Contact Support
+          - generic [aria-hidden] [ref=e743]: 
+    - generic [ref=e746]:
+      - heading "Ready to Grow Your Social Media?" [level=2] [ref=e747]
+      - paragraph [ref=e748]: Join 305,084+ satisfied customers and start boosting your presence today. Starting from just $0.01/1000.
+      - link "Create Free Account — It's Free" [ref=e749] [cursor=pointer]:
+        - /url: /signup
+        - generic [aria-hidden] [ref=e750]: 
+        - text: Create Free Account — It's Free
+  - generic [ref=e752]:
+    - generic [ref=e753]:
+      - generic [ref=e754]: Related Services
+      - heading "Explore More SMM Services" [level=2] [ref=e755]
+      - paragraph [ref=e756]: Explore our YouTube, Instagram, TikTok, Facebook, Telegram, and country-based SMM panel pages to find the services you need.
+    - generic [ref=e758]:
+      - link "Instagram SMM Panel" [ref=e760] [cursor=pointer]:
+        - /url: /instagram-smm-panel
+      - link "YouTube SMM Panel" [ref=e762] [cursor=pointer]:
+        - /url: /youtube-smm-panel
+      - link "TikTok SMM Panel" [ref=e764] [cursor=pointer]:
+        - /url: /tiktok-smm-panel
+      - link "Facebook SMM Panel" [ref=e766] [cursor=pointer]:
+        - /url: /facebook-smm-panel
+      - link "Telegram SMM Panel" [ref=e768] [cursor=pointer]:
+        - /url: /telegram-smm-panel
+      - link "Twitter SMM Panel" [ref=e770] [cursor=pointer]:
+        - /url: /twitter-smm-panel
+      - link "Buy YouTube Views" [ref=e772] [cursor=pointer]:
+        - /url: /buy-youtube-views
+      - link "Buy YouTube Subscribers" [ref=e774] [cursor=pointer]:
+        - /url: /buy-youtube-subscribers
+      - link "Buy YouTube Likes" [ref=e776] [cursor=pointer]:
+        - /url: /buy-youtube-likes
+      - link "Buy YouTube Watch Hours" [ref=e778] [cursor=pointer]:
+        - /url: /buy-youtube-watch-hours
+      - link "Free YouTube Views" [ref=e780] [cursor=pointer]:
+        - /url: /free-youtube-views
+      - link "Buy Instagram Followers" [ref=e782] [cursor=pointer]:
+        - /url: /buy-instagram-followers
+      - link "Buy Instagram Likes" [ref=e784] [cursor=pointer]:
+        - /url: /buy-instagram-likes
+      - link "Buy Instagram Views" [ref=e786] [cursor=pointer]:
+        - /url: /buy-instagram-views
+      - link "Free Instagram Likes" [ref=e788] [cursor=pointer]:
+        - /url: /free-instagram-likes
+      - link "Free Instagram Views" [ref=e790] [cursor=pointer]:
+        - /url: /free-instagram-views
+      - link "Buy TikTok Followers" [ref=e792] [cursor=pointer]:
+        - /url: /buy-tiktok-followers
+      - link "Buy TikTok Likes" [ref=e794] [cursor=pointer]:
+        - /url: /buy-tiktok-likes
+      - link "Buy TikTok Views" [ref=e796] [cursor=pointer]:
+        - /url: /buy-tiktok-views
+      - link "Free TikTok Likes" [ref=e798] [cursor=pointer]:
+        - /url: /free-tiktok-likes
+      - link "Free TikTok Views" [ref=e800] [cursor=pointer]:
+        - /url: /free-tiktok-views
+      - link "Free SMM Panel" [ref=e802] [cursor=pointer]:
+        - /url: /free-smm-panel
+      - link "Free Facebook Reactions" [ref=e804] [cursor=pointer]:
+        - /url: /free-facebook-reactions
+      - link "SMM Panel India" [ref=e806] [cursor=pointer]:
+        - /url: /smm-panel-india
+      - link "SMM Panel USA" [ref=e808] [cursor=pointer]:
+        - /url: /smm-panel-usa
+      - link "SMM Panel Pakistan" [ref=e810] [cursor=pointer]:
+        - /url: /smm-panel-pakistan
+      - link "SMM Panel Korea" [ref=e812] [cursor=pointer]:
+        - /url: /smm-panel-korea
+      - link "SMM Panel Bangladesh" [ref=e814] [cursor=pointer]:
+        - /url: /smm-panel-bangladesh
+      - link "SMM Panel Malaysia" [ref=e816] [cursor=pointer]:
+        - /url: /smm-panel-malaysia
+      - link "SMM Panel Philippines" [ref=e818] [cursor=pointer]:
+        - /url: /smm-panel-philippines
+      - link "SMM Panel Vietnam" [ref=e820] [cursor=pointer]:
+        - /url: /smm-panel-vietnam
+  - contentinfo [ref=e821]:
+    - generic [ref=e824]:
+      - generic [ref=e825]:
+        - generic [ref=e826]:
+          - generic [ref=e827]: 
+          - generic [ref=e829]: PEAKERR
+        - generic [ref=e830]: "World's #1 Cheapest SMM Panel"
+        - paragraph [ref=e831]:
+          - text: PEAKERR is a
+          - strong [ref=e832]: Cheapest SMM Panel
+          - text: for Instagram followers, YouTube views, TikTok likes, Facebook engagement, Telegram members, and 2,392+ social media services.
+      - generic [ref=e833]:
+        - heading "Services" [level=3] [ref=e834]
+        - list [ref=e835]:
+          - listitem [ref=e836]:
+            - link "Instagram" [ref=e837] [cursor=pointer]:
+              - /url: /instagram-smm-panel
+          - listitem [ref=e838]:
+            - link "YouTube" [ref=e839] [cursor=pointer]:
+              - /url: /youtube-smm-panel
+          - listitem [ref=e840]:
+            - link "TikTok" [ref=e841] [cursor=pointer]:
+              - /url: /tiktok-smm-panel
+          - listitem [ref=e842]:
+            - link "Facebook" [ref=e843] [cursor=pointer]:
+              - /url: /facebook-smm-panel
+          - listitem [ref=e844]:
+            - link "Telegram" [ref=e845] [cursor=pointer]:
+              - /url: /telegram-smm-panel
+          - listitem [ref=e846]:
+            - link "Twitter" [ref=e847] [cursor=pointer]:
+              - /url: /twitter-smm-panel
+      - generic [ref=e848]:
+        - heading "Quick Links" [level=3] [ref=e849]
+        - list [ref=e850]:
+          - listitem [ref=e851]:
+            - link "Home" [ref=e852] [cursor=pointer]:
+              - /url: /
+          - listitem [ref=e853]:
+            - link "Sign Up" [ref=e854] [cursor=pointer]:
+              - /url: /signup
+          - listitem [ref=e855]:
+            - link "Services" [ref=e856] [cursor=pointer]:
+              - /url: /services
+          - listitem [ref=e857]:
+            - link "Updates" [ref=e858] [cursor=pointer]:
+              - /url: /updates
+          - listitem [ref=e859]:
+            - link "App" [ref=e860] [cursor=pointer]:
+              - /url: /app
+          - listitem [ref=e861]:
+            - link "Free Trial" [ref=e862] [cursor=pointer]:
+              - /url: /free-smm-panel
+      - generic [ref=e863]:
+        - heading "Legal & Support" [level=3] [ref=e864]
+        - list [ref=e865]:
+          - listitem [ref=e866]:
+            - link "Terms of Service" [ref=e867] [cursor=pointer]:
+              - /url: /terms
+          - listitem [ref=e868]:
+            - link "Privacy Policy" [ref=e869] [cursor=pointer]:
+              - /url: /privacy-policy
+          - listitem [ref=e870]:
+            - link "Refund Policy" [ref=e871] [cursor=pointer]:
+              - /url: /refund-policy
+          - listitem [ref=e872]:
+            - link "Delivery Policy" [ref=e873] [cursor=pointer]:
+              - /url: /delivery-policy
+          - listitem [ref=e874]:
+            - link "About Us" [ref=e875] [cursor=pointer]:
+              - /url: /about-us
+          - listitem [ref=e876]:
+            - link "Customer Support" [ref=e877] [cursor=pointer]:
+              - /url: /contact
+      - generic [ref=e878]:
+        - heading "Company" [level=3] [ref=e879]
+        - list [ref=e880]:
+          - listitem [ref=e881]:
+            - strong [ref=e882]: DIGIT INTERNATIONAL
+            - strong [ref=e883]: "TL No:"
+            - text: TRAD/CHTG/017999/2024
+          - listitem [ref=e884]:
+            - strong [ref=e885]: DIGITAL SOFTTECH LIMITED
+            - strong [ref=e886]: "Registered address:"
+            - text: 2nd Floor, College House, 17 King Edwards Road, Ruislip, London, HA4 7AE
+            - strong [ref=e887]: "Company No:"
+            - text: "14815184"
+          - listitem [ref=e888]:
+            - link "Peakerr Sitemap" [ref=e889] [cursor=pointer]:
+              - /url: /sitemap
+    - generic [ref=e892]:
+      - paragraph [ref=e894]: © 2026 PEAKERR. All Rights Reserved.
+      - list [ref=e896]:
+        - listitem [ref=e897]:
+          - link "Terms" [ref=e898] [cursor=pointer]:
+            - /url: /terms
+        - listitem [aria-hidden] [ref=e899]: •
+        - listitem [ref=e900]:
+          - link "Privacy" [ref=e901] [cursor=pointer]:
+            - /url: /privacy-policy
+        - listitem [aria-hidden] [ref=e902]: •
+        - listitem [ref=e903]:
+          - link "Refund" [ref=e904] [cursor=pointer]:
+            - /url: /refund-policy
+        - listitem [aria-hidden] [ref=e905]: •
+        - listitem [ref=e906]:
+          - link "Delivery" [ref=e907] [cursor=pointer]:
+            - /url: /delivery-policy
+      - generic [ref=e909]:
+        - generic [ref=e910]: Visa
+        - generic [ref=e911]: MasterCard
+        - generic [ref=e912]: Crypto
+        - generic [ref=e913]: Local

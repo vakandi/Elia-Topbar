@@ -1,0 +1,13 @@
+[     521ms] [WARNING] Error with Permissions-Policy header: Unrecognized feature: 'run-ad-auction'. @ :0
+[     521ms] [WARNING] Error with Permissions-Policy header: Unrecognized feature: 'join-ad-interest-group'. @ :0
+[     521ms] [WARNING] Error with Permissions-Policy header: Unrecognized feature: 'private-aggregation'. @ :0
+[     521ms] [WARNING] Error with Permissions-Policy header: Unrecognized feature: 'attribution-reporting'. @ :0
+[    1188ms] TypeError: Cannot read properties of null (reading 'addEventListener')
+    at https://buythefans.com/:2917:8
+[    1208ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://analytics.tiktok.com/i18n/pixel/events.js?sdkid=CIG83FJC77U7QBTN34UG&lib=ttq:0
+[    1208ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://analytics.ahrefs.com/analytics.js:0
+[    1379ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ https://buythefans.com/site.webmanifest:0
+[    1379ms] [ERROR] Manifest fetch from https://buythefans.com/site.webmanifest failed, code 404 @ https://buythefans.com/:0
+[    1517ms] [WARNING] [GSI_LOGGER]: Relative login_uri was provided. Use absolute url instead. Relative login_uri may be considered invalid in the future. @ https://accounts.google.com/gsi/client:86
+[    1524ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://www.chromium.org/developers/design-documents/create-amazing-password-forms) %o @ https://buythefans.com/:0
+[    1536ms] [ERROR] Failed to load resource: net::ERR_BLOCKED_BY_CLIENT @ https://accounts.google.com/gsi/log?client_id=undefined&as=undefined&bs=undefined&event=id.init.relativeLoginUri.%2Fconfirm_signup:0

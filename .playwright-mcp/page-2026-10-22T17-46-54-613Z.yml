@@ -1,0 +1,563 @@
+- generic [ref=f2e1]:
+  - navigation [ref=f2e2]:
+    - generic [ref=f2e3]:
+      - link [ref=f2e4] [cursor=pointer]:
+        - /url: /
+        - img "SMM BIRLA" [ref=f2e5]
+      - text: 
+      - list [ref=f2e7]:
+        - listitem [ref=f2e8]:
+          - button " Language" [ref=f2e9] [cursor=pointer]:
+            - generic [ref=f2e10]: 
+            - generic [ref=f2e11]: Language
+        - listitem [ref=f2e12]:
+          - link " 􏂐 Sign In" [ref=f2e13] [cursor=pointer]:
+            - /url: /
+            - generic [ref=f2e14]:  􏂐
+            - text: Sign In
+          - link " 􏈴 Sign Up" [ref=f2e15] [cursor=pointer]:
+            - /url: /signup
+            - generic [ref=f2e16]:  􏈴
+            - text: Sign Up
+  - generic [ref=f2e23]:
+    - generic [ref=f2e24]:
+      - generic [ref=f2e25]:
+        - heading "Services" [level=1] [ref=f2e26]
+        - paragraph [ref=f2e27]: Rates, limits and delivery time
+      - button "USD $" [ref=f2e29] [cursor=pointer]
+      - generic [ref=f2e30]:
+        - button "Filter by platform" [ref=f2e31] [cursor=pointer]:
+          - generic [ref=f2e32]: 
+        - text:            
+        - textbox "Search ID or service" [ref=f2e33]
+        - button "Search" [ref=f2e34] [cursor=pointer]:
+          - generic [ref=f2e35]: 
+    - table [ref=f2e38]:
+      - rowgroup [ref=f2e39]:
+        - row [ref=f2e40]:
+          - columnheader "Service" [ref=f2e41]
+          - columnheader "Rate" [ref=f2e42]
+          - columnheader "Limits" [ref=f2e43]
+      - rowgroup [ref=f2e44]:
+        - row [ref=f2e45] [cursor=pointer]
+        - row [ref=f2e46] [cursor=pointer]:
+          - 'cell "Recommended Reliable Services [ #1 Quality & Speed ] Recommended Reliable Services [ #1 Quality & Speed ] 7 Services " [ref=f2e47]':
+            - generic [ref=f2e48]:
+              - generic [ref=f2e49]:
+                - 'img "Recommended Reliable Services [ #1 Quality & Speed ]" [ref=f2e50]'
+                - strong [ref=f2e51]: "Recommended Reliable Services [ #1 Quality & Speed ]"
+              - generic [ref=f2e52]: 7 Services
+              - generic [ref=f2e53]: 
+        - text:              
+        - row [ref=f2e55] [cursor=pointer]
+        - row [ref=f2e56] [cursor=pointer]:
+          - 'cell "Telegram Premium Members [ Top Ranking ] [ #1 Trend ] Telegram Premium Members [ Top Ranking ] [ #1 Trend ] 5 Services " [ref=f2e57]':
+            - generic [ref=f2e58]:
+              - generic [ref=f2e59]:
+                - 'img "Telegram Premium Members [ Top Ranking ] [ #1 Trend ]" [ref=f2e60]'
+                - strong [ref=f2e61]: "Telegram Premium Members [ Top Ranking ] [ #1 Trend ]"
+              - generic [ref=f2e62]: 5 Services
+              - generic [ref=f2e63]: 
+        - text:          
+        - row [ref=f2e65] [cursor=pointer]
+        - row [ref=f2e66] [cursor=pointer]:
+          - cell "Telegram Premium Members [ Global Ranking ] [ Big Base ] Telegram Premium Members [ Global Ranking ] [ Big Base ] 5 Services " [ref=f2e67]:
+            - generic [ref=f2e68]:
+              - generic [ref=f2e69]:
+                - img "Telegram Premium Members [ Global Ranking ] [ Big Base ]" [ref=f2e70]
+                - strong [ref=f2e71]: Telegram Premium Members [ Global Ranking ] [ Big Base ]
+              - generic [ref=f2e72]: 5 Services
+              - generic [ref=f2e73]: 
+        - text:          
+        - row [ref=f2e75] [cursor=pointer]
+        - row [ref=f2e76] [cursor=pointer]:
+          - cell "Telegram Premium Boosts [ Channel Story Activation ] Telegram Premium Boosts [ Channel Story Activation ] 5 Services " [ref=f2e77]:
+            - generic [ref=f2e78]:
+              - generic [ref=f2e79]:
+                - img "Telegram Premium Boosts [ Channel Story Activation ]" [ref=f2e80]
+                - strong [ref=f2e81]: Telegram Premium Boosts [ Channel Story Activation ]
+              - generic [ref=f2e82]: 5 Services
+              - generic [ref=f2e83]: 
+        - text:          
+        - row [ref=f2e85] [cursor=pointer]
+        - row [ref=f2e86] [cursor=pointer]:
+          - cell "Telegram Premium Bot Starts [ Top Ranking ] Telegram Premium Bot Starts [ Top Ranking ] 3 Services " [ref=f2e87]:
+            - generic [ref=f2e88]:
+              - generic [ref=f2e89]:
+                - img "Telegram Premium Bot Starts [ Top Ranking ]" [ref=f2e90]
+                - strong [ref=f2e91]: Telegram Premium Bot Starts [ Top Ranking ]
+              - generic [ref=f2e92]: 3 Services
+              - generic [ref=f2e93]: 
+        - text:      
+        - row [ref=f2e95] [cursor=pointer]
+        - row [ref=f2e96] [cursor=pointer]:
+          - cell "Telegram Members [ Cheapest ] [ 0% Drop ] Telegram Members [ Cheapest ] [ 0% Drop ] 4 Services " [ref=f2e97]:
+            - generic [ref=f2e98]:
+              - generic [ref=f2e99]:
+                - img "Telegram Members [ Cheapest ] [ 0% Drop ]" [ref=f2e100]
+                - strong [ref=f2e101]: Telegram Members [ Cheapest ] [ 0% Drop ]
+              - generic [ref=f2e102]: 4 Services
+              - generic [ref=f2e103]: 
+        - text:        
+        - row [ref=f2e105] [cursor=pointer]
+        - row [ref=f2e106] [cursor=pointer]:
+          - cell "Telegram Members [ Zero Drop ] [ HQ ] Telegram Members [ Zero Drop ] [ HQ ] 4 Services " [ref=f2e107]:
+            - generic [ref=f2e108]:
+              - generic [ref=f2e109]:
+                - img "Telegram Members [ Zero Drop ] [ HQ ]" [ref=f2e110]
+                - strong [ref=f2e111]: Telegram Members [ Zero Drop ] [ HQ ]
+              - generic [ref=f2e112]: 4 Services
+              - generic [ref=f2e113]: 
+        - text:        
+        - row [ref=f2e115] [cursor=pointer]
+        - row [ref=f2e116] [cursor=pointer]:
+          - cell "Telegram Members [ Non Drop ] [ Big Base ] Telegram Members [ Non Drop ] [ Big Base ] 3 Services " [ref=f2e117]:
+            - generic [ref=f2e118]:
+              - generic [ref=f2e119]:
+                - img "Telegram Members [ Non Drop ] [ Big Base ]" [ref=f2e120]
+                - strong [ref=f2e121]: Telegram Members [ Non Drop ] [ Big Base ]
+              - generic [ref=f2e122]: 3 Services
+              - generic [ref=f2e123]: 
+        - text:      
+        - row [ref=f2e125] [cursor=pointer]
+        - row [ref=f2e126] [cursor=pointer]:
+          - cell "Telegram Members [ 0% Drop ] [ Online ] Telegram Members [ 0% Drop ] [ Online ] 4 Services " [ref=f2e127]:
+            - generic [ref=f2e128]:
+              - generic [ref=f2e129]:
+                - img "Telegram Members [ 0% Drop ] [ Online ]" [ref=f2e130]
+                - strong [ref=f2e131]: Telegram Members [ 0% Drop ] [ Online ]
+              - generic [ref=f2e132]: 4 Services
+              - generic [ref=f2e133]: 
+        - text:        
+        - row [ref=f2e135] [cursor=pointer]
+        - row [ref=f2e136] [cursor=pointer]:
+          - cell "Telegram Indian Services [ Members & Views ] Telegram Indian Services [ Members & Views ] 5 Services " [ref=f2e137]:
+            - generic [ref=f2e138]:
+              - generic [ref=f2e139]:
+                - img "Telegram Indian Services [ Members & Views ]" [ref=f2e140]
+                - strong [ref=f2e141]: Telegram Indian Services [ Members & Views ]
+              - generic [ref=f2e142]: 5 Services
+              - generic [ref=f2e143]: 
+        - text:          
+        - row [ref=f2e145] [cursor=pointer]
+        - row [ref=f2e146] [cursor=pointer]:
+          - cell "Telegram Members [ Views from Followers ] Telegram Members [ Views from Followers ] 3 Services " [ref=f2e147]:
+            - generic [ref=f2e148]:
+              - generic [ref=f2e149]:
+                - img "Telegram Members [ Views from Followers ]" [ref=f2e150]
+                - strong [ref=f2e151]: Telegram Members [ Views from Followers ]
+              - generic [ref=f2e152]: 3 Services
+              - generic [ref=f2e153]: 
+        - text:      
+        - row [ref=f2e155] [cursor=pointer]
+        - row [ref=f2e156] [cursor=pointer]:
+          - cell "Telegram Bot Starts [ Real Activity by Users ] Telegram Bot Starts [ Real Activity by Users ] 14 Services " [ref=f2e157]:
+            - generic [ref=f2e158]:
+              - generic [ref=f2e159]:
+                - img "Telegram Bot Starts [ Real Activity by Users ]" [ref=f2e160]
+                - strong [ref=f2e161]: Telegram Bot Starts [ Real Activity by Users ]
+              - generic [ref=f2e162]: 14 Services
+              - generic [ref=f2e163]: 
+        - text:                            
+        - row [ref=f2e165] [cursor=pointer]
+        - row [ref=f2e166] [cursor=pointer]:
+          - cell "Telegram Post Views [ By Real Accounts ] Telegram Post Views [ By Real Accounts ] 12 Services " [ref=f2e167]:
+            - generic [ref=f2e168]:
+              - generic [ref=f2e169]:
+                - img "Telegram Post Views [ By Real Accounts ]" [ref=f2e170]
+                - strong [ref=f2e171]: Telegram Post Views [ By Real Accounts ]
+              - generic [ref=f2e172]: 12 Services
+              - generic [ref=f2e173]: 
+        - text:                        
+        - row [ref=f2e175] [cursor=pointer]
+        - row [ref=f2e176] [cursor=pointer]:
+          - 'cell "Telegram Post Views [ Cheapest ] [ #1 Choice ] Telegram Post Views [ Cheapest ] [ #1 Choice ] 3 Services " [ref=f2e177]':
+            - generic [ref=f2e178]:
+              - generic [ref=f2e179]:
+                - 'img "Telegram Post Views [ Cheapest ] [ #1 Choice ]" [ref=f2e180]'
+                - strong [ref=f2e181]: "Telegram Post Views [ Cheapest ] [ #1 Choice ]"
+              - generic [ref=f2e182]: 3 Services
+              - generic [ref=f2e183]: 
+        - text:      
+        - row [ref=f2e185] [cursor=pointer]
+        - row [ref=f2e186] [cursor=pointer]:
+          - cell "Telegram Post Views [ For Private Channel / Groups ] Telegram Post Views [ For Private Channel / Groups ] 8 Services " [ref=f2e187]:
+            - generic [ref=f2e188]:
+              - generic [ref=f2e189]:
+                - img "Telegram Post Views [ For Private Channel / Groups ]" [ref=f2e190]
+                - strong [ref=f2e191]: Telegram Post Views [ For Private Channel / Groups ]
+              - generic [ref=f2e192]: 8 Services
+              - generic [ref=f2e193]: 
+        - text:                
+        - row [ref=f2e195] [cursor=pointer]
+        - row [ref=f2e196] [cursor=pointer]:
+          - cell "Telegram Reactions [ Free Views ] Telegram Reactions [ Free Views ] 2 Services " [ref=f2e197]:
+            - generic [ref=f2e198]:
+              - generic [ref=f2e199]:
+                - img "Telegram Reactions [ Free Views ]" [ref=f2e200]
+                - strong [ref=f2e201]: Telegram Reactions [ Free Views ]
+              - generic [ref=f2e202]: 2 Services
+              - generic [ref=f2e203]: 
+        - text:    
+        - row [ref=f2e205] [cursor=pointer]
+        - row [ref=f2e206] [cursor=pointer]:
+          - cell "Telegram Services [ For De-Ranking ] Telegram Services [ For De-Ranking ] 2 Services " [ref=f2e207]:
+            - generic [ref=f2e208]:
+              - generic [ref=f2e209]:
+                - img "Telegram Services [ For De-Ranking ]" [ref=f2e210]
+                - strong [ref=f2e211]: Telegram Services [ For De-Ranking ]
+              - generic [ref=f2e212]: 2 Services
+              - generic [ref=f2e213]: 
+        - text:    
+        - row [ref=f2e215] [cursor=pointer]
+        - row [ref=f2e216] [cursor=pointer]:
+          - cell "Telegram Auto Services [ Views ] [ Reactions ] Telegram Auto Services [ Views ] [ Reactions ] 5 Services " [ref=f2e217]:
+            - generic [ref=f2e218]:
+              - generic [ref=f2e219]:
+                - img "Telegram Auto Services [ Views ] [ Reactions ]" [ref=f2e220]
+                - strong [ref=f2e221]: Telegram Auto Services [ Views ] [ Reactions ]
+              - generic [ref=f2e222]: 5 Services
+              - generic [ref=f2e223]: 
+        - text:          
+        - row [ref=f2e225] [cursor=pointer]
+        - row [ref=f2e226] [cursor=pointer]:
+          - cell "Instagram Views [ For Reels ] [ Fastest ] Instagram Views [ For Reels ] [ Fastest ] 2 Services " [ref=f2e227]:
+            - generic [ref=f2e228]:
+              - generic [ref=f2e229]:
+                - img "Instagram Views [ For Reels ] [ Fastest ]" [ref=f2e230]
+                - strong [ref=f2e231]: Instagram Views [ For Reels ] [ Fastest ]
+              - generic [ref=f2e232]: 2 Services
+              - generic [ref=f2e233]: 
+        - text:    
+        - row [ref=f2e235] [cursor=pointer]
+        - row [ref=f2e236] [cursor=pointer]:
+          - cell "Instagram Likes [ For Post ] [ Mix & Real ] Instagram Likes [ For Post ] [ Mix & Real ] 3 Services " [ref=f2e237]:
+            - generic [ref=f2e238]:
+              - generic [ref=f2e239]:
+                - img "Instagram Likes [ For Post ] [ Mix & Real ]" [ref=f2e240]
+                - strong [ref=f2e241]: Instagram Likes [ For Post ] [ Mix & Real ]
+              - generic [ref=f2e242]: 3 Services
+              - generic [ref=f2e243]: 
+        - text:      
+        - row [ref=f2e245] [cursor=pointer]
+        - row [ref=f2e246] [cursor=pointer]:
+          - cell "Instagram Likes [ HQ ] [ By Indian Profiles ] Instagram Likes [ HQ ] [ By Indian Profiles ] 1 Services " [ref=f2e247]:
+            - generic [ref=f2e248]:
+              - generic [ref=f2e249]:
+                - img "Instagram Likes [ HQ ] [ By Indian Profiles ]" [ref=f2e250]
+                - strong [ref=f2e251]: Instagram Likes [ HQ ] [ By Indian Profiles ]
+              - generic [ref=f2e252]: 1 Services
+              - generic [ref=f2e253]: 
+        - text:  
+        - row [ref=f2e255] [cursor=pointer]
+        - row [ref=f2e256] [cursor=pointer]:
+          - cell "Instagram Views [ Reel & Post ] [ For Insight Boost ] Instagram Views [ Reel & Post ] [ For Insight Boost ] 3 Services " [ref=f2e257]:
+            - generic [ref=f2e258]:
+              - generic [ref=f2e259]:
+                - img "Instagram Views [ Reel & Post ] [ For Insight Boost ]" [ref=f2e260]
+                - strong [ref=f2e261]: Instagram Views [ Reel & Post ] [ For Insight Boost ]
+              - generic [ref=f2e262]: 3 Services
+              - generic [ref=f2e263]: 
+        - text:      
+        - row [ref=f2e265] [cursor=pointer]
+        - row [ref=f2e266] [cursor=pointer]:
+          - cell "Instagram Likes [ Power Quality ] [ Fastest ] Instagram Likes [ Power Quality ] [ Fastest ] 5 Services " [ref=f2e267]:
+            - generic [ref=f2e268]:
+              - generic [ref=f2e269]:
+                - img "Instagram Likes [ Power Quality ] [ Fastest ]" [ref=f2e270]
+                - strong [ref=f2e271]: Instagram Likes [ Power Quality ] [ Fastest ]
+              - generic [ref=f2e272]: 5 Services
+              - generic [ref=f2e273]: 
+        - text:          
+        - row [ref=f2e275] [cursor=pointer]
+        - row [ref=f2e276] [cursor=pointer]:
+          - cell "Instagram Insight Services [ Viewers ] [ Saves ] [ Visits ] Instagram Insight Services [ Viewers ] [ Saves ] [ Visits ] 6 Services " [ref=f2e277]:
+            - generic [ref=f2e278]:
+              - generic [ref=f2e279]:
+                - img "Instagram Insight Services [ Viewers ] [ Saves ] [ Visits ]" [ref=f2e280]
+                - strong [ref=f2e281]: Instagram Insight Services [ Viewers ] [ Saves ] [ Visits ]
+              - generic [ref=f2e282]: 6 Services
+              - generic [ref=f2e283]: 
+        - text:            
+        - row [ref=f2e285] [cursor=pointer]
+        - row [ref=f2e286] [cursor=pointer]:
+          - cell "Instagram Post Shares [ Mix & Targeted ] [ HQ ] Instagram Post Shares [ Mix & Targeted ] [ HQ ] 8 Services " [ref=f2e287]:
+            - generic [ref=f2e288]:
+              - generic [ref=f2e289]:
+                - img "Instagram Post Shares [ Mix & Targeted ] [ HQ ]" [ref=f2e290]
+                - strong [ref=f2e291]: Instagram Post Shares [ Mix & Targeted ] [ HQ ]
+              - generic [ref=f2e292]: 8 Services
+              - generic [ref=f2e293]: 
+        - text:                
+        - row [ref=f2e295] [cursor=pointer]
+        - row [ref=f2e296] [cursor=pointer]:
+          - cell "Instagram Comment Likes [ Fastest ] Instagram Comment Likes [ Fastest ] 1 Services " [ref=f2e297]:
+            - generic [ref=f2e298]:
+              - generic [ref=f2e299]:
+                - img "Instagram Comment Likes [ Fastest ]" [ref=f2e300]
+                - strong [ref=f2e301]: Instagram Comment Likes [ Fastest ]
+              - generic [ref=f2e302]: 1 Services
+              - generic [ref=f2e303]: 
+        - text:  
+        - row [ref=f2e305] [cursor=pointer]
+        - row [ref=f2e306] [cursor=pointer]:
+          - cell "Instagram USA Services [ HQ ] [ Fastest ] Instagram USA Services [ HQ ] [ Fastest ] 1 Services " [ref=f2e307]:
+            - generic [ref=f2e308]:
+              - generic [ref=f2e309]:
+                - img "Instagram USA Services [ HQ ] [ Fastest ]" [ref=f2e310]
+                - strong [ref=f2e311]: Instagram USA Services [ HQ ] [ Fastest ]
+              - generic [ref=f2e312]: 1 Services
+              - generic [ref=f2e313]: 
+        - text:  
+        - row [ref=f2e315] [cursor=pointer]
+        - row [ref=f2e316] [cursor=pointer]:
+          - cell "Instagram Story Views [ Mix & Real ] Instagram Story Views [ Mix & Real ] 3 Services " [ref=f2e317]:
+            - generic [ref=f2e318]:
+              - generic [ref=f2e319]:
+                - img "Instagram Story Views [ Mix & Real ]" [ref=f2e320]
+                - strong [ref=f2e321]: Instagram Story Views [ Mix & Real ]
+              - generic [ref=f2e322]: 3 Services
+              - generic [ref=f2e323]: 
+        - text:      
+        - row [ref=f2e325] [cursor=pointer]
+        - row [ref=f2e326] [cursor=pointer]:
+          - cell "Instagram Auto Services [ Views ] [ Likes ] [ Insights ] Instagram Auto Services [ Views ] [ Likes ] [ Insights ] 7 Services " [ref=f2e327]:
+            - generic [ref=f2e328]:
+              - generic [ref=f2e329]:
+                - img "Instagram Auto Services [ Views ] [ Likes ] [ Insights ]" [ref=f2e330]
+                - strong [ref=f2e331]: Instagram Auto Services [ Views ] [ Likes ] [ Insights ]
+              - generic [ref=f2e332]: 7 Services
+              - generic [ref=f2e333]: 
+        - text:              
+        - row [ref=f2e335] [cursor=pointer]
+        - row [ref=f2e336] [cursor=pointer]:
+          - cell "Facebook Page Services [ Likes + Followers ] Facebook Page Services [ Likes + Followers ] 2 Services " [ref=f2e337]:
+            - generic [ref=f2e338]:
+              - generic [ref=f2e339]:
+                - img "Facebook Page Services [ Likes + Followers ]" [ref=f2e340]
+                - strong [ref=f2e341]: Facebook Page Services [ Likes + Followers ]
+              - generic [ref=f2e342]: 2 Services
+              - generic [ref=f2e343]: 
+        - text:    
+        - row [ref=f2e345] [cursor=pointer]
+        - row [ref=f2e346] [cursor=pointer]:
+          - 'cell "Facebook Reel Views [ Fastest ] [ #1 Choice ] Facebook Reel Views [ Fastest ] [ #1 Choice ] 2 Services " [ref=f2e347]':
+            - generic [ref=f2e348]:
+              - generic [ref=f2e349]:
+                - 'img "Facebook Reel Views [ Fastest ] [ #1 Choice ]" [ref=f2e350]'
+                - strong [ref=f2e351]: "Facebook Reel Views [ Fastest ] [ #1 Choice ]"
+              - generic [ref=f2e352]: 2 Services
+              - generic [ref=f2e353]: 
+        - text:    
+        - row [ref=f2e355] [cursor=pointer]
+        - row [ref=f2e356] [cursor=pointer]:
+          - cell "Facebook Reactions [ Mix & Real ] [ Fastest ] Facebook Reactions [ Mix & Real ] [ Fastest ] 6 Services " [ref=f2e357]:
+            - generic [ref=f2e358]:
+              - generic [ref=f2e359]:
+                - img "Facebook Reactions [ Mix & Real ] [ Fastest ]" [ref=f2e360]
+                - strong [ref=f2e361]: Facebook Reactions [ Mix & Real ] [ Fastest ]
+              - generic [ref=f2e362]: 6 Services
+              - generic [ref=f2e363]: 
+        - text:                  
+        - row [ref=f2e365] [cursor=pointer]
+        - row [ref=f2e366] [cursor=pointer]:
+          - cell "Facebook Live Viewers [ Fastest ] [ Real Accounts ] Facebook Live Viewers [ Fastest ] [ Real Accounts ] 10 Services " [ref=f2e367]:
+            - generic [ref=f2e368]:
+              - generic [ref=f2e369]:
+                - img "Facebook Live Viewers [ Fastest ] [ Real Accounts ]" [ref=f2e370]
+                - strong [ref=f2e371]: Facebook Live Viewers [ Fastest ] [ Real Accounts ]
+              - generic [ref=f2e372]: 10 Services
+              - generic [ref=f2e373]: 
+        - text:                    
+        - row [ref=f2e375] [cursor=pointer]
+        - row [ref=f2e376] [cursor=pointer]:
+          - cell "Facebook Other Services [ Comments ] [ Shares ] [ Members ] Facebook Other Services [ Comments ] [ Shares ] [ Members ] 4 Services " [ref=f2e377]:
+            - generic [ref=f2e378]:
+              - generic [ref=f2e379]:
+                - img "Facebook Other Services [ Comments ] [ Shares ] [ Members ]" [ref=f2e380]
+                - strong [ref=f2e381]: Facebook Other Services [ Comments ] [ Shares ] [ Members ]
+              - generic [ref=f2e382]: 4 Services
+              - generic [ref=f2e383]: 
+        - text:        
+        - row [ref=f2e385] [cursor=pointer]
+        - row [ref=f2e386] [cursor=pointer]:
+          - cell "YouTube Views [ Shorts / Videos ] [ Non Drop ] YouTube Views [ Shorts / Videos ] [ Non Drop ] 3 Services " [ref=f2e387]:
+            - generic [ref=f2e388]:
+              - generic [ref=f2e389]:
+                - img "YouTube Views [ Shorts / Videos ] [ Non Drop ]" [ref=f2e390]
+                - strong [ref=f2e391]: YouTube Views [ Shorts / Videos ] [ Non Drop ]
+              - generic [ref=f2e392]: 3 Services
+              - generic [ref=f2e393]: 
+        - text:      
+        - row [ref=f2e395] [cursor=pointer]
+        - row [ref=f2e396] [cursor=pointer]:
+          - cell "YouTube Views [ High Retention ] [ Real Viewers ] YouTube Views [ High Retention ] [ Real Viewers ] 4 Services " [ref=f2e397]:
+            - generic [ref=f2e398]:
+              - generic [ref=f2e399]:
+                - img "YouTube Views [ High Retention ] [ Real Viewers ]" [ref=f2e400]
+                - strong [ref=f2e401]: YouTube Views [ High Retention ] [ Real Viewers ]
+              - generic [ref=f2e402]: 4 Services
+              - generic [ref=f2e403]: 
+        - text:        
+        - row [ref=f2e405] [cursor=pointer]
+        - row [ref=f2e406] [cursor=pointer]:
+          - cell "YouTube Views [ HQ ] [ Indian Viewers ] YouTube Views [ HQ ] [ Indian Viewers ] 4 Services " [ref=f2e407]:
+            - generic [ref=f2e408]:
+              - generic [ref=f2e409]:
+                - img "YouTube Views [ HQ ] [ Indian Viewers ]" [ref=f2e410]
+                - strong [ref=f2e411]: YouTube Views [ HQ ] [ Indian Viewers ]
+              - generic [ref=f2e412]: 4 Services
+              - generic [ref=f2e413]: 
+        - text:        
+        - row [ref=f2e415] [cursor=pointer]
+        - row [ref=f2e416] [cursor=pointer]:
+          - cell "YouTube Views [ Google Adword ] [ Fastest ] YouTube Views [ Google Adword ] [ Fastest ] 3 Services " [ref=f2e417]:
+            - generic [ref=f2e418]:
+              - generic [ref=f2e419]:
+                - img "YouTube Views [ Google Adword ] [ Fastest ]" [ref=f2e420]
+                - strong [ref=f2e421]: YouTube Views [ Google Adword ] [ Fastest ]
+              - generic [ref=f2e422]: 3 Services
+              - generic [ref=f2e423]: 
+        - text:         
+        - row [ref=f2e425] [cursor=pointer]
+        - row [ref=f2e426] [cursor=pointer]:
+          - cell "YouTube Subscribers [ Stable Working ] YouTube Subscribers [ Stable Working ] 2 Services " [ref=f2e427]:
+            - generic [ref=f2e428]:
+              - generic [ref=f2e429]:
+                - img "YouTube Subscribers [ Stable Working ]" [ref=f2e430]
+                - strong [ref=f2e431]: YouTube Subscribers [ Stable Working ]
+              - generic [ref=f2e432]: 2 Services
+              - generic [ref=f2e433]: 
+        - text:    
+        - row [ref=f2e435] [cursor=pointer]
+        - row [ref=f2e436] [cursor=pointer]:
+          - cell "YouTube – Watchtime Views YouTube – Watchtime Views 1 Services " [ref=f2e437]:
+            - generic [ref=f2e438]:
+              - generic [ref=f2e439]:
+                - img "YouTube – Watchtime Views" [ref=f2e440]
+                - strong [ref=f2e441]: YouTube – Watchtime Views
+              - generic [ref=f2e442]: 1 Services
+              - generic [ref=f2e443]: 
+        - text:  
+        - row [ref=f2e445] [cursor=pointer]
+        - row [ref=f2e446] [cursor=pointer]:
+          - cell "YouTube Video [ Comment ] [ Comment Likes ] YouTube Video [ Comment ] [ Comment Likes ] 4 Services " [ref=f2e447]:
+            - generic [ref=f2e448]:
+              - generic [ref=f2e449]:
+                - img "YouTube Video [ Comment ] [ Comment Likes ]" [ref=f2e450]
+                - strong [ref=f2e451]: YouTube Video [ Comment ] [ Comment Likes ]
+              - generic [ref=f2e452]: 4 Services
+              - generic [ref=f2e453]: 
+        - text:        
+        - row [ref=f2e455] [cursor=pointer]
+        - row [ref=f2e456] [cursor=pointer]:
+          - cell "YouTube Likes [ Video / Shorts ] YouTube Likes [ Video / Shorts ] 3 Services " [ref=f2e457]:
+            - generic [ref=f2e458]:
+              - generic [ref=f2e459]:
+                - img "YouTube Likes [ Video / Shorts ]" [ref=f2e460]
+                - strong [ref=f2e461]: YouTube Likes [ Video / Shorts ]
+              - generic [ref=f2e462]: 3 Services
+              - generic [ref=f2e463]: 
+        - text:      
+        - row [ref=f2e465] [cursor=pointer]
+        - row [ref=f2e466] [cursor=pointer]:
+          - cell "YouTube Likes [ Geo Targeted ] YouTube Likes [ Geo Targeted ] 5 Services " [ref=f2e467]:
+            - generic [ref=f2e468]:
+              - generic [ref=f2e469]:
+                - img "YouTube Likes [ Geo Targeted ]" [ref=f2e470]
+                - strong [ref=f2e471]: YouTube Likes [ Geo Targeted ]
+              - generic [ref=f2e472]: 5 Services
+              - generic [ref=f2e473]: 
+        - text:          
+        - row [ref=f2e475] [cursor=pointer]
+        - row [ref=f2e476] [cursor=pointer]:
+          - cell "YouTube – Live Viewers YouTube – Live Viewers 7 Services " [ref=f2e477]:
+            - generic [ref=f2e478]:
+              - generic [ref=f2e479]:
+                - img "YouTube – Live Viewers" [ref=f2e480]
+                - strong [ref=f2e481]: YouTube – Live Viewers
+              - generic [ref=f2e482]: 7 Services
+              - generic [ref=f2e483]: 
+        - text:              
+        - row [ref=f2e485] [cursor=pointer]
+        - row [ref=f2e486] [cursor=pointer]:
+          - cell "Twitter (X) – Profile Services Twitter (X) – Profile Services 4 Services " [ref=f2e487]:
+            - generic [ref=f2e488]:
+              - generic [ref=f2e489]:
+                - img "Twitter (X) – Profile Services" [ref=f2e490]
+                - strong [ref=f2e491]: Twitter (X) – Profile Services
+              - generic [ref=f2e492]: 4 Services
+              - generic [ref=f2e493]: 
+        - text:        
+        - row [ref=f2e495] [cursor=pointer]
+        - row [ref=f2e496] [cursor=pointer]:
+          - cell "Whatsapp – Channel Services Whatsapp – Channel Services 5 Services " [ref=f2e497]:
+            - generic [ref=f2e498]:
+              - generic [ref=f2e499]:
+                - img "Whatsapp – Channel Services" [ref=f2e500]
+                - strong [ref=f2e501]: Whatsapp – Channel Services
+              - generic [ref=f2e502]: 5 Services
+              - generic [ref=f2e503]: 
+        - text:          
+        - row [ref=f2e505] [cursor=pointer]
+        - row [ref=f2e506] [cursor=pointer]:
+          - cell "TikTok – Profile Services TikTok – Profile Services 5 Services " [ref=f2e507]:
+            - generic [ref=f2e508]:
+              - generic [ref=f2e509]:
+                - img "TikTok – Profile Services" [ref=f2e510]
+                - strong [ref=f2e511]: TikTok – Profile Services
+              - generic [ref=f2e512]: 5 Services
+              - generic [ref=f2e513]: 
+        - text:          
+        - row [ref=f2e515] [cursor=pointer]
+        - row [ref=f2e516] [cursor=pointer]:
+          - cell "Website – Traffic Services Website – Traffic Services 6 Services " [ref=f2e517]:
+            - generic [ref=f2e518]:
+              - generic [ref=f2e519]:
+                - img "Website – Traffic Services" [ref=f2e520]
+                - strong [ref=f2e521]: Website – Traffic Services
+              - generic [ref=f2e522]: 6 Services
+              - generic [ref=f2e523]: 
+        - text:            
+        - row [ref=f2e525] [cursor=pointer]
+        - row [ref=f2e526] [cursor=pointer]:
+          - cell "Private Private 26 Services " [ref=f2e527]:
+            - generic [ref=f2e528]:
+              - generic [ref=f2e529]:
+                - img "Private" [ref=f2e530]
+                - strong [ref=f2e531]: Private
+              - generic [ref=f2e532]: 26 Services
+              - generic [ref=f2e533]: 
+        - text:                          
+  - contentinfo [ref=f2e535]:
+    - generic [ref=f2e536]:
+      - generic [ref=f2e537]:
+        - link [ref=f2e538] [cursor=pointer]:
+          - /url: /
+          - img "SMM BIRLA" [ref=f2e539]
+        - navigation "Footer" [ref=f2e540]:
+          - link "Services" [ref=f2e541] [cursor=pointer]:
+            - /url: /services
+          - link "Funds" [ref=f2e542] [cursor=pointer]:
+            - /url: /addfunds
+          - link "Blog" [ref=f2e543] [cursor=pointer]:
+            - /url: /blog
+          - link "Terms" [ref=f2e544] [cursor=pointer]:
+            - /url: /terms
+          - link "Privacy" [ref=f2e545] [cursor=pointer]:
+            - /url: /privacy-policy
+          - link "Help" [ref=f2e546] [cursor=pointer]:
+            - /url: /help-center
+        - generic [ref=f2e547]:
+          - link "Instagram" [ref=f2e548] [cursor=pointer]:
+            - /url: https://www.instagram.com/smmbirla/
+            - generic [ref=f2e549]: 
+          - link "YouTube" [ref=f2e550] [cursor=pointer]:
+            - /url: https://www.youtube.com/@oksmmbirla
+            - generic [ref=f2e551]: 
+          - link "Telegram" [ref=f2e552] [cursor=pointer]:
+            - /url: https://t.me/+xYoHuf5JuDBmMmQ9
+            - generic [ref=f2e553]: 
+      - generic [ref=f2e554]:
+        - generic [ref=f2e555]: © SMMBirla 2022–26
+        - generic [ref=f2e556]: All rights reserved

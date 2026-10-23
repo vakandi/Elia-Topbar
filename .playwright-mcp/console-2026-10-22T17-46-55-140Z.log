@@ -1,0 +1,16 @@
+[     244ms] [WARNING] Error with Permissions-Policy header: Unrecognized feature: 'run-ad-auction'. @ :0
+[     244ms] [WARNING] Error with Permissions-Policy header: Unrecognized feature: 'join-ad-interest-group'. @ :0
+[     244ms] [WARNING] Error with Permissions-Policy header: Unrecognized feature: 'private-aggregation'. @ :0
+[     244ms] [WARNING] Error with Permissions-Policy header: Unrecognized feature: 'attribution-reporting'. @ :0
+[     292ms] [WARNING] Tracking Prevention blocked access to storage for https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css. @ https://7xpanel.com/services:0
+[     292ms] [WARNING] Tracking Prevention blocked access to storage for https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css. @ https://7xpanel.com/services:0
+[     292ms] [WARNING] Tracking Prevention blocked access to storage for https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css. @ https://7xpanel.com/services:0
+[     292ms] [WARNING] Tracking Prevention blocked access to storage for https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css. @ https://7xpanel.com/services:0
+[     292ms] [WARNING] Tracking Prevention blocked access to storage for https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css. @ https://7xpanel.com/services:0
+[     292ms] [WARNING] Tracking Prevention blocked access to storage for https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css. @ https://7xpanel.com/services:0
+[     292ms] [WARNING] Tracking Prevention blocked access to storage for https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css. @ https://7xpanel.com/services:0
+[     292ms] [WARNING] Tracking Prevention blocked access to storage for https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css. @ https://7xpanel.com/services:0
+[     292ms] [WARNING] Tracking Prevention blocked access to storage for https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js. @ https://7xpanel.com/services:0
+[     292ms] [WARNING] Tracking Prevention blocked access to storage for https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js. @ https://7xpanel.com/services:0
+[     292ms] [WARNING] Tracking Prevention blocked access to storage for https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js. @ https://7xpanel.com/services:0
+[     292ms] [WARNING] Tracking Prevention blocked access to storage for https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js. @ https://7xpanel.com/services:0
