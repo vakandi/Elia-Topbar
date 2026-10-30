@@ -50,7 +50,8 @@ import EliaTopBarKit
         // fresh one per popup left the SwiftUI render graph behind every time:
         // with the panel pooled, RSS was flat at 20 MB when the content was
         // omitted and grew 19 MB per 30-popup burst when it was present.
-        let anyRoot = AnyView(popupView)
+        showToken += 1
+        let anyRoot = AnyView(popupView.id(showToken))
         if let host = panel.contentView as? NSHostingView<AnyView> {
             host.rootView = anyRoot
         } else {
@@ -109,6 +110,12 @@ import EliaTopBarKit
         panelPool.append(panel as! HoverPanel)
     }
     private static let maxPooledPanels = 12
+    /// Bumped on every show. The panel is pooled and its NSHostingView is
+    /// reused, so without a fresh identity SwiftUI keeps the previous run's
+    /// @State — the done banner, the todos, the agent name captured by the
+    /// observers. That is why a fresh session opened already "done", and why
+    /// a new agent's livestream stayed empty.
+    private var showToken = 0
     func retract(for agentName: String) {
         guard let panel=panels[agentName], let screen=NSScreen.main else { return }
         retractTimers[agentName]?.invalidate(); retractTimers[agentName]=nil
@@ -232,7 +239,11 @@ struct GrokWorkingDot: View {
 struct RunPopupView: View {
     let agentName: String; let onTap: ()->Void
     let baseURL: String; let showSessionSelector: Bool; let disableAutoClose: Bool
+    @AppStorage("dropPhotoShape") private var photoShapeRaw: String = "round"
     @State private var observer: NSObjectProtocol?
+    @State private var completedObserver: NSObjectProtocol?
+    @State private var bannerObserver: NSObjectProtocol?
+    @State private var doneErrorMessage: String?
     @State private var verticalTodos: [RunTodoItem] = []
     @State private var historyReady = false
     @State private var isHoveringTodoModule = false
@@ -272,6 +283,11 @@ struct RunPopupView: View {
     /// is only ever fired from `true → false`, never from a `false` that arrived
     /// before the run had reported in.
     @State private var sawRunning = false
+    /// The run this popup is actually showing. A completion that cannot be
+    /// tied to it is a stale event from the previous session and must never
+    /// paint "Agent is Done" on a fresh one.
+    @State private var runSessionId: String? = nil
+    @State private var sawFrameForRun = false
     @State private var runStartedObserver: NSObjectProtocol? = nil
     @State private var agentLastError: String? = nil
     @State private var agentEnabled: Bool? = nil
@@ -380,7 +396,7 @@ struct RunPopupView: View {
         .animation(.easeInOut(duration:0.22), value: showSticker)
         .animation(.easeInOut(duration:0.2), value: effectiveTodos.isEmpty)
         .animation(.easeInOut(duration:0.2), value: subagentKeys.isEmpty)
-        .onAppear{ showStickerPinned=false; isHoveringLive=false; historyReady=false; verticalTodos=[]; subagentKeys=[]; expandedSubagent=nil; sawRunning=false; showDoneOverlay=false; doneCloseScheduled=false; isLockedCached=RunPopupController.shared.isLocked(for: agentName); draggableEnabledState=UserDefaults.standard.bool(forKey:"dropDraggableEnabled"); observeDraggable(); observeRunStarted(); observeTraffic(); fetchAgentStatus(); fetchRunHistory(); observeLogs(); startTick(); startStatusRefresh() }.onDisappear{ if let o=observer{NotificationCenter.default.removeObserver(o)}; if let d=draggableObserver{NotificationCenter.default.removeObserver(d)}; if let r=runStartedObserver{NotificationCenter.default.removeObserver(r)}; if let t=trafficObserver{NotificationCenter.default.removeObserver(t)}; releaseTimers() }.onHover{ h in RunPopupController.shared.setHover(h, for:agentName) }
+        .onAppear{ AppLog.important("POPUP-APPEARED-AGENT \(agentName)"); showStickerPinned=false; isHoveringLive=false; historyReady=false; verticalTodos=[]; subagentKeys=[]; expandedSubagent=nil; sawRunning=false; showDoneOverlay=false; doneCloseScheduled=false; isLockedCached=RunPopupController.shared.isLocked(for: agentName); draggableEnabledState=UserDefaults.standard.bool(forKey:"dropDraggableEnabled"); observeDraggable(); observeRunStarted(); observeCompleted(); observeTraffic(); fetchAgentStatus(); fetchRunHistory(); observeLogs(); startTick(); startStatusRefresh() }.onDisappear{ if let o=observer{NotificationCenter.default.removeObserver(o)}; if let c=completedObserver{NotificationCenter.default.removeObserver(c)}; if let b=bannerObserver{NotificationCenter.default.removeObserver(b)}; if let d=draggableObserver{NotificationCenter.default.removeObserver(d)}; if let r=runStartedObserver{NotificationCenter.default.removeObserver(r)}; if let t=trafficObserver{NotificationCenter.default.removeObserver(t)}; releaseTimers() }.onHover{ h in RunPopupController.shared.setHover(h, for:agentName) }
         .onChange(of: showStickerPinned){ _ in updatePanelForSubagents() }
         .onChange(of: isHoveringLive){ _ in updatePanelForSubagents() }
         .onReceive(LivestreamStore.shared.throttled){ agent in if agent==agentName { refreshSubagentsFromLive(); feed.reload() } }
@@ -524,7 +540,7 @@ struct RunPopupView: View {
     }
     private var inlineTinyPhoto: some View {
         Group {
-            if let photo=ProfilePhotos.shared.circularPhoto(for:agentName,size:16){ Image(nsImage:photo).resizable().frame(width:16,height:16).clipShape(Circle()).overlay(Circle().stroke(Color.primary.opacity(0.12),lineWidth:0.5)) } else { ZStack{ Circle().fill(Color.accentColor.opacity(0.22)); Text(agentMonogram).font(.system(size:7,weight:.bold)).foregroundColor(.accentColor) }.frame(width:16,height:16) }
+            if let photo=ProfilePhotos.shared.photo(for:agentName){ Image(nsImage:photo).resizable().scaledToFill().frame(width:16,height:16).clipShape(photoClip(16)).overlay(photoClip(16).stroke(Color.primary.opacity(0.12),lineWidth:0.5)) } else { ZStack{ photoClip(16).fill(Color.accentColor.opacity(0.22)); Text(agentMonogram).font(.system(size:7,weight:.bold)).foregroundColor(.accentColor) }.frame(width:16,height:16) }
         }
     }
     private struct RunBubbleBottomKey: PreferenceKey { static var defaultValue: CGFloat=0; static func reduce(value:inout CGFloat,nextValue:()->CGFloat){ value=nextValue() } }
@@ -575,13 +591,25 @@ struct RunPopupView: View {
                     liveRunning = true
                     // A new run outranks a banner left over from the previous one.
                     if showDoneOverlay { withAnimation(.easeInOut(duration:0.2)){ showDoneOverlay = false } }
-                } else if sawRunning {
-                    // Only a run this popup watched go live can end here. An agent
-                    // that was already idle when its popup opened has no run to end.
-                    fireDoneFlow()
                 }
+                // A "not running" poll is NOT a completion signal: it is also what a
+                // run that has not reported in yet looks like, and what an instantly
+                // rejected run looks like. The done banner is fired by the server's
+                // subworker_completed/subworker_error event instead (observeCompleted).
             }
         }.resume()
+    }
+    /// One-shot truth from the bridge: is this agent running right now?
+    /// Used only when the popup has no local evidence about the run that just
+    /// reported completion.
+    static func serverSaysRunning(agent: String, baseURL: String) async -> Bool {
+        guard let url = URL(string: "\(baseURL)/status/\(agent)") else { return false }
+        var req = EliaAuth.authorize(url)
+        req.timeoutInterval = 2
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let running = json["running"] as? Bool else { return false }
+        return running
     }
     private func fireDoneFlow(){
         guard !doneCloseScheduled else { return }
@@ -598,7 +626,7 @@ struct RunPopupView: View {
         RunLoop.main.add(t, forMode: .common)
         doneCloseTimer = t
     }
-    private var doneHasError: Bool { !(agentLastError?.isEmpty ?? true) }
+    private var doneHasError: Bool { !((doneErrorMessage ?? agentLastError)?.isEmpty ?? true) }
     @ViewBuilder private var doneOverlayBanner: some View {
         HStack(spacing:6){
             Image(systemName: doneHasError ? "xmark.circle.fill" : "checkmark.circle.fill").font(.system(size:10,weight:.semibold)).foregroundColor(doneHasError ? .red : .green)
@@ -847,10 +875,18 @@ struct RunPopupView: View {
     }
     private var popupVerticalTodoStrip: some View { popupVerticalTodoStripCollapsed }
 
+    /// The avatar shape chosen in Settings → Run animation → Agent icon.
+    /// A square badge with a round photo inside reads as a rendering bug,
+    /// so the photo and its ring follow the same radius as the badge.
+    private func photoClip(_ size: CGFloat) -> AnyShape {
+        photoShapeRaw == "square"
+            ? AnyShape(RoundedRectangle(cornerRadius: size * 0.27, style: .continuous))
+            : AnyShape(Circle())
+    }
     private var photoBadge: some View {
         ZStack{
-            Circle().stroke(Color.accentColor.opacity(0.6),lineWidth:2).frame(width:56,height:56).modifier(PulseGlow())
-            if let photo=ProfilePhotos.shared.circularPhoto(for:agentName,size:48){ Image(nsImage:photo).resizable().frame(width:48,height:48) } else { ZStack{ Circle().fill(Color.accentColor.opacity(0.25)); Text(agentMonogram).font(.system(size:18,weight:.bold)).foregroundColor(.accentColor) }.frame(width:48,height:48) }
+            photoClip(56).stroke(Color.accentColor.opacity(0.6),lineWidth:2).frame(width:56,height:56).modifier(PulseGlow())
+            if let photo=ProfilePhotos.shared.photo(for:agentName){ Image(nsImage:photo).resizable().scaledToFill().frame(width:48,height:48).clipShape(photoClip(48)) } else { ZStack{ photoClip(48).fill(Color.accentColor.opacity(0.25)); Text(agentMonogram).font(.system(size:18,weight:.bold)).foregroundColor(.accentColor) }.frame(width:48,height:48) }
         }.frame(height:60).contentShape(Rectangle()).onTapGesture { onTap() }.help("Click to dismiss popup")
     }
 
@@ -1008,7 +1044,7 @@ struct RunPopupView: View {
 
     private var popupSessionSidebar: some View {
          VStack(spacing:0) {
-             if let photo = ProfilePhotos.shared.circularPhoto(for: agentName, size: 36) { Image(nsImage: photo).resizable().frame(width:36,height:36) } else { ZStack { Circle().fill(Color.accentColor.opacity(0.25)); Text(agentMonogram).font(.system(size:12,weight:.bold)).foregroundColor(.accentColor) }.frame(width:36,height:36) }
+             if let photo = ProfilePhotos.shared.photo(for: agentName) { Image(nsImage: photo).resizable().scaledToFill().frame(width:36,height:36).clipShape(photoClip(36)) } else { ZStack { photoClip(36).fill(Color.accentColor.opacity(0.25)); Text(agentMonogram).font(.system(size:12,weight:.bold)).foregroundColor(.accentColor) }.frame(width:36,height:36) }
              Text(agentName).font(.caption2).fontWeight(.semibold).lineLimit(1).padding(.top,2)
              Divider()
              if sessionsLoading { ProgressView().controlSize(.mini).padding(4) } else if sessions.isEmpty { Text("No sessions").font(.caption2).foregroundColor(.secondary).padding(4) } else {
@@ -1171,6 +1207,8 @@ struct RunPopupView: View {
     private func observeLogs(){
         observer=NotificationCenter.default.addObserver(forName:SubworkerManager.runLogNotification, object:nil, queue:.main){ note in
             guard let name=note.userInfo?["name"] as? String, name==agentName, let delta=note.userInfo?["text"] as? String else{return}
+            sawFrameForRun = true
+            if runSessionId == nil { runSessionId = note.userInfo?["session_id"] as? String }
             let field=note.userInfo?["field"] as? String ?? "text"
             appendLiveDelta(field: field, delta: delta)
         }
@@ -1186,6 +1224,7 @@ struct RunPopupView: View {
         runStartedObserver=NotificationCenter.default.addObserver(forName:SubworkerManager.subworkerStartedNotification, object:nil, queue:.main){ note in
             guard let name=note.userInfo?["name"] as? String, name==agentName else { return }
             Task { @MainActor in
+                AppLog.important("RUNSTART agent=\(agentName) sid=\((note.userInfo?["session_id"] as? String) ?? "-")")
                 stopAllSubagentPolling()
                 subagentKeys = []
                 verticalTodos = []
@@ -1195,10 +1234,59 @@ struct RunPopupView: View {
                 // The run has been requested, not confirmed live. The banner gate
                 // stays shut until a poll actually reports `running: true`.
                 sawRunning = false
+                runSessionId = note.userInfo?["session_id"] as? String
+                sawFrameForRun = false
                 agentRunning = true
                 liveRunning = true
+                // A panel outlives its run: drop every trace of the previous one so
+                // this run's banner can fire exactly once, when THIS run ends.
+                doneErrorMessage = nil
+                doneCloseScheduled = false
+                doneCloseTimer?.invalidate()
+                doneCloseTimer = nil
                 if showDoneOverlay { withAnimation(.easeInOut(duration:0.2)){ showDoneOverlay = false } }
             }
+        }
+    }
+    /// The done banner is driven by the server's own run boundary, never by a
+    /// status poll: `subworker_completed` / `subworker_error` only arrive once the
+    /// session is really over. A run that fails at admission (400 on the first
+    /// prompt) therefore shows "Finished with Error" instead of a false "Done"
+    /// fired while the run was still starting.
+    private func observeCompleted(){
+        completedObserver = NotificationCenter.default.addObserver(
+            forName: SubworkerManager.subworkerCompletedNotification, object: nil, queue: .main
+        ){ note in
+            AppLog.important("COMPLETION-SEEN \(note.userInfo?["name"] as? String ?? "-") view=\(agentName)")
+            guard let name = note.userInfo?["name"] as? String, name == agentName else { return }
+            let sid = note.userInfo?["session_id"] as? String
+            let err = (note.userInfo?["error"] as? String) ?? ""
+            Task { @MainActor in
+                AppLog.important("BANNER? agent=\(agentName) sid=\(sid ?? "-") run=\(runSessionId ?? "-") sawRunning=\(sawRunning) sawFrame=\(sawFrameForRun) err=\(err.isEmpty ? "no" : "yes")")
+                // A completion for another session belongs to the previous run.
+                if let sid, let runSessionId, sid != runSessionId { return }
+                // No poll ever saw this run live and it produced no frame. The
+                // event may still be the tail of the run that just ended, so ask
+                // the server instead of guessing: a completion for a session that
+                // is already over must never paint "Done" on the one now running.
+                if err.isEmpty, !sawRunning, !sawFrameForRun {
+                    if await Self.serverSaysRunning(agent: agentName, baseURL: baseURL) { return }
+                }
+                if !err.isEmpty { doneErrorMessage = err }
+                agentRunning = false
+                liveRunning = false
+                fireDoneFlow()
+            }
+        }
+        // `subworker_error` carries no message; the error text travels on the
+        // run_banner event emitted just before it.
+        bannerObserver = NotificationCenter.default.addObserver(
+            forName: SubworkerManager.runBannerNotification, object: nil, queue: .main
+        ){ note in
+            guard let name = note.userInfo?["name"] as? String, name == agentName,
+                  let banner = note.userInfo?["banner"] as? [String: Any],
+                  let err = banner["error"] as? String, !err.isEmpty else { return }
+            Task { @MainActor in doneErrorMessage = err }
         }
     }
     private func appendLiveDelta(field: String, delta: String){

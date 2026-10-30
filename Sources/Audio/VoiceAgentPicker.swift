@@ -33,12 +33,15 @@ final class VoiceAgentPickerController {
     /// voice commands currently go to.
     private var photoCache: [String: NSImage?] = [:]
 
-    func show(agents: [String], selected: String?, candidates: [String] = [], subtitle: String = "", onSelect: @escaping (String) -> Void) {
+    func show(agents: [String], selected: String?, candidates: [String] = [], subtitle: String = "", onClose: @escaping () -> Void = {}, onSelect: @escaping (String) -> Void) {
         let candidateSet = Set(candidates.filter { agents.contains($0) })
-        let recent = AudioSettings.recentVoiceAgents.filter { agents.contains($0) && !candidateSet.contains($0) }
+        let recent = AudioSettings.recentVoiceAgents.filter { agents.contains($0) }
+        // The agent used last for voice control always leads, before even the
+        // near-miss candidates, so reusing the same agent never needs a scroll.
         var ordered: [String] = []
-        ordered.append(contentsOf: candidates.filter { agents.contains($0) })
-        ordered.append(contentsOf: recent)
+        if let last = recent.first { ordered.append(last) }
+        ordered.append(contentsOf: candidates.filter { agents.contains($0) && !ordered.contains($0) })
+        ordered.append(contentsOf: recent.filter { !ordered.contains($0) })
         ordered.append(contentsOf: agents.filter { !ordered.contains($0) })
         let photos = ordered.map { name in
             if let cached = photoCache[name] {
@@ -53,7 +56,10 @@ final class VoiceAgentPickerController {
         model.candidateNames = candidateSet
         model.subtitle = subtitle
         model.onSelect = onSelect
-        model.onKeepAlive = { [weak self] in self?.keepAlive() }
+        model.onClose = onClose
+        model.showToken = UUID()
+        model.onMouseEnter = { [weak self] in self?.handleMouseEnter() }
+        model.onMouseLeave = { [weak self] in self?.handleMouseLeave() }
 
         if panel == nil { makePanel() }
         guard let panel else { return }
@@ -62,7 +68,8 @@ final class VoiceAgentPickerController {
         panel.orderFrontRegardless()
     }
 
-    private func keepAlive() { }
+    private func handleMouseEnter() { }
+    private func handleMouseLeave() { }
 
     /// Hide the picker.
     func hide() {
@@ -95,10 +102,12 @@ final class VoiceAgentPickerController {
         panel.becomesKeyOnlyIfNeeded = true
         panel.ignoresMouseEvents = false
 
-        let host = NSHostingView(rootView: AnyView(VoiceAgentPickerView(model: model)))
+        let host = TrackingHostingView(rootView: AnyView(VoiceAgentPickerView(model: model)))
         host.frame = rect
         host.autoresizingMask = [.width, .height]
-        panel.contentView = host
+        host.onEnter = { [weak self] in self?.model.onMouseEnter?() }
+        host.onExit = { [weak self] in self?.model.onMouseLeave?() }
+        GlassBackground.install(host: host, in: panel, cornerRadius: 12)
 
         self.panel = panel
         self.host = host
@@ -106,8 +115,9 @@ final class VoiceAgentPickerController {
 
     private func resize(_ panel: NSPanel) {
         let count = max(1, model.agents.count)
-        let width = min(560, CGFloat(count) * (Self.cellSize + 10) + 24)
-        let size = NSSize(width: width, height: Self.cellSize + 30)
+        let width = min(620, CGFloat(count) * (VoiceAgentPickerView.labelWidth + 10) + 24)
+        let header: CGFloat = model.subtitle.isEmpty ? 0 : 34
+        let size = NSSize(width: width, height: Self.cellSize + 30 + header)
         guard panel.frame.size != size else { return }
         var frame = panel.frame
         frame.size = size
@@ -136,28 +146,69 @@ final class VoiceAgentPickerModel: ObservableObject {
     /// The roster of the bridge, kept for the refresh.
     @Published var roster: [String] = []
     var onSelect: ((String) -> Void)?
-    var onKeepAlive: (() -> Void)?
+    var onClose: (() -> Void)?
+    var onMouseEnter: (() -> Void)?
+    var onMouseLeave: (() -> Void)?
+    /// A fresh identity per show, so the row starts at its first agent
+    /// instead of keeping the scroll offset of the previous run.
+    @Published var showToken = UUID()
 }
 
 /// The picker itself: a row of photos with the name under each.
 struct VoiceAgentPickerView: View {
     @ObservedObject var model: VoiceAgentPickerModel
 
+    /// Every column is the same width, so a long agent name cannot stretch
+    /// its cell and push the others around. The full name stays in the
+    /// tooltip.
+    static let labelWidth: CGFloat = 54
+    static let nameLimit = 8
+
+    private func shortName(_ name: String) -> String {
+        name.count > Self.nameLimit ? String(name.prefix(Self.nameLimit)) + "…" : name
+    }
+
+    /// The transcript as it was heard. Whisper answers a lone "…" when the
+    /// capture held nothing but noise, and printing that reads as a broken
+    /// placeholder — so a punctuation-only result is reported as no speech.
+    private var readableTranscript: String {
+        let trimmed = model.subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        let hasLetters = trimmed.unicodeScalars.contains { CharacterSet.alphanumerics.contains($0) }
+        return hasLetters ? trimmed : "Rien entendu"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Voice to…")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                if !model.subtitle.isEmpty {
-                    Text(model.subtitle)
-                        .font(.system(size: 9))
+            HStack(alignment: .top, spacing: 6) {
+                VStack(alignment: .leading, spacing: 3) {
+                    if !readableTranscript.isEmpty {
+                        Text(verbatim: readableTranscript)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    Text("Voice to…")
+                        .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 4)
+
+                if let onClose = model.onClose {
+                    Button {
+                        onClose()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Close")
                 }
             }
-            .padding(.leading, 4)
+            .padding(.trailing, 2)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
@@ -183,12 +234,14 @@ struct VoiceAgentPickerView: View {
                                                 .foregroundStyle(.secondary)
                                         )
                                 }
-                                Text(agent.name)
+                                Text(shortName(agent.name))
                                     .font(.system(size: 9, weight: agent.isCandidate ? .bold : .regular))
                                     .foregroundStyle(agent.isCandidate ? Color.accentColor
                                                     : (model.selected == agent.name ? Color.accentColor : Color.secondary))
                                     .lineLimit(1)
+                                    .truncationMode(.tail)
                             }
+                            .frame(width: Self.labelWidth)
                         }
                         .buttonStyle(.plain)
                         .help(agent.name)
@@ -196,18 +249,45 @@ struct VoiceAgentPickerView: View {
                 }
                 .padding(.horizontal, 4)
             }
-        }
-        .onHover { hovering in
-            if hovering { model.onKeepAlive?() }
+            .id(model.showToken)
         }
         .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.92))
-        )
+        .background {
+            if !GlassBackground.isAvailable {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(nsColor: .windowBackgroundColor).opacity(0.92))
+            }
+        }
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                .stroke(Color.secondary.opacity(GlassBackground.isAvailable ? 0.12 : 0.2),
+                        lineWidth: 1)
         )
+    }
+}
+
+
+/// NSHostingView subclass that tracks mouse enter/exit via a tracking area,
+/// because SwiftUI's `.onHover` does not fire inside a non-activating panel.
+final class TrackingHostingView: NSHostingView<AnyView> {
+    var onEnter: (() -> Void)?
+    var onExit: (() -> Void)?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach { removeTrackingArea($0) }
+        let area = NSTrackingArea(rect: bounds,
+                                  options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                  owner: self,
+                                  userInfo: nil)
+        addTrackingArea(area)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onEnter?()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onExit?()
     }
 }

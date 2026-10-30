@@ -58,6 +58,7 @@ final class VoiceCommandRouter: ObservableObject {
     private var idleDisarmTask: Task<Void, Never>?
     private var hudFadeTask: Task<Void, Never>?
     private var pickerHideTask: Task<Void, Never>?
+    private var pickerMouseWasInside = false
     private var lastHudAt = Date.distantPast
     @Published private(set) var wakeDisarmedByTimer = false
 
@@ -139,6 +140,9 @@ final class VoiceCommandRouter: ObservableObject {
     /// The agent the panel has selected.
     func setSelectedAgent(_ agent: String?) {
         selectedAgent = agent
+        if let agent {
+            AudioSettings.recentVoiceAgents = [agent] + AudioSettings.recentVoiceAgents
+        }
         AppLog.important("voice: the selected agent is \(agent ?? "none")")
     }
 
@@ -428,7 +432,7 @@ final class VoiceCommandRouter: ObservableObject {
         let deadline = Date().addingTimeInterval(seconds)
         while Date() < deadline {
             if let value = box.get() { return value }
-            try? await Task.sleep(nanoseconds: 100_000_000)
+            do { try await Task.sleep(nanoseconds: 100_000_000) } catch { break }
         }
         return box.get()
     }
@@ -447,7 +451,7 @@ final class VoiceCommandRouter: ObservableObject {
         let deadline = Date().addingTimeInterval(seconds)
         while Date() < deadline {
             if let result = box.get() { return try result.get() }
-            try? await Task.sleep(nanoseconds: 100_000_000)
+            do { try await Task.sleep(nanoseconds: 100_000_000) } catch { break }
         }
         throw AnalyzerError.timedOut
     }
@@ -517,6 +521,7 @@ final class VoiceCommandRouter: ObservableObject {
             while !Task.isCancelled {
                 let sleep = await self?.liveSleepSeconds ?? 1.5
                 try? await Task.sleep(nanoseconds: UInt64(sleep * 1_000_000_000))
+            guard !Task.isCancelled else { return }
                 guard let self, !Task.isCancelled else { continue }
                 // The analyzer owns the live text once it is up: the
                 // fallback stops feeding the GPU the moment the cheap,
@@ -577,7 +582,7 @@ final class VoiceCommandRouter: ObservableObject {
         let deadline = Date().addingTimeInterval(15)
         while Date() < deadline {
             if let result = box.get() { return result }
-            try? await Task.sleep(nanoseconds: 100_000_000)
+            do { try await Task.sleep(nanoseconds: 100_000_000) } catch { break }
         }
         return .failure(AudioRecorder.RecorderError.captureTimeout)
     }
@@ -617,7 +622,7 @@ final class VoiceCommandRouter: ObservableObject {
             AppLog.important("voice: the app came forward for the prompt")
             defer { Task { @MainActor in NSApp.setActivationPolicy(previousPolicy) } }
             // Let the app come forward before the prompt is asked for.
-            try? await Task.sleep(nanoseconds: 700_000_000)
+            do { try await Task.sleep(nanoseconds: 700_000_000) } catch { return false }
             AppLog.important("voice: the prompt is up")
             let granted = await withTimeout(seconds: 25) {
                 await AVCaptureDevice.requestAccess(for: .audio)
@@ -778,7 +783,7 @@ final class VoiceCommandRouter: ObservableObject {
         if alwaysListening && !wakeDetected { return }
         // A short tail catches the last syllable.
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 500_000_000)
+            do { try await Task.sleep(nanoseconds: 500_000_000) } catch { return }
             await MainActor.run { self?.endCapture() }
         }
     }
@@ -888,8 +893,7 @@ final class VoiceCommandRouter: ObservableObject {
         // The test is short: it ends on silence, or here.
         maxDurationTask?.cancel()
         maxDurationTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 8_000_000_000)
-            guard !Task.isCancelled else { return }
+            do { try await Task.sleep(nanoseconds: 8_000_000_000) } catch { return }
             await MainActor.run { self?.endCapture() }
         }
     }
@@ -940,6 +944,7 @@ final class VoiceCommandRouter: ObservableObject {
     private func showAgentPicker(for transcript: String, command: String, candidates: [String] = []) {
         let roster = rosterProvider()
         guard !roster.isEmpty else { return }
+        pickerMouseWasInside = false
         // The picker replaces the listening bar: hide the bar so its status
         // ring stops spinning and the picker is the only thing on screen.
         hud.hide()
@@ -948,7 +953,15 @@ final class VoiceCommandRouter: ObservableObject {
         VoiceAgentPickerController.shared.show(agents: roster,
                                                 selected: selectedAgent,
                                                 candidates: candidates,
-                                                subtitle: transcript) { [weak self] agent in
+                                                subtitle: transcript,
+                                                onClose: { [weak self] in
+                                                    guard let self else { return }
+                                                    self.pendingTranscript = nil
+                                                    self.pendingCommand = nil
+                                                    self.pickerHideTask?.cancel()
+                                                    self.pickerHideTask = nil
+                                                    VoiceAgentPickerController.shared.hide()
+                                                }) { [weak self] agent in
             guard let self else { return }
             self.setSelectedAgent(agent)
             self.pendingTranscript = nil
@@ -960,22 +973,34 @@ final class VoiceCommandRouter: ObservableObject {
                           transcript: transcript,
                           command: command)
         }
-        // Hovering the picker buys more time (reset the auto-hide).
-        VoiceAgentPickerController.shared.model.onKeepAlive = { [weak self] in
+        // Hovering pauses the auto-hide (stays indefinitely); leaving
+        // restarts an 8 s countdown.
+        VoiceAgentPickerController.shared.model.onMouseEnter = { [weak self] in
             guard let self, self.pendingTranscript != nil else { return }
+            self.pickerMouseWasInside = true
+            self.pickerHideTask?.cancel()
+            self.pickerHideTask = nil
+        }
+        VoiceAgentPickerController.shared.model.onMouseLeave = { [weak self] in
+            guard let self, self.pendingTranscript != nil else { return }
+            // Ignore the spurious exit that fires when the panel appears
+            // under the cursor.
+            guard self.pickerMouseWasInside else { return }
+            self.pickerMouseWasInside = false
             self.pickerHideTask?.cancel()
             self.pickerHideTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 12_000_000_000)
+                do { try await Task.sleep(nanoseconds: 8_000_000_000) } catch { return }
                 guard let self, self.pendingTranscript != nil else { return }
                 self.pendingTranscript = nil
                 self.pendingCommand = nil
                 VoiceAgentPickerController.shared.hide()
+                self.hud.hide()
             }
         }
         pickerHideTask?.cancel()
         pickerHideTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 12_000_000_000)
-            guard let self, self.pendingTranscript != nil else { return }
+            do { try await Task.sleep(nanoseconds: 20_000_000_000) } catch { return }
+                guard let self, self.pendingTranscript != nil else { return }
             self.pendingTranscript = nil
             self.pendingCommand = nil
             VoiceAgentPickerController.shared.hide()
@@ -997,7 +1022,7 @@ final class VoiceCommandRouter: ObservableObject {
                    agent: agent,
                    onChangeAgent: { [weak self] in self?.changePendingAgent() })
         dispatchTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
             await MainActor.run {
                 guard let self, self.pendingDispatchAgent == agent else { return }
                 self.hud.update(status: .listening,
@@ -1006,7 +1031,7 @@ final class VoiceCommandRouter: ObservableObject {
                                 agent: agent,
                                 onChangeAgent: { [weak self] in self?.changePendingAgent() })
             }
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
             await MainActor.run {
                 guard let self, self.pendingDispatchAgent == agent else { return }
                 self.hud.update(status: .listening,
@@ -1015,7 +1040,7 @@ final class VoiceCommandRouter: ObservableObject {
                                 agent: agent,
                                 onChangeAgent: { [weak self] in self?.changePendingAgent() })
             }
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
             await MainActor.run { self?.dispatchPending() }
         }
     }
@@ -1061,8 +1086,7 @@ final class VoiceCommandRouter: ObservableObject {
         // The bar retracts on its own.
         hudFadeTask?.cancel()
         hudFadeTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 1_800_000_000)
-            guard !Task.isCancelled else { return }
+            do { try await Task.sleep(nanoseconds: 1_800_000_000) } catch { return }
             await MainActor.run {
                 guard let self, self.phase == .dispatching else { return }
                 self.hudFadeTask = nil
@@ -1084,8 +1108,7 @@ final class VoiceCommandRouter: ObservableObject {
                    level: 0,
                    agent: liveAgent)
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 4_000_000_000)
-            guard !Task.isCancelled else { return }
+            do { try await Task.sleep(nanoseconds: 4_000_000_000) } catch { return }
             await MainActor.run {
                 guard let self, self.phase == .failed("Server not connected") else { return }
                 self.hud.setBanner(nil)
@@ -1149,8 +1172,7 @@ final class VoiceCommandRouter: ObservableObject {
                    agent: liveAgent)
         hudFadeTask?.cancel()
         hudFadeTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            guard !Task.isCancelled else { return }
+            do { try await Task.sleep(nanoseconds: 3_000_000_000) } catch { return }
             await MainActor.run {
                 guard let self, self.phase == .failed(message) else { return }
                 self.hudFadeTask = nil

@@ -39,6 +39,13 @@ enum SelfTest {
         Double(ProcessInfo.processInfo.environment["ELIATOPBAR_SELFTEST_HOLD"] ?? "") ?? 0
     }
 
+    /// Opens the model submenu through its delegate and clicks the first entry,
+    /// then exits PASS/FAIL. A LSUIElement status item cannot be clicked by GUI
+    /// automation, so this is the only way to prove the submenu wiring.
+    static var modelMenuCheck: Bool {
+        ProcessInfo.processInfo.environment["ELIATOPBAR_SELFTEST_MODELMENU"] != nil
+    }
+
     /// Normally exits so CI gets a status code. With ELIATOPBAR_SELFTEST_NOEXIT
     /// it stays alive instead, so `leaks <pid>` can be attached to a process
     /// that still holds the leaked objects.

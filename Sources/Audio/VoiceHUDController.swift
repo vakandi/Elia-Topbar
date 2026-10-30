@@ -115,7 +115,7 @@ final class VoiceHUDController {
         let host = NSHostingView(rootView: AnyView(VoiceHUDView(model: model)))
         host.frame = rect
         host.autoresizingMask = [.width, .height]
-        panel.contentView = host
+        GlassBackground.install(host: host, in: panel, cornerRadius: 16)
 
         self.panel = panel
         self.host = host
@@ -302,7 +302,11 @@ struct VoiceHUDView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
-        .background(.regularMaterial)
+        .background {
+            if !GlassBackground.isAvailable {
+                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)

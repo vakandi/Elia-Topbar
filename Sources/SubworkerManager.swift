@@ -413,10 +413,12 @@ final class SubworkerManager: ObservableObject {
                     if let sid { LivestreamStore.shared.observeLive(agent: name, sessionId: sid) }
                     LivestreamStore.shared.appendDelta(agent: name, field: field, delta: delta, sessionId: sid)
                 }
+                var logInfo: [String: Any] = ["name": name, "text": delta, "field": field]
+                if let sid { logInfo["session_id"] = sid }
                 NotificationCenter.default.post(
                     name: SubworkerManager.runLogNotification,
                     object: nil,
-                    userInfo: ["name": name, "text": delta, "field": field]
+                    userInfo: logInfo
                 )
             }
         case "run_banner":
@@ -580,13 +582,16 @@ final class SubworkerManager: ObservableObject {
             subworkers[idx].lastErrorAt = nil
             recalculateCounts()
         }
-        NotificationCenter.default.post(name: Self.subworkerStartedNotification, object: nil, userInfo: ["name": name])
+        var startedInfo: [String: Any] = ["name": name]
+        if let sid = json["session_id"] as? String { startedInfo["session_id"] = sid }
+        NotificationCenter.default.post(name: Self.subworkerStartedNotification, object: nil, userInfo: startedInfo)
     }
 
     private func handleSubworkerCompleted(_ json: [String: Any]) {
         guard let name = json["name"] as? String else { return }
         AppLog.d("Subworker completed: \(name)")
 
+        AppLog.important("WS-COMPLETED-RECEIVED \(name)")
         runCounts[name, default: 0] += 1
         if let idx = subworkers.firstIndex(where: { $0.name == name }) {
             subworkers[idx].running = false
@@ -595,7 +600,9 @@ final class SubworkerManager: ObservableObject {
             subworkers[idx].lastCompleted = Date()
         }
         recalculateCounts()
-        NotificationCenter.default.post(name: Self.subworkerCompletedNotification, object: nil, userInfo: ["name": name])
+        var doneInfo: [String: Any] = ["name": name]
+        if let sid = json["session_id"] as? String { doneInfo["session_id"] = sid }
+        NotificationCenter.default.post(name: Self.subworkerCompletedNotification, object: nil, userInfo: doneInfo)
     }
 
     private func handleSubworkerCancelled(_ json: [String: Any]) {
@@ -626,7 +633,9 @@ final class SubworkerManager: ObservableObject {
         }
         lastError = "\(name): \(errorMsg)"
         recalculateCounts()
-        NotificationCenter.default.post(name: Self.subworkerCompletedNotification, object: nil, userInfo: ["name": name, "error": errorMsg])
+        var errInfo: [String: Any] = ["name": name, "error": errorMsg]
+        if let sid = json["session_id"] as? String { errInfo["session_id"] = sid }
+        NotificationCenter.default.post(name: Self.subworkerCompletedNotification, object: nil, userInfo: errInfo)
     }
 
     private func handleDisconnect() {

@@ -69,6 +69,7 @@ private struct TopbarToastView: View {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var scheduleWindow: NSWindow?
+    private var localModelWindow: NSWindow?
     private var colimaManager: ColimaManager!
     private var opencodeServerManager: OpenCodeServerManager!
     private var subworkerManager: SubworkerManager!
@@ -200,6 +201,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             || subworkerLogPopover?.isShown == true
             || (topbarSettingsWindow?.isVisible ?? false)
             || (scheduleWindow?.isVisible ?? false)
+            || (localModelWindow?.isVisible ?? false)
             || (tunnelProgressController != nil)
             || subworkerManager.runningCount > 0
     }
@@ -334,6 +336,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if SelfTest.burst > 0 { runBurstTest(); return }
         if SelfTest.cycles > 0 { runSelfTest() }
+        if SelfTest.modelMenuCheck { runModelMenuCheck() }
+    }
+
+    /// End-to-end check for the model submenu (ELIATOPBAR_SELFTEST_MODELMENU).
+    /// Drives the two entry points AppKit itself uses — `menuNeedsUpdate` when
+    /// the submenu opens, `sendAction` when an item is clicked — because the
+    /// status item is a LSUIElement extra that GUI automation cannot reach.
+    private func runModelMenuCheck() {
+        NSApp.setActivationPolicy(.accessory)
+
+        var agent = "elia"
+        var modelMenu: NSMenu?
+        // The roster arrives over the bridge; wait for it so the real agent
+        // hierarchy is exercised, not a synthetic menu.
+        for _ in 0..<12 {
+            if let loaded = subworkerManager.subworkers.first?.name { agent = loaded }
+            setupMenu()
+            if let menu = mainMenu, let found = findModelMenu(agent: agent, in: menu) {
+                modelMenu = found
+                break
+            }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        }
+
+        guard let modelMenu else {
+            print("MODELMENU FAIL no model submenu for \(agent) (subworkers=\(subworkerManager.subworkers.count))")
+            fflush(stdout)
+            exit(1)
+        }
+
+        menuNeedsUpdate(modelMenu)
+        let titles = modelMenu.items.map { $0.isSeparatorItem ? "---" : $0.title }
+        print("MODELMENU agent=\(agent) items=\(titles.count)")
+        for (index, title) in titles.prefix(8).enumerated() { print("  [\(index)] \(title)") }
+
+        let firstTitle = titles.first { $0 != "---" } ?? ""
+        let topIsLocal = firstTitle.contains("Local model")
+
+        var clicked = false
+        if let item = modelMenu.items.first(where: { !$0.isSeparatorItem }), let action = item.action {
+            clicked = NSApp.sendAction(action, to: item.target, from: item)
+        }
+
+        RunLoop.main.run(until: Date().addingTimeInterval(3.0))
+        let window = localModelWindow
+        print("MODELMENU top=\(topIsLocal ? "PASS" : "FAIL") first=\(firstTitle)")
+        print("MODELMENU click=\(clicked ? "PASS" : "FAIL") window=\(window.map { "visible=\($0.isVisible) frame=\($0.frame)" } ?? "nil")")
+        print("MODELMENU windowID=\(windowNumber(titled: "Local Model").map(String.init) ?? "nil")")
+        fflush(stdout)
+
+        // Held open so an external `screencapture -l <id>` can prove the render.
+        let hold = SelfTest.holdSeconds > 0 ? SelfTest.holdSeconds : 6
+        RunLoop.main.run(until: Date().addingTimeInterval(hold))
+        exit(topIsLocal && clicked && window != nil ? 0 : 1)
+    }
+
+    private func findModelMenu(agent: String, in menu: NSMenu) -> NSMenu? {
+        for item in menu.items {
+            guard let submenu = item.submenu else { continue }
+            if submenu.identifier?.rawValue == agent { return submenu }
+            if let found = findModelMenu(agent: agent, in: submenu) { return found }
+        }
+        return nil
+    }
+
+    private func windowNumber(titled title: String) -> Int? {
+        let infos = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        return infos.first { ($0[kCGWindowName as String] as? String) == title }?[kCGWindowNumber as String] as? Int
     }
 
     private var burstPanelProbe: SelfTest.WeakBox?
@@ -1948,7 +2018,10 @@ if !subworkerManager.wsConnected {
         let badges: [(photo: NSImage?, monogram: String, color: NSColor, hasError: Bool)] = names.map { name in
             let sw = subworkerManager.subworkers.first(where: { $0.name == name })
             let color = sw.map { subworkerColor(for: $0) } ?? .systemGreen
-            return (ProfilePhotos.shared.circularPhoto(for: name, size: 24),
+            // Raw photo, not `circularPhoto`: a pre-cropped circle clipped by a
+            // rounded rect keeps transparent corners, so the badge stayed round
+            // no matter what shape was selected. The clip below shapes it.
+            return (ProfilePhotos.shared.photo(for: name),
                     monogram(for: name),
                     color,
                     sw?.lastError != nil)
@@ -1986,7 +2059,9 @@ if !subworkerManager.wsConnected {
 
             NSGraphicsContext.saveGraphicsState()
             let photoRect = dotRect.insetBy(dx: 1, dy: 1)
-            let photoRadius: CGFloat = photoRect.width / 2
+            // Same radius as the dot behind it: a square badge with a round
+            // photo inside reads as a rendering bug.
+            let photoRadius: CGFloat = isSquare ? photoRect.width * 0.27 : photoRect.width / 2
             NSBezierPath(roundedRect: photoRect, xRadius: photoRadius, yRadius: photoRadius).addClip()
             if let photo = badge.photo {
                 let scale = max(photoRect.width / photo.size.width, photoRect.height / photo.size.height)
@@ -2421,6 +2496,51 @@ if let popover = subworkerLogPopover {
         updateStatusIcon()
         reconcileSubworkerStatusItems()
         setupMenu()
+    }
+
+    /// Local-model popup: custom base URL plus Ollama auto-detection. Sits
+    /// outside the bridge roster because the engine's model catalog only lists
+    /// hosted providers.
+    @objc private func openLocalModelEditor(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+
+        let rootView = LocalModelView(
+            agentName: name,
+            currentModel: subworkerManager.currentModel(for: name),
+            onClose: { [weak self] in self?.localModelWindow?.close() },
+            onApply: { [weak self] server, model in
+                guard let self else { return }
+                let modelID = "\(server.providerID)/\(model.id)"
+                self.subworkerManager.setModel(modelID, variant: "", for: name)
+                self.showTopbarToast(emoji: "🖥️", message: "\(name) → \(modelID)", spinning: false, autoHideAfter: 5)
+                self.localModelWindow?.close()
+                self.setupMenu()
+            }
+        )
+
+        if let window = localModelWindow {
+            let host = NSHostingView(rootView: rootView)
+            window.contentView = host
+            window.setContentSize(host.fittingSize)
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 572, height: 460),
+                              styleMask: [.titled, .closable],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.title = "Local Model"
+        let host = NSHostingView(rootView: rootView)
+        window.contentView = host
+        // The view owns its height; a fixed window size left a dead band
+        // between the caption and the footer.
+        window.setContentSize(host.fittingSize)
+        window.center()
+        window.level = .floating
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        localModelWindow = window
     }
 
     @objc private func openScheduleEditor(_ sender: NSMenuItem) {
@@ -3239,6 +3359,16 @@ extension AppDelegate: NSMenuDelegate {    func menuNeedsUpdate(_ menu: NSMenu) 
 
     private func populateModelMenu(_ menu: NSMenu, agentName: String) {
         menu.removeAllItems()
+
+        // Local model sits above the hosted roster on purpose: it is the only
+        // entry that works without the bridge catalog, so it must stay listed
+        // even while the roster is still loading.
+        let localItem = NSMenuItem(title: "", action: #selector(openLocalModelEditor(_:)), keyEquivalent: "")
+        localItem.attributedTitle = emojiAwareTitle("🖥️ Local model (custom base URL)…", color: .labelColor)
+        localItem.target = self
+        localItem.representedObject = agentName
+        menu.addItem(localItem)
+        menu.addItem(NSMenuItem.separator())
 
         let models = subworkerManager.availableModels
         guard !models.isEmpty else {
