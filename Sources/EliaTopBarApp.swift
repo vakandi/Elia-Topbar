@@ -2511,7 +2511,12 @@ if let popover = subworkerLogPopover {
             onApply: { [weak self] server, model in
                 guard let self else { return }
                 let modelID = "\(server.providerID)/\(model.id)"
-                self.subworkerManager.setModel(modelID, variant: "", for: name)
+                self.subworkerManager.setModel(
+                    modelID,
+                    variant: "",
+                    for: name,
+                    providerBaseURL: server.baseURL
+                )
                 self.showTopbarToast(emoji: "🖥️", message: "\(name) → \(modelID)", spinning: false, autoHideAfter: 5)
                 self.localModelWindow?.close()
                 self.setupMenu()

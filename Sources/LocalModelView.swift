@@ -348,7 +348,7 @@ struct LocalModelView: View {
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(.secondary)
             }
-            Text("The engine needs a matching provider entry (name `\(server?.providerID ?? "ollama")`, base URL above) before a run can use it.")
+            Text("Applying registers this model with BunControl (provider `\(server?.providerID ?? "ollama")`, base URL above) and restarts the engine when needed.")
                 .font(.system(size: 10))
                 .foregroundColor(.secondary.opacity(0.8))
                 .fixedSize(horizontal: false, vertical: true)

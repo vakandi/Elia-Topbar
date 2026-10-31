@@ -1106,7 +1106,7 @@ final class SubworkerManager: ObservableObject {
         return subworkers.first(where: { $0.name == name })?.variant ?? ""
     }
 
-    func setModel(_ modelID: String, variant: String, for name: String) {
+    func setModel(_ modelID: String, variant: String, for name: String, providerBaseURL: String? = nil) {
         var updated = modelSelections
         updated[name] = modelID
         modelSelections = updated
@@ -1138,24 +1138,48 @@ final class SubworkerManager: ObservableObject {
             AppLog.d("Model save error: \(error.localizedDescription)")
             lastError = "Model save failed: \(error.localizedDescription)"
         }
-        pushModelToServer(modelID, variant: variant, for: name)
+        pushModelToServer(modelID, variant: variant, for: name, providerBaseURL: providerBaseURL)
     }
 
-    private func pushModelToServer(_ modelID: String, variant: String, for name: String) {
+    private func pushModelToServer(
+        _ modelID: String,
+        variant: String,
+        for name: String,
+        providerBaseURL: String? = nil
+    ) {
         guard let url = URL(string: "\(baseURL)/status/\(name)") else { return }
         var request = EliaAuth.authorize(url)
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         var payload: [String: Any] = ["model": modelID]
         if !variant.isEmpty { payload["variant"] = variant }
+        // BunControl needs the address to create the provider entry. Without it a
+        // local model persists in subworkers.json but the engine rejects the first
+        // prompt with "model not found for provider ollama".
+        if let providerBaseURL, !providerBaseURL.isEmpty {
+            payload["provider_base_url"] = providerBaseURL
+        }
         request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
 
-        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             Task { @MainActor [weak self] in
                 if let error {
                     self?.lastError = "Model sync failed: \(error.localizedDescription)"
                 } else if let http = response as? HTTPURLResponse, http.statusCode >= 400 {
-                    self?.lastError = "Model sync failed: HTTP \(http.statusCode)"
+                    var detail: String?
+                    if let data,
+                       let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        detail = body["detail"] as? String
+                    }
+                    self?.lastError = detail.map { "Model sync failed: \($0)" }
+                        ?? "Model sync failed: HTTP \(http.statusCode)"
+                } else if let data,
+                          let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let registration = body["provider_registration"] as? [String: Any],
+                          let registrationError = registration["error"] as? String {
+                    // The PUT succeeded but the engine config could not be written.
+                    // Keep the message visible instead of calling the selection good.
+                    self?.lastError = "Model registration failed: \(registrationError)"
                 } else {
                     self?.lastError = nil
                 }
