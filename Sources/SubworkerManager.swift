@@ -145,6 +145,27 @@ struct ModelOption: Identifiable {
     }
 }
 
+/// One API key stored for a service (bridge `config-home/api-keys.json`). The raw key
+/// never reaches the app — only its mask and identity hash.
+struct ServiceKey: Identifiable {
+    let hash: String
+    let mask: String
+    let label: String
+    let active: Bool
+    var id: String { hash }
+}
+
+/// One service of the `/connect` catalogue, as returned by the bridge `GET /providers`.
+struct ServiceInfo: Identifiable {
+    let id: String
+    let name: String
+    let connected: Bool
+    let hasKey: Bool
+    let modelsCount: Int
+    let activeKey: String?
+    let keys: [ServiceKey]
+}
+
 enum EliaAuth {
     static let defaultToken = "70c0bb6a44c6cb1f45f07ee25ddb9038c042b82ddb1f7b15d9e5417b1b3bd039"
 
@@ -189,6 +210,9 @@ final class SubworkerManager: ObservableObject {
     @Published var modelSelections: [String: String] = [:]
     @Published var modelVariants: [String: String] = [:]
     @Published var availableModels: [ModelOption] = []
+    /// Service catalogue + stored API keys (bridge `GET /providers`). Drives the
+    /// "Services & API keys…" submenu.
+    @Published var providers: [ServiceInfo] = []
     @Published var mainAgentName = "elia"
     /// Roster generation counter from the server (plan §2). nil until the
     /// first payload that carries `models_version`; old servers never send
@@ -1063,12 +1087,26 @@ final class SubworkerManager: ObservableObject {
         fetchModels()
     }
 
-    func fetchModels() {
+    private var modelsFetchInFlight = false
+    private var lastModelsFetchAt: Date?
 
+    /// Refetch when the last good fetch is older than `seconds`. Called when the model
+    /// menu opens, so a roster cached while the engine was restarting self-heals instead
+    /// of staying stuck on the Zen-only list forever.
+    func refreshModelsIfStale(olderThan seconds: TimeInterval = 30) {
+        if modelsFetchInFlight { return }
+        if let last = lastModelsFetchAt, Date().timeIntervalSince(last) < seconds { return }
+        fetchModels()
+    }
+
+    func fetchModels() {
         guard let url = URL(string: "\(baseURL)/models") else { return }
+        modelsFetchInFlight = true
         URLSession.shared.dataTask(with: EliaAuth.authorize(url)) { [weak self] data, _, _ in
             Task { @MainActor [weak self] in
-                guard let self, let data,
+                guard let self else { return }
+                self.modelsFetchInFlight = false
+                guard let data,
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let raw = json["models"] as? [[String: Any]] else { return }
 
@@ -1090,6 +1128,7 @@ final class SubworkerManager: ObservableObject {
                 let favorites = options.filter { $0.provider == favoriteProvider }
                 let rest = options.filter { $0.provider != favoriteProvider }
                 self.availableModels = favorites + rest
+                self.lastModelsFetchAt = Date()
                 AppLog.d("Fetched \(options.count) models")
                 NotificationCenter.default.post(name: Self.modelsLoadedNotification, object: nil)
             }
@@ -1185,6 +1224,91 @@ final class SubworkerManager: ObservableObject {
                 }
             }
         }.resume()
+    }
+
+    // MARK: - Services & API keys
+
+    static let providersLoadedNotification = Notification.Name("EliaTopBarProvidersLoaded")
+
+    /// Refresh the service catalogue + stored keys from the bridge `GET /providers`.
+    func fetchProviders() {
+        guard let url = URL(string: "\(baseURL)/providers") else { return }
+        URLSession.shared.dataTask(with: EliaAuth.authorize(url)) { [weak self] data, _, _ in
+            Task { @MainActor [weak self] in
+                guard let self, let data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let raw = json["services"] as? [[String: Any]] else { return }
+                self.providers = raw.compactMap { s -> ServiceInfo? in
+                    guard let id = s["id"] as? String else { return nil }
+                    let keys: [ServiceKey] = (s["keys"] as? [[String: Any]] ?? []).compactMap { k in
+                        guard let hash = k["hash"] as? String else { return nil }
+                        return ServiceKey(
+                            hash: hash,
+                            mask: k["mask"] as? String ?? hash,
+                            label: k["label"] as? String ?? "",
+                            active: k["active"] as? Bool ?? false
+                        )
+                    }
+                    return ServiceInfo(
+                        id: id,
+                        name: s["name"] as? String ?? id,
+                        connected: s["connected"] as? Bool ?? false,
+                        hasKey: s["has_key"] as? Bool ?? false,
+                        modelsCount: s["models_count"] as? Int ?? 0,
+                        activeKey: s["active_key"] as? String,
+                        keys: keys
+                    )
+                }
+                NotificationCenter.default.post(name: Self.providersLoadedNotification, object: nil)
+            }
+        }.resume()
+    }
+
+    /// One write against the bridge `/providers/{id}/…` key routes, then a refresh.
+    /// `path` is relative to `…/providers/{id}/` — "key", "keys", "keys/<hash>",
+    /// "keys/<hash>/active".
+    private func serviceRequest(_ id: String, method: String, path: String, body: [String: Any]? = nil) {
+        guard let url = URL(string: "\(baseURL)/providers/\(id)/\(path)") else { return }
+        var request = EliaAuth.authorize(url)
+        request.httpMethod = method
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        }
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let error {
+                    self.lastError = "Service update failed: \(error.localizedDescription)"
+                } else if let http = response as? HTTPURLResponse, http.statusCode >= 400 {
+                    var detail: String?
+                    if let data, let b = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        detail = b["detail"] as? String
+                    }
+                    self.lastError = detail.map { "Service update failed: \($0)" }
+                        ?? "Service update failed: HTTP \(http.statusCode)"
+                } else {
+                    self.lastError = nil
+                }
+                self.fetchProviders()
+            }
+        }.resume()
+    }
+
+    func addProviderKey(_ id: String, key: String, label: String) {
+        serviceRequest(id, method: "POST", path: "keys", body: ["apiKey": key, "label": label])
+    }
+
+    func activateProviderKey(_ id: String, hash: String) {
+        serviceRequest(id, method: "PUT", path: "keys/\(hash)/active")
+    }
+
+    func deleteProviderKey(_ id: String, hash: String) {
+        serviceRequest(id, method: "DELETE", path: "keys/\(hash)")
+    }
+
+    func clearProviderKeys(_ id: String) {
+        serviceRequest(id, method: "DELETE", path: "key")
     }
 
     // MARK: - Main Agent

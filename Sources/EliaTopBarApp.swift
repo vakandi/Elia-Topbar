@@ -113,6 +113,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isMenuOpen = false
     private weak var openModelMenu: NSMenu?
     private var openModelAgent: String?
+    /// The Services submenu currently open, so a key change rebuilds it in place.
+    private weak var openServicesMenu: NSMenu?
+    static let servicesMenuID = "──elia-services──"
     private var topbarToastPanel: NSPanel?
     private var toastHideWorkItem: DispatchWorkItem?
     // MARK: - Overflow → notch island (LEFT of camera)
@@ -322,6 +325,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, let menu = self.openModelMenu, let agent = self.openModelAgent else { return }
             self.populateModelMenu(menu, agentName: agent)
         }
+        NotificationCenter.default.addObserver(forName: SubworkerManager.providersLoadedNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self, let menu = self.openServicesMenu else { return }
+            self.populateServicesMenu(menu)
+        }
 
         // Cloudflare tunnel status — keep the menu line fresh (30s cadence).
         refreshTunnelStatus()
@@ -337,6 +344,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if SelfTest.burst > 0 { runBurstTest(); return }
         if SelfTest.cycles > 0 { runSelfTest() }
         if SelfTest.modelMenuCheck { runModelMenuCheck() }
+        // Hold the key dialog open so an external `screencapture` can prove its width.
+        if let service = ProcessInfo.processInfo.environment["ELIATOPBAR_SELFTEST_KEYPOPUP"], !service.isEmpty {
+            NSApp.setActivationPolicy(.regular)
+            NSApp.activate(ignoringOtherApps: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.promptForAPIKey(serviceID: service) }
+        }
     }
 
     /// End-to-end check for the model submenu (ELIATOPBAR_SELFTEST_MODELMENU).
@@ -369,27 +382,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuNeedsUpdate(modelMenu)
         let titles = modelMenu.items.map { $0.isSeparatorItem ? "---" : $0.title }
         print("MODELMENU agent=\(agent) items=\(titles.count)")
+        let providerSet = Set(subworkerManager.availableModels.map { $0.provider })
+        print("MODELMENU providers=\(providerSet.sorted().joined(separator: ",")) availableModels=\(subworkerManager.availableModels.count)")
         for (index, title) in titles.prefix(8).enumerated() { print("  [\(index)] \(title)") }
 
-        let firstTitle = titles.first { $0 != "---" } ?? ""
-        let topIsLocal = firstTitle.contains("Local model")
+        let nonSeparators = modelMenu.items.filter { !$0.isSeparatorItem }
+        let firstTitle = nonSeparators.first?.title ?? ""
+        let topIsServices = firstTitle.contains("Services")
+        let localItem = nonSeparators.first { $0.title.contains("Local model") }
 
         var clicked = false
-        if let item = modelMenu.items.first(where: { !$0.isSeparatorItem }), let action = item.action {
-            clicked = NSApp.sendAction(action, to: item.target, from: item)
+        if let localItem, let action = localItem.action {
+            clicked = NSApp.sendAction(action, to: localItem.target, from: localItem)
         }
 
         RunLoop.main.run(until: Date().addingTimeInterval(3.0))
         let window = localModelWindow
-        print("MODELMENU top=\(topIsLocal ? "PASS" : "FAIL") first=\(firstTitle)")
+        print("MODELMENU top=\(topIsServices ? "PASS" : "FAIL") hasLocal=\(localItem != nil ? "PASS" : "FAIL") first=\(firstTitle)")
         print("MODELMENU click=\(clicked ? "PASS" : "FAIL") window=\(window.map { "visible=\($0.isVisible) frame=\($0.frame)" } ?? "nil")")
         print("MODELMENU windowID=\(windowNumber(titled: "Local Model").map(String.init) ?? "nil")")
+
+        // ── Services submenu proof: the multi-key provider list ──
+        if let root = mainMenu, let services = findMenu(id: Self.servicesMenuID, in: root) {
+            menuNeedsUpdate(services)
+            for _ in 0..<12 where subworkerManager.providers.isEmpty {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+            }
+            menuNeedsUpdate(services)
+            let serviceTitles = services.items.map { $0.isSeparatorItem ? "---" : $0.title }
+            print("SERVICESMENU providers=\(subworkerManager.providers.count) items=\(serviceTitles.count)")
+            for (index, title) in serviceTitles.prefix(6).enumerated() { print("  [s\(index)] \(title)") }
+        } else {
+            print("SERVICESMENU FAIL no services submenu")
+        }
         fflush(stdout)
 
         // Held open so an external `screencapture -l <id>` can prove the render.
         let hold = SelfTest.holdSeconds > 0 ? SelfTest.holdSeconds : 6
         RunLoop.main.run(until: Date().addingTimeInterval(hold))
-        exit(topIsLocal && clicked && window != nil ? 0 : 1)
+        exit(topIsServices && localItem != nil && clicked && window != nil ? 0 : 1)
     }
 
     private func findModelMenu(agent: String, in menu: NSMenu) -> NSMenu? {
@@ -397,6 +428,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let submenu = item.submenu else { continue }
             if submenu.identifier?.rawValue == agent { return submenu }
             if let found = findModelMenu(agent: agent, in: submenu) { return found }
+        }
+        return nil
+    }
+
+    private func findMenu(id: String, in menu: NSMenu) -> NSMenu? {
+        for item in menu.items {
+            guard let submenu = item.submenu else { continue }
+            if submenu.identifier?.rawValue == id { return submenu }
+            if let found = findMenu(id: id, in: submenu) { return found }
         }
         return nil
     }
@@ -702,6 +742,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if openModelMenu === menu {
             openModelMenu = nil
             openModelAgent = nil
+        }
+        if openServicesMenu === menu {
+            openServicesMenu = nil
         }
         // Release the menu so the next click routes through mainItemClicked
         // again (a lingering statusItem.menu bypasses the button action,
@@ -1080,6 +1123,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = nil
         let menu = NSMenu()
         menu.delegate = self
+
+        // ── Services & API keys — first item, so the key manager is one click away
+        addServicesSubmenu(to: menu)
+        menu.addItem(NSMenuItem.separator())
 
         if let actionError = colimaManager.actionError {
             let errorItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -3356,14 +3403,25 @@ extension AppDelegate: NSPopoverDelegate {
 }
 
 extension AppDelegate: NSMenuDelegate {    func menuNeedsUpdate(_ menu: NSMenu) {
-        guard let agentName = menu.identifier?.rawValue else { return }
+        guard let identifier = menu.identifier?.rawValue else { return }
+        if identifier == Self.servicesMenuID {
+            openServicesMenu = menu
+            populateServicesMenu(menu)
+            return
+        }
         openModelMenu = menu
-        openModelAgent = agentName
-        populateModelMenu(menu, agentName: agentName)
+        openModelAgent = identifier
+        populateModelMenu(menu, agentName: identifier)
     }
 
     private func populateModelMenu(_ menu: NSMenu, agentName: String) {
         menu.removeAllItems()
+
+        // Services first: every API-key service sits at the top so a key can be set
+        // without leaving the model menu.
+        if subworkerManager.providers.isEmpty { subworkerManager.fetchProviders() }
+        menu.addItem(makeServicesSubmenuItem())
+        menu.addItem(NSMenuItem.separator())
 
         // Local model sits above the hosted roster on purpose: it is the only
         // entry that works without the bridge catalog, so it must stay listed
@@ -3384,6 +3442,9 @@ extension AppDelegate: NSMenuDelegate {    func menuNeedsUpdate(_ menu: NSMenu) 
             menu.addItem(item)
             return
         }
+        // Self-heal: a roster cached while the engine was restarting (Zen-only) is
+        // refreshed on the next open instead of staying stale.
+        subworkerManager.refreshModelsIfStale()
 
         let currentModel = subworkerManager.currentModel(for: agentName)
         let currentVariant = subworkerManager.currentVariant(for: agentName)
@@ -3392,18 +3453,19 @@ extension AppDelegate: NSMenuDelegate {    func menuNeedsUpdate(_ menu: NSMenu) 
             ModelRow(id: $0.id, name: $0.name, provider: $0.provider)
         })
         for (index, group) in groups.enumerated() {
-            // Titled separator, so each provider reads as its own block.
-            if index > 0 {
-                let header = NSMenuItem.separator()
-                header.attributedTitle = emojiAwareTitle(group.provider, color: .secondaryLabelColor)
-                header.isEnabled = false
-                menu.addItem(header)
-            }
+            // A disabled item, not a separator: a titled NSMenuItem.separator() renders
+            // as a blank line on macOS, which made the groups look like one flat list.
+            let header = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            header.attributedTitle = emojiAwareTitle("▸ \(group.provider)  (\(group.rows.count))",
+                                                     color: .secondaryLabelColor)
+            header.isEnabled = false
+            menu.addItem(header)
             for m in group.rows {
                 guard let model = models.first(where: { $0.id == m.id }) else { continue }
                 menu.addItem(makeModelItem(model, agentName: agentName,
                                           currentModel: currentModel, currentVariant: currentVariant))
             }
+            if index < groups.count - 1 { menu.addItem(NSMenuItem.separator()) }
         }
     }
 
@@ -3448,6 +3510,169 @@ extension AppDelegate: NSMenuDelegate {    func menuNeedsUpdate(_ menu: NSMenu) 
             item.submenu = thinkMenu
         }
         return item
+    }
+
+    // MARK: - Services & API keys submenu
+
+    /// The Services entry, built fresh each time so the count is current. Used at the
+    /// top of the main dropdown and at the top of every agent's model submenu.
+    private func makeServicesSubmenuItem() -> NSMenuItem {
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        submenu.delegate = self
+        submenu.identifier = NSUserInterfaceItemIdentifier(Self.servicesMenuID)
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        let count = subworkerManager.providers.count
+        let suffix = count > 0 ? " (\(count))" : ""
+        item.attributedTitle = emojiAwareTitle("🔑 Services & API keys\(suffix)…", color: .labelColor)
+        item.submenu = submenu
+        return item
+    }
+
+    private func addServicesSubmenu(to menu: NSMenu) {
+        menu.addItem(makeServicesSubmenuItem())
+    }
+
+    private func populateServicesMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let services = subworkerManager.providers
+        guard !services.isEmpty else {
+            subworkerManager.fetchProviders()
+            let loading = NSMenuItem(title: "Loading services…", action: nil, keyEquivalent: "")
+            loading.isEnabled = false
+            menu.addItem(loading)
+            return
+        }
+
+        let header = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        header.attributedTitle = emojiAwareTitle("Services — multiple API keys per provider", color: .secondaryLabelColor)
+        header.isEnabled = false
+        menu.addItem(header)
+        menu.addItem(NSMenuItem.separator())
+
+        // Keyed services first, then connected, then the rest (catalogue order otherwise).
+        let ordered = services.sorted { a, b in
+            if a.hasKey != b.hasKey { return a.hasKey }
+            if a.connected != b.connected { return a.connected }
+            return a.id < b.id
+        }
+        for service in ordered {
+            menu.addItem(makeServiceItem(service))
+        }
+    }
+
+    private func makeServiceItem(_ s: ServiceInfo) -> NSMenuItem {
+        let count = s.keys.count
+        let badge = count == 0 ? "no key" : "\(count) key\(count == 1 ? "" : "s")"
+        let modelsSuffix = s.modelsCount > 0 ? " · \(s.modelsCount) models" : ""
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        item.attributedTitle = emojiAwareTitle("\(s.hasKey ? "✓" : "—") \(s.name)  [\(badge)\(modelsSuffix)]",
+                                               color: s.hasKey ? .labelColor : .secondaryLabelColor)
+
+        let sub = NSMenu()
+        sub.autoenablesItems = false
+
+        let addItem = NSMenuItem(title: "", action: #selector(addServiceKey(_:)), keyEquivalent: "")
+        addItem.attributedTitle = emojiAwareTitle("➕ Add API key…", color: .labelColor)
+        addItem.target = self
+        addItem.representedObject = s.id
+        sub.addItem(addItem)
+
+        if !s.keys.isEmpty {
+            sub.addItem(NSMenuItem.separator())
+            for key in s.keys {
+                let keyItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+                let label = key.label.isEmpty ? key.mask : "\(key.label) \(key.mask)"
+                keyItem.attributedTitle = emojiAwareTitle("\(key.active ? "●" : "○") \(label)",
+                                                          color: key.active ? .labelColor : .secondaryLabelColor)
+                let keySub = NSMenu()
+                keySub.autoenablesItems = false
+                if !key.active {
+                    let useItem = NSMenuItem(title: "", action: #selector(activateServiceKey(_:)), keyEquivalent: "")
+                    useItem.attributedTitle = emojiAwareTitle("✅ Use this key", color: .labelColor)
+                    useItem.target = self
+                    useItem.representedObject = ["service": s.id, "hash": key.hash]
+                    keySub.addItem(useItem)
+                }
+                let delItem = NSMenuItem(title: "", action: #selector(deleteServiceKey(_:)), keyEquivalent: "")
+                delItem.attributedTitle = emojiAwareTitle("➖ Remove this key", color: .systemRed)
+                delItem.target = self
+                delItem.representedObject = ["service": s.id, "hash": key.hash]
+                keySub.addItem(delItem)
+                keyItem.submenu = keySub
+                sub.addItem(keyItem)
+            }
+            sub.addItem(NSMenuItem.separator())
+            let clearItem = NSMenuItem(title: "", action: #selector(clearServiceKeys(_:)), keyEquivalent: "")
+            clearItem.attributedTitle = emojiAwareTitle("➖ Remove all keys", color: .systemRed)
+            clearItem.target = self
+            clearItem.representedObject = s.id
+            sub.addItem(clearItem)
+        }
+        item.submenu = sub
+        return item
+    }
+
+    @objc private func addServiceKey(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        promptForAPIKey(serviceID: id)
+    }
+
+    @objc private func activateServiceKey(_ sender: NSMenuItem) {
+        guard let info = sender.representedObject as? [String: String],
+              let id = info["service"], let hash = info["hash"] else { return }
+        subworkerManager.activateProviderKey(id, hash: hash)
+    }
+
+    @objc private func deleteServiceKey(_ sender: NSMenuItem) {
+        guard let info = sender.representedObject as? [String: String],
+              let id = info["service"], let hash = info["hash"] else { return }
+        subworkerManager.deleteProviderKey(id, hash: hash)
+    }
+
+    @objc private func clearServiceKeys(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        subworkerManager.clearProviderKeys(id)
+    }
+
+    /// Prompt for one API key. The value goes straight to the bridge; the app never
+    /// stores it. Add several keys on the same service — the active one is mirrored
+    /// into the engine config.
+    private func promptForAPIKey(serviceID: String) {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "API key for \(serviceID)"
+        alert.informativeText = "Stored in config-home/api-keys.json (0600, bridge side). "
+            + "Add several keys on the same service; the active one is mirrored into the engine."
+
+        // An NSAlert sizes itself to its accessoryView's frame. A plain container with
+        // explicit subview frames gives the fields a real width; an NSStackView whose
+        // arranged subviews carry no constraints collapsed them to a few points wide.
+        let width: CGFloat = 560
+        let fieldHeight: CGFloat = 26
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: width, height: fieldHeight * 2 + 8))
+
+        let keyField = NSSecureTextField(frame: NSRect(x: 0, y: fieldHeight + 8, width: width, height: fieldHeight))
+        keyField.placeholderString = "paste the API key"
+        keyField.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        keyField.cell?.wraps = false
+        keyField.cell?.isScrollable = true
+
+        let labelField = NSTextField(frame: NSRect(x: 0, y: 0, width: width, height: fieldHeight))
+        labelField.placeholderString = "label (optional)"
+        labelField.cell?.wraps = false
+        labelField.cell?.isScrollable = true
+
+        container.addSubview(keyField)
+        container.addSubview(labelField)
+        alert.accessoryView = container
+        alert.addButton(withTitle: "Add")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let key = keyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return }
+        let label = labelField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        subworkerManager.addProviderKey(serviceID, key: key, label: label)
     }
 }
 
