@@ -72,12 +72,14 @@ public struct DevinProcessResult {
 // buffer, and `devin models list --format json` returns ~472 KB today.
 public enum DevinProcess {
     public static func run(_ executable: URL, _ args: [String],
-                    timeout: TimeInterval) async throws -> DevinProcessResult {
+                    timeout: TimeInterval,
+                    currentDirectoryURL: URL? = nil) async throws -> DevinProcessResult {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
                 process.executableURL = executable
                 process.arguments = args
+                process.currentDirectoryURL = currentDirectoryURL
                 var env = ProcessInfo.processInfo.environment
                 env["PATH"] = [
                     "/opt/homebrew/bin", "/usr/local/bin",

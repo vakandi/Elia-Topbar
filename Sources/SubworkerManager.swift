@@ -888,6 +888,12 @@ final class SubworkerManager: ObservableObject {
     ///   that run. The bridge takes it verbatim, so the caller must send the
     ///   full prompt — see `VoicePromptBuilder`.
     func triggerSubworker(_ name: String, prompt: String? = nil) {
+        // Devin-direct routing: when the CLI config carries a model, agent
+        // runs go straight to `devin -p` and never touch this bridge.
+        if DevinRunner.shared.isEnabled {
+            DevinRunner.shared.run(agent: name, prompt: prompt)
+            return
+        }
         guard let url = URL(string: "\(baseURL)/trigger/\(name)") else { return }
         AppLog.d("Triggering subworker: \(name)")
         var request = EliaAuth.authorize(url)
