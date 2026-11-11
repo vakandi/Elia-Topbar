@@ -889,9 +889,26 @@ final class SubworkerManager: ObservableObject {
     ///   full prompt — see `VoicePromptBuilder`.
     func triggerSubworker(_ name: String, prompt: String? = nil) {
         // Devin-direct routing: when the CLI config carries a model, agent
-        // runs go straight to `devin -p` and never touch this bridge.
+        // runs go straight to `devin acp` and never touch this bridge. The
+        // running flag is flipped locally — it is what drives the topbar
+        // icon, the menu status line, the notch island and the run popup.
         if DevinRunner.shared.isEnabled {
-            DevinRunner.shared.run(agent: name, prompt: prompt)
+            if let idx = subworkers.firstIndex(where: { $0.name == name }) {
+                subworkers[idx].running = true
+                subworkers[idx].lastError = nil
+                recalculateCounts()
+            }
+            DevinRunner.shared.run(agent: name, prompt: prompt) { [weak self] agent, error in
+                guard let self,
+                      let idx = self.subworkers.firstIndex(where: { $0.name == agent })
+                else { return }
+                self.subworkers[idx].running = false
+                if let error, !error.isEmpty {
+                    self.subworkers[idx].lastError = error
+                    self.lastError = "\(agent): \(error)"
+                }
+                self.recalculateCounts()
+            }
             return
         }
         guard let url = URL(string: "\(baseURL)/trigger/\(name)") else { return }

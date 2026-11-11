@@ -110,6 +110,11 @@ EliaTopBarApp.swift (AppDelegate)
   │     ├── subworkers: [SubworkerInfo]
   │     ├── serverHealth: ServerHealth
   │     └── modelSelections (reads/writes ~/EliaAI/ui_electron/model-selections.json)
+  │     └── DevinRunner intercept: when ~/.config/devin/config.json has
+  │         agent.model, triggerSubworker spawns `devin acp` instead of
+  │         POST /trigger — ACP session/update notifications are translated
+  │         into LivestreamStore deltas (same contract as run_log) and
+  │         subworkers[].running flips locally so icon/menu/popup still work.
   ├── OpenCodeServerManager ──CLI──▶ subworker-opencode-rust/server :5655 (start/stop/health)
   ├── ColimaManager ──CLI──▶ colima status/start/stop/delete/ssh
   ├── ProfilePhotos ──FileSystem──▶ ~/Library/Application Support/EliaTopBar/agent_photos/
