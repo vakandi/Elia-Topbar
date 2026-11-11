@@ -2597,16 +2597,21 @@ if let popover = subworkerLogPopover {
         localModelWindow = window
     }
 
-    /// Devin CLI account & model chooser. Sits next to the local-model entry:
-    /// it manages the `devin` account pool (via devin-reset) plus the model
-    /// catalog the CLI itself reports.
+    /// Devin CLI model picker. Sits next to the local-model entry: shows the
+    /// logged-in `devin` account and its last-known quota, and Apply writes
+    /// the chosen model straight into ~/.config/devin/config.json. Account
+    /// switching stays a manual `devin-reset` operation — never exposed here.
     @objc private func openDevinChooser(_ sender: NSMenuItem) {
         guard let agentName = sender.representedObject as? String else { return }
 
         let rootView = DevinAccountModelView(
             agentName: agentName,
             currentModel: subworkerManager.currentModel(for: agentName),
-            onClose: { [weak self] in self?.devinWindow?.close() },
+            onClose: { [weak self] in
+                guard let win = self?.devinWindow else { return }
+                win.contentView = nil
+                DispatchQueue.main.async { win.close() }
+            },
             onApply: { [weak self] account, variant in
                 guard let self else { return }
                 UserDefaults.standard.set(variant.modelUID, forKey: "devin.model")
@@ -2625,7 +2630,14 @@ if let popover = subworkerLogPopover {
                         message: "Saved, but config write failed: \(error.localizedDescription)",
                         spinning: false, autoHideAfter: 6)
                 }
-                self.devinWindow?.close()
+                // Closing the NSWindow synchronously inside the Apply callback
+                // crashed AppKit: _postWindowNeedsUpdateConstraints fired while
+                // the SwiftUI hosting view was still mid-layout. Tear the view
+                // down first, then close on the next runloop tick.
+                if let win = self.devinWindow {
+                    win.contentView = nil
+                    DispatchQueue.main.async { win.close() }
+                }
                 self.setupMenu()
             }
         )

@@ -64,58 +64,9 @@ struct DevinQuotaBar: View {
     }
 }
 
-// MARK: - Status dot
+// MARK: - Time formatting
 
-struct DevinStatusDot: View {
-    let status: DevinAccountStatus
-    let checked: String?
-
-    private var color: Color {
-        if checked == "dead" { return .red }
-        switch status {
-        case .active: return .green
-        case .available: return .green
-        case .dailyReached, .weeklyReached: return .orange
-        case .stale, .unknown: return .gray
-        }
-    }
-
-    var body: some View {
-        Circle().fill(color).frame(width: 7, height: 7)
-    }
-}
-
-// MARK: - Account card
-
-struct DevinAccountCard: View {
-    let account: DevinAccount
-    let status: DevinAccountStatus
-    let selected: Bool
-    let switching: Bool
-    let onSelect: () -> Void
-
-    private var footline: String {
-        let uses = account.uses.map { "\($0) uses" } ?? "never used"
-        switch status {
-        case .active:
-            return "ACTIVE · \(uses)"
-        case .available:
-            return "Available · \(uses)"
-        case .dailyReached(let reset):
-            return "Daily quota reached · resets \(Self.until(reset))"
-        case .weeklyReached(let reset):
-            return "Weekly quota reached · resets \(Self.until(reset))"
-        case .stale(let checked):
-            if let checked {
-                let days = Int(Date().timeIntervalSince(checked) / 86400)
-                return "Usage unknown · checked \(days <= 0 ? "today" : "\(days) d ago")"
-            }
-            return "Usage unknown"
-        case .unknown:
-            return "Usage unknown · \(uses)"
-        }
-    }
-
+enum DevinTime {
     static func until(_ date: Date) -> String {
         let secs = max(0, date.timeIntervalSinceNow)
         let h = Int(secs) / 3600
@@ -123,57 +74,6 @@ struct DevinAccountCard: View {
         if h >= 24 { return "in \(h / 24)d \(h % 24)h" }
         if h > 0 { return "in \(h)h \(m)m" }
         return "in \(m)m"
-    }
-
-    var body: some View {
-        Button(action: onSelect) {
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(spacing: 7) {
-                    Text(String(account.email.prefix(1)).uppercased())
-                        .font(.system(size: 11, weight: .bold))
-                        .frame(width: 22, height: 22)
-                        .background(Color.accentColor.opacity(0.16), in: Circle())
-                    Text(account.email)
-                        .font(.system(size: 12, weight: .medium))
-                        .lineLimit(1).truncationMode(.middle)
-                    Spacer(minLength: 2)
-                    if status == .active {
-                        Text("ACTIVE")
-                            .font(.system(size: 8, weight: .bold))
-                            .padding(.horizontal, 5).padding(.vertical, 2)
-                            .background(Color.green.opacity(0.18), in: Capsule())
-                            .foregroundColor(.green)
-                    }
-                    DevinStatusDot(status: status, checked: account.checked)
-                }
-
-                if let usage = account.usage {
-                    DevinQuotaBar(label: "D", percent: usage.dailyRemainingPct)
-                    DevinQuotaBar(label: "W", percent: usage.weeklyRemainingPct)
-                }
-
-                Text(footline)
-                    .font(.system(size: 9.5))
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-            }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: 104, alignment: .top)
-            .background(
-                RoundedRectangle(cornerRadius: 11)
-                    .fill(Color.primary.opacity(selected ? 0.075 : 0.045))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 11)
-                    .stroke(selected || status == .active
-                            ? Color.accentColor.opacity(status == .active ? 0.9 : 0.55)
-                            : .clear,
-                            lineWidth: status == .active ? 1.5 : 1)
-            )
-        }
-        .buttonStyle(.plain)
-        .disabled(switching)
     }
 }
 

@@ -21,16 +21,15 @@ public enum DevinPaths {
         let key: String
         switch name {
         case "devin": key = "devin.binaryPath"
-        case "devin-reset": key = "devin.helperPath"
         default: return nil
         }
         let value = UserDefaults.standard.string(forKey: key) ?? ""
         return value.isEmpty ? nil : value
     }
 
-    /// `devin` and `devin-reset` live in ~/.local/bin on this machine; the
-    /// other two entries are the usual Homebrew prefixes. PATH alone is not
-    /// trusted because a launchd-started app inherits a minimal environment.
+    /// `devin` lives in ~/.local/bin on this machine; the other two entries
+    /// are the usual Homebrew prefixes. PATH alone is not trusted because a
+    /// launchd-started app inherits a minimal environment.
     public static func locate(_ name: String) -> URL? {
         if let override = overridePath(for: name),
            FileManager.default.isExecutableFile(atPath: override) {
@@ -186,13 +185,11 @@ public enum DevinConfig {
 
 public enum DevinError: LocalizedError {
     case binaryMissing
-    case helperMissing
     case message(String)
 
     public var errorDescription: String? {
         switch self {
         case .binaryMissing: return "devin not found. Install it, or use Locate…"
-        case .helperMissing: return "devin-reset not found. Account switching is disabled."
         case .message(let text): return text
         }
     }

@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - Pool models (devin-reset --json list)
+// MARK: - Account model (the logged-in `devin` account only)
 
 public struct DevinUsageSnapshot: Decodable, Hashable {
     public let dailyRemainingPct: Int
@@ -60,20 +60,10 @@ public struct DevinAccount: Decodable, Identifiable, Hashable {
     }
 }
 
-public struct DevinPool: Decodable {
-    public let current: String?
-    public let accounts: [DevinAccount]
+// MARK: - Cached state
 
-    public init(current: String?, accounts: [DevinAccount]) {
-        self.current = current
-        self.accounts = accounts
-    }
-}
-
-// MARK: - Cached state (reset_state.json, fallback path only)
-
-/// Mirrors ~/.local/share/devin/reset_state.json. This file is a usage cache,
-/// not the account pool — it is only read when devin-reset is absent.
+/// Mirrors ~/.local/share/devin/reset_state.json — a usage cache written by
+/// external tooling. Only the current account's entry is ever read from it.
 public struct DevinCachedState: Decodable {
     public struct Identity: Decodable {
         public let name: String?
@@ -142,70 +132,6 @@ public struct DevinCachedState: Decodable {
             if let date = f.date(from: iso) { return date.timeIntervalSince1970 }
         }
         return nil
-    }
-}
-
-// MARK: - Status derivation (one place, every badge reads it)
-
-public enum DevinAccountStatus: Equatable {
-    case active
-    case available
-    case dailyReached(reset: Date)
-    case weeklyReached(reset: Date)
-    case stale(checked: Date?)
-    case unknown
-}
-
-public extension DevinAccount {
-    func status(activeEmail: String?, now: Date = Date()) -> DevinAccountStatus {
-        if let active = activeEmail, !active.isEmpty,
-           email.caseInsensitiveCompare(active) == .orderedSame { return .active }
-        guard let usage else { return .unknown }
-        if let fetched = usage.fetchedAtEpoch {
-            let age = now.timeIntervalSince1970 - fetched
-            if age > 24 * 3600 { return .stale(checked: Date(timeIntervalSince1970: fetched)) }
-        }
-        if usage.weeklyRemainingPct <= 0 {
-            return .weeklyReached(reset: Date(timeIntervalSince1970: usage.weeklyResetAt))
-        }
-        if usage.dailyRemainingPct <= 0 {
-            return .dailyReached(reset: Date(timeIntervalSince1970: usage.dailyResetAt))
-        }
-        return .available
-    }
-
-    /// Deterministic order: active first, then available by daily quota
-    /// descending, then quota-reached by soonest reset, then stale/unknown,
-    /// then email. No jitter between refreshes.
-    static func sortPool(_ accounts: [DevinAccount], activeEmail: String?,
-                         now: Date = Date()) -> [DevinAccount] {
-        func rank(_ a: DevinAccount) -> Int {
-            switch a.status(activeEmail: activeEmail, now: now) {
-            case .active: return 0
-            case .available: return 1
-            case .dailyReached, .weeklyReached: return 2
-            case .stale, .unknown: return 3
-            }
-        }
-        return accounts.sorted { a, b in
-            let ra = rank(a), rb = rank(b)
-            if ra != rb { return ra < rb }
-            switch (a.status(activeEmail: activeEmail, now: now),
-                    b.status(activeEmail: activeEmail, now: now)) {
-            case (.available, .available):
-                let da = a.usage?.dailyRemainingPct ?? -1
-                let db = b.usage?.dailyRemainingPct ?? -1
-                if da != db { return da > db }
-            case (.dailyReached(let xa), .dailyReached(let xb)):
-                if xa != xb { return xa < xb }
-            case (.weeklyReached(let xa), .weeklyReached(let xb)):
-                if xa != xb { return xa < xb }
-            case (.stale(let ca), .stale(let cb)):
-                if ca != cb { return (ca ?? .distantPast) < (cb ?? .distantPast) }
-            default: break
-            }
-            return a.email.localizedCaseInsensitiveCompare(b.email) == .orderedAscending
-        }
     }
 }
 
@@ -290,78 +216,65 @@ public struct DevinCatalog: Decodable {
     public let families: [DevinModelFamily]
 }
 
-// MARK: - Switch events (devin-reset --json-events)
-
-public struct DevinSwitchEvent: Decodable {
-    public let event: String
-    public let phase: String?
-    public let ok: Bool?
-    public let detail: String?
-    public let email: String?
-}
-
 // MARK: - CLI calls
 
 public enum DevinCLI {
-    /// The authoritative pool: the helper's --json list. Falls back to the
-    /// cached reset_state.json when devin-reset is absent — a usage cache,
-    /// never presented as the real pool.
-    public static func loadPool() async throws -> DevinPool {
-        if let helper = DevinPaths.locate("devin-reset") {
-            // `list` is a positional `pick` argument, not a subcommand: the flag
-            // must come first, or argparse reads "list" as an email.
-            let result = try await DevinProcess.run(
-                helper, ["--list", "--json"], timeout: 20
-            )
-            guard result.status == 0 else {
-                throw DevinError.message(result.stderr.isEmpty ? result.stdout : result.stderr)
-            }
-            return try JSONDecoder().decode(DevinPool.self, from: Data(result.stdout.utf8))
-        }
-        return try loadCachedPool()
-    }
-
-    public static func hasHelper() -> Bool {
-        DevinPaths.locate("devin-reset") != nil
-    }
-
     public static func hasCLI() -> Bool {
         DevinPaths.locate("devin") != nil
     }
 
-    private static func loadCachedPool() throws -> DevinPool {
-        let data = try Data(contentsOf: DevinPaths.stateFile)
-        let state = try JSONDecoder().decode(DevinCachedState.self, from: data)
-        let current = try? activeEmailFromAuthStatus()
-        let accounts = state.accounts.map { email, entry in
-            DevinAccount(
-                email: email,
-                name: entry.identity?.name,
-                plan: entry.identity?.plan,
-                checked: nil,
-                lastUsedEpoch: entry.lastUsed.flatMap(DevinCachedState.epoch(from:)),
-                lastMintEpoch: entry.lastMint.flatMap(DevinCachedState.epoch(from:)),
-                uses: entry.uses,
-                usage: entry.usage?.withEpochs()
-            )
-        }.sorted { $0.email.localizedCaseInsensitiveCompare($1.email) == .orderedAscending }
-        return DevinPool(current: current, accounts: accounts)
-    }
-
-    /// The only text parse in the feature, and only on the fallback path (no
-    /// helper). The helper returns `current` as JSON, so the normal path
-    /// never scrapes this output.
-    public static func activeEmailFromAuthStatus() throws -> String? {
+    /// Identity of the logged-in account, straight from `devin auth status`.
+    /// This is the ONLY account the app knows about — account switching is a
+    /// manual `devin-reset` operation and is deliberately not exposed here.
+    public static func currentIdentity() throws -> (email: String, name: String?, plan: String?)? {
         guard let binary = DevinPaths.locate("devin") else { throw DevinError.binaryMissing }
         let result = try DevinProcess.runSync(binary, ["auth", "status"], timeout: 8)
         guard result.status == 0 else { return nil }
+        var email: String?, name: String?, plan: String?
         for line in result.stdout.split(separator: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard trimmed.hasPrefix("Email:") else { continue }
-            return String(trimmed.dropFirst("Email:".count))
-                .trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("Email:") {
+                email = String(trimmed.dropFirst("Email:".count))
+                    .trimmingCharacters(in: .whitespaces)
+            } else if trimmed.hasPrefix("Name:") {
+                name = String(trimmed.dropFirst("Name:".count))
+                    .trimmingCharacters(in: .whitespaces)
+            } else if trimmed.hasPrefix("Plan:") {
+                plan = String(trimmed.dropFirst("Plan:".count))
+                    .trimmingCharacters(in: .whitespaces)
+            }
         }
-        return nil
+        guard let email, !email.isEmpty else { return nil }
+        return (email, name, plan)
+    }
+
+    /// Last-known quota for ONE account, read from the local usage cache.
+    /// Only the current account's entry is ever extracted — the file's other
+    /// accounts are never surfaced.
+    public static func cachedUsage(for email: String) -> DevinUsageSnapshot? {
+        guard let data = try? Data(contentsOf: DevinPaths.stateFile),
+              let state = try? JSONDecoder().decode(DevinCachedState.self, from: data),
+              let entry = state.accounts[email] else { return nil }
+        return entry.usage?.withEpochs()
+    }
+
+    /// The account card data: auth status identity + cached quota snapshot.
+    public static func currentAccount() throws -> DevinAccount? {
+        guard let identity = try currentIdentity() else { return nil }
+        let cached = try? JSONDecoder().decode(
+            DevinCachedState.self,
+            from: Data(contentsOf: DevinPaths.stateFile)
+        )
+        let entry = cached?.accounts[identity.email]
+        return DevinAccount(
+            email: identity.email,
+            name: identity.name ?? entry?.identity?.name,
+            plan: identity.plan ?? entry?.identity?.plan,
+            lastUsedEpoch: entry?.lastUsed.flatMap(DevinCachedState.epoch(from:)),
+            lastMintEpoch: entry?.lastMint.flatMap(DevinCachedState.epoch(from:)),
+            uses: entry?.uses,
+            usage: entry?.usage?.withEpochs()
+        )
     }
 
     public static func loadCatalog() async throws -> [DevinModelFamily] {
@@ -372,90 +285,5 @@ public enum DevinCLI {
         guard result.status == 0 else { throw DevinError.message(result.stderr) }
         let catalog = try JSONDecoder().decode(DevinCatalog.self, from: Data(result.stdout.utf8))
         return catalog.families
-    }
-
-    /// Streams NDJSON phase events while devin-reset switches the account.
-    /// There is no cancel: killing the helper between logout and write can
-    /// leave the CLI with no credential. `onEvent` fires on a pipe queue —
-    /// callers must hop to the main actor before touching UI state.
-    public static func switchAccount(
-        to email: String,
-        alsoUpdateApp: Bool = true,
-        onEvent: @escaping @Sendable (DevinSwitchEvent) -> Void
-    ) async throws {
-        guard let helper = DevinPaths.locate("devin-reset") else { throw DevinError.helperMissing }
-        var args = ["--json-events"]
-        if !alsoUpdateApp { args.append("--no-app") }
-        args.append(email)
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            let process = Process()
-            process.executableURL = helper
-            process.arguments = args
-            var env = ProcessInfo.processInfo.environment
-            env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:\(NSHomeDirectory())/.local/bin:"
-                + (env["PATH"] ?? "/usr/bin:/bin")
-            process.environment = env
-
-            let out = Pipe(), err = Pipe()
-            process.standardOutput = out
-            process.standardError = err
-
-            var buffer = Data()
-            var errData = Data()
-            var finished = false
-            let lock = NSLock()
-            let errLock = NSLock()
-
-            // stderr is drained too: the helper is quiet, but a Python
-            // traceback longer than the 64 KB pipe buffer would block the
-            // child and hang the continuation with no timeout.
-            err.fileHandleForReading.readabilityHandler = { handle in
-                let chunk = handle.availableData
-                guard !chunk.isEmpty else { return }
-                errLock.lock(); errData.append(chunk); errLock.unlock()
-            }
-
-            func finish(_ result: Result<Void, Error>) {
-                lock.lock(); defer { lock.unlock() }
-                guard !finished else { return }
-                finished = true
-                continuation.resume(with: result)
-            }
-
-            out.fileHandleForReading.readabilityHandler = { handle in
-                let chunk = handle.availableData
-                guard !chunk.isEmpty else { return }
-                buffer.append(chunk)
-                while let newline = buffer.firstIndex(of: 0x0A) {
-                    let line = buffer[..<newline]
-                    buffer.removeSubrange(...newline)
-                    guard !line.isEmpty,
-                          let event = try? JSONDecoder().decode(DevinSwitchEvent.self, from: line)
-                    else { continue }
-                    onEvent(event)
-                    if event.event == "done" { finish(.success(())) }
-                    if event.event == "error" {
-                        finish(.failure(DevinError.message(event.detail ?? "switch failed")))
-                    }
-                }
-            }
-
-            process.terminationHandler = { proc in
-                out.fileHandleForReading.readabilityHandler = nil
-                err.fileHandleForReading.readabilityHandler = nil
-                let remaining = err.fileHandleForReading.readDataToEndOfFile()
-                errLock.lock()
-                if !remaining.isEmpty { errData.append(remaining) }
-                let tail = String(data: errData, encoding: .utf8) ?? ""
-                errLock.unlock()
-                if proc.terminationStatus == 0 {
-                    finish(.success(()))
-                } else {
-                    finish(.failure(DevinError.message(tail.isEmpty ? "switch failed" : tail)))
-                }
-            }
-
-            do { try process.run() } catch { finish(.failure(error)) }
-        }
     }
 }
