@@ -147,8 +147,12 @@ enum AudioLevels {
     /// The raw interleaved bytes of a PCM buffer, for the WAV writer.
     static func rawBytes(_ buffer: AVAudioPCMBuffer) -> Data {
         if let ints = buffer.int16ChannelData, buffer.format.isInterleaved {
+            // `int16ChannelData` is an array of channel pointers, not the
+            // samples themselves. Copying `ints` copied the pointer table
+            // (8 bytes per entry) into the WAV: Whisper then heard heap
+            // addresses instead of speech and hallucinated subtitles.
             let count = Int(buffer.frameLength) * Int(buffer.format.channelCount)
-            return Data(bytes: ints, count: count * MemoryLayout<Int16>.size)
+            return Data(bytes: ints[0], count: count * MemoryLayout<Int16>.size)
         }
         if let ints = buffer.int16ChannelData {
             // Non-interleaved: merge the channels.

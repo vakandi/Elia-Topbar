@@ -114,6 +114,7 @@ final class SpeechAnalyzerService: VoiceAnalyzerFeeding {
             return
         }
         try await request.downloadAndInstall()
+        _ = try? await AssetInventory.reserve(locale: locale)
     }
 
     // MARK: - Session
@@ -157,6 +158,12 @@ final class SpeechAnalyzerService: VoiceAnalyzerFeeding {
         guard status == .installed else {
             throw ServiceError.assetMissing
         }
+
+        // Apple's setup sequence reserves the locale before building the
+        // analyzer. Without the reservation the streaming session can be
+        // refused with `RecogRejected` even though the asset is installed.
+        let reserved = (try? await AssetInventory.reserve(locale: locale)) ?? false
+        AppLog.important("voice: analyzer: locale reserved=\(reserved)")
 
         AppLog.important("voice: analyzer: looking for a format")
         guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: modules) else {
