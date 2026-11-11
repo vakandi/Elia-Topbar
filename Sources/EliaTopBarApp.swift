@@ -70,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var scheduleWindow: NSWindow?
     private var localModelWindow: NSWindow?
+    private var devinWindow: NSWindow?
     private var colimaManager: ColimaManager!
     private var opencodeServerManager: OpenCodeServerManager!
     private var subworkerManager: SubworkerManager!
@@ -205,6 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             || (topbarSettingsWindow?.isVisible ?? false)
             || (scheduleWindow?.isVisible ?? false)
             || (localModelWindow?.isVisible ?? false)
+            || (devinWindow?.isVisible ?? false)
             || (tunnelProgressController != nil)
             || subworkerManager.runningCount > 0
     }
@@ -2595,6 +2597,66 @@ if let popover = subworkerLogPopover {
         localModelWindow = window
     }
 
+    /// Devin CLI account & model chooser. Sits next to the local-model entry:
+    /// it manages the `devin` account pool (via devin-reset) plus the model
+    /// catalog the CLI itself reports.
+    @objc private func openDevinChooser(_ sender: NSMenuItem) {
+        guard let agentName = sender.representedObject as? String else { return }
+
+        let rootView = DevinAccountModelView(
+            agentName: agentName,
+            currentModel: subworkerManager.currentModel(for: agentName),
+            onClose: { [weak self] in self?.devinWindow?.close() },
+            onApply: { [weak self] account, variant in
+                guard let self else { return }
+                UserDefaults.standard.set(variant.modelUID, forKey: "devin.model")
+                UserDefaults.standard.set(account.email, forKey: "devin.account")
+
+                // The Rust engine has no devin-cli provider yet: when the
+                // roster advertises one the choice routes through the normal
+                // model pipeline, otherwise it stays a saved preference and
+                // the toast says so honestly.
+                let routed = self.subworkerManager.availableModels
+                    .contains { $0.provider == "devin-cli" }
+                if routed {
+                    self.subworkerManager.setModel(
+                        "devin-cli/\(variant.modelUID)", variant: "", for: agentName
+                    )
+                    self.showTopbarToast(emoji: "🧠",
+                        message: "\(agentName) → \(variant.label)", spinning: false, autoHideAfter: 5)
+                } else {
+                    self.showTopbarToast(emoji: "🧠",
+                        message: "Devin model saved — engine routing not wired yet",
+                        spinning: false, autoHideAfter: 6)
+                }
+                self.devinWindow?.close()
+                self.setupMenu()
+            }
+        )
+
+        if let window = devinWindow {
+            let host = NSHostingView(rootView: rootView)
+            window.contentView = host
+            window.setContentSize(host.fittingSize)
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 660),
+                              styleMask: [.titled, .closable],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.title = "Devin CLI"
+        let host = NSHostingView(rootView: rootView)
+        window.contentView = host
+        window.setContentSize(host.fittingSize)
+        window.center()
+        window.level = .floating
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        devinWindow = window
+    }
+
     @objc private func openScheduleEditor(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
         let rootView = SchedulePopoverView(
@@ -3431,6 +3493,23 @@ extension AppDelegate: NSMenuDelegate {    func menuNeedsUpdate(_ menu: NSMenu) 
         localItem.target = self
         localItem.representedObject = agentName
         menu.addItem(localItem)
+
+        // Devin chooser: same always-present rule — it does not depend on the
+        // bridge roster either. The title carries the saved model when set.
+        let devinTitle: String
+        if let savedModel = UserDefaults.standard.string(forKey: "devin.model"),
+           !savedModel.isEmpty {
+            let savedAccount = UserDefaults.standard.string(forKey: "devin.account") ?? ""
+            let local = savedAccount.split(separator: "@").first.map(String.init) ?? savedAccount
+            devinTitle = "🧠 Devin CLI — \(local) · \(savedModel)…"
+        } else {
+            devinTitle = "🧠 Devin CLI — account & model…"
+        }
+        let devinItem = NSMenuItem(title: "", action: #selector(openDevinChooser(_:)), keyEquivalent: "")
+        devinItem.attributedTitle = emojiAwareTitle(devinTitle, color: .labelColor)
+        devinItem.target = self
+        devinItem.representedObject = agentName
+        menu.addItem(devinItem)
         menu.addItem(NSMenuItem.separator())
 
         let models = subworkerManager.availableModels

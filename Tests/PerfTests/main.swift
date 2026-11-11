@@ -385,6 +385,171 @@ do {
           VoiceSuffixPrompt.defaultText.contains("macos-popup show_popup"))
 }
 
+// --- Devin account & model chooser -----------------------------------------
+
+// decode a DevinPool fixture: two accounts, one with usage: null
+do {
+    let json = """
+    {"current":"a@example.com","accounts":[
+      {"email":"a@example.com","name":"A","plan":"Free","checked":"logged_in",
+       "last_used_epoch":1762886108,"uses":2,
+       "usage":{"daily_remaining_pct":0,"weekly_remaining_pct":59,
+                "daily_reset_at":1794470400,"weekly_reset_at":1794729600,
+                "fetched_at_epoch":1762886124}},
+      {"email":"b@example.com","name":null,"plan":null,"checked":"unknown",
+       "last_used_epoch":null,"uses":null,"usage":null}
+    ]}
+    """
+    let pool = try! JSONDecoder().decode(DevinPool.self, from: Data(json.utf8))
+    check("DevinPool decodes current + accounts", pool.current == "a@example.com" && pool.accounts.count == 2)
+    check("usage:null decodes as nil", pool.accounts[1].usage == nil)
+    check("epoch fields decode", pool.accounts[0].usage?.dailyRemainingPct == 0
+          && pool.accounts[0].usage?.fetchedAtEpoch == 1762886124)
+}
+
+// catalog decode: free-first is a view concern; the fixture carries exactly
+// one cost_tier "Free" variant and the code hardcodes no model IDs.
+do {
+    let json = """
+    {"families":[
+      {"family_label":"SWE-2 Flash","family_uid":"swe-2-flash","slug":"swe-2-flash","aliases":[],
+       "variants":[
+         {"model_uid":"swe-2-flash-medium","label":"SWE-2 Flash Medium",
+          "cost_tier":"Free","max_context_tokens":262144,"max_output_tokens":131072,
+          "is_new":false,"is_beta":false},
+         {"model_uid":"swe-2-flash-high","label":"SWE-2 Flash High",
+          "cost_summary":"$1 / 1M","max_context_tokens":262144,
+          "is_new":true,"is_beta":false}
+       ]},
+      {"family_label":"Adaptive","family_uid":"Adaptive","slug":"adaptive","aliases":[],
+       "variants":[
+         {"model_uid":"adaptive","label":"Adaptive",
+          "cost_summary":"$0.5 / 1M","is_new":false,"is_beta":false}
+       ]}
+    ]}
+    """
+    let catalog = try! JSONDecoder().decode(DevinCatalog.self, from: Data(json.utf8))
+    let all = catalog.families.flatMap(\.variants)
+    check("catalog decodes families + variants", catalog.families.count == 2 && all.count == 3)
+    check("exactly one variant is Free", all.filter(\.isFree).count == 1)
+    check("Free variant flags is_new=false, high is_new=true",
+          all.first { $0.isFree }?.isNew == false && all.first { $0.modelUID == "swe-2-flash-high" }?.isNew == true)
+    check("context chip formats", all.first?.contextChip == "262K")
+    check("cost_summary with $ is not a capsule case",
+          all.first { $0.modelUID == "adaptive" }?.costSummary?.contains("$") == true)
+}
+
+// status derivation: the five states, one function
+do {
+    let now = Date()
+    let fresh = now.timeIntervalSince1970
+    let old = now.timeIntervalSince1970 - 25 * 3600
+
+    let active = DevinAccount(email: "me@x.com",
+        usage: DevinUsageSnapshot(dailyRemainingPct: 50, weeklyRemainingPct: 50,
+                                  dailyResetAt: fresh + 3600, weeklyResetAt: fresh + 3600,
+                                  fetchedAtEpoch: fresh))
+    check("active email wins over quota state",
+          active.status(activeEmail: "ME@x.com", now: now) == .active)
+
+    let daily = DevinAccount(email: "d@x.com",
+        usage: DevinUsageSnapshot(dailyRemainingPct: 0, weeklyRemainingPct: 59,
+                                  dailyResetAt: fresh + 3600, weeklyResetAt: fresh + 3600,
+                                  fetchedAtEpoch: fresh))
+    if case .dailyReached = daily.status(activeEmail: "other@x.com", now: now) {
+        check("0 daily remaining -> dailyReached", true)
+    } else { check("0 daily remaining -> dailyReached", false) }
+
+    let weekly = DevinAccount(email: "w@x.com",
+        usage: DevinUsageSnapshot(dailyRemainingPct: 50, weeklyRemainingPct: 0,
+                                  dailyResetAt: fresh + 3600, weeklyResetAt: fresh + 3600,
+                                  fetchedAtEpoch: fresh))
+    if case .weeklyReached = weekly.status(activeEmail: "other@x.com", now: now) {
+        check("0 weekly remaining -> weeklyReached", true)
+    } else { check("0 weekly remaining -> weeklyReached", false) }
+
+    let stale = DevinAccount(email: "s@x.com",
+        usage: DevinUsageSnapshot(dailyRemainingPct: 50, weeklyRemainingPct: 50,
+                                  dailyResetAt: fresh + 3600, weeklyResetAt: fresh + 3600,
+                                  fetchedAtEpoch: old))
+    if case .stale = stale.status(activeEmail: "other@x.com", now: now) {
+        check("25h old snapshot -> stale", true)
+    } else { check("25h old snapshot -> stale", false) }
+
+    let noUsage = DevinAccount(email: "n@x.com")
+    check("no usage -> unknown", noUsage.status(activeEmail: "other@x.com", now: now) == .unknown)
+}
+
+// sorting is deterministic across two runs
+do {
+    let now = Date()
+    let t = now.timeIntervalSince1970
+    func acct(_ email: String, _ d: Int, _ w: Int, fetched: Double? = nil) -> DevinAccount {
+        DevinAccount(email: email,
+            usage: DevinUsageSnapshot(dailyRemainingPct: d, weeklyRemainingPct: w,
+                                      dailyResetAt: t + 3600, weeklyResetAt: t + 7200,
+                                      fetchedAtEpoch: fetched ?? t))
+    }
+    let pool = [
+        acct("z@x.com", 10, 90), acct("a@x.com", 80, 90), acct("m@x.com", 80, 90),
+        DevinAccount(email: "no@x.com"),
+        acct("old@x.com", 5, 5, fetched: t - 30 * 3600),
+    ]
+    let s1 = DevinAccount.sortPool(pool, activeEmail: "a@x.com", now: now).map(\.email)
+    let s2 = DevinAccount.sortPool(pool, activeEmail: "a@x.com", now: now).map(\.email)
+    check("sort is stable across runs", s1 == s2, "\(s1) vs \(s2)")
+    check("active sorts first", s1.first == "a@x.com", "got \(s1.first ?? "nil")")
+    check("available sorted by daily desc before unknown",
+          s1.firstIndex(of: "m@x.com")! < s1.firstIndex(of: "no@x.com")!)
+    check("stale sorts last", s1.last == "old@x.com", "got \(s1.last ?? "nil")")
+}
+
+// process runner drains >64KB without deadlocking, and timeout kills
+do {
+    let sh = URL(fileURLWithPath: "/bin/sh")
+    let start = Date()
+    let big: DevinProcessResult
+    do {
+        big = try DevinProcess.runSync(sh, ["-c", "head -c 500000 /dev/zero | base64"], timeout: 30)
+    } catch {
+        check("500KB drain runs", false, "\(error)")
+        big = DevinProcessResult(status: -1, stdout: "", stderr: "")
+    }
+    let elapsed = Date().timeIntervalSince(start)
+    check("500KB output drains without hanging",
+          big.status == 0 && big.stdout.count > 500_000,
+          "status=\(big.status) bytes=\(big.stdout.count)")
+    check("500KB drain stays fast", elapsed < 10, "took \(elapsed)s")
+}
+
+do {
+    let sh = URL(fileURLWithPath: "/bin/sh")
+    let start = Date()
+    _ = try? DevinProcess.runSync(sh, ["-c", "sleep 10"], timeout: 1)
+    let elapsed = Date().timeIntervalSince(start)
+    check("timeout terminates a sleeper", elapsed < 4, "took \(elapsed)s")
+}
+
+// reset_state.json fallback decode: ISO datetimes become epochs
+do {
+    let json = """
+    {"version":1,"accounts":{"x@x.com":{
+      "last_used":"2026-11-11T18:35:08.643699","uses":2,
+      "last_mint":"2026-11-11T18:35:27.490703",
+      "identity":{"name":"X","plan":"Free"},
+      "usage":{"daily_remaining_pct":0,"weekly_remaining_pct":59,
+               "daily_reset_at":1794470400,"weekly_reset_at":1794729600,
+               "fetched_at":"2026-11-11T18:35:24.103044"}}}}
+    """
+    let state = try! JSONDecoder().decode(DevinCachedState.self, from: Data(json.utf8))
+    let entry = state.accounts["x@x.com"]
+    check("cached state decodes", entry?.uses == 2 && entry?.identity?.plan == "Free")
+    let snap = entry?.usage?.withEpochs()
+    check("cached ISO fetched_at becomes an epoch",
+          snap?.fetchedAtEpoch != nil && (snap?.dailyRemainingPct == 0))
+    check("epoch parse round-trips", DevinCachedState.epoch(from: "2026-11-11T18:35:24") != nil)
+}
+
 print("")
 print("\(passes) passed, \(failures) failed")
 exit(failures == 0 ? 0 : 1)
