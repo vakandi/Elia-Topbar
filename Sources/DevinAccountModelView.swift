@@ -82,9 +82,15 @@ struct DevinAccountModelView: View {
         }
     }
 
+    private var lowCostPairs: [(DevinModelFamily, DevinModelVariant)] {
+        families.flatMap { family in
+            family.variants.filter { $0.isLowCost && !$0.isFree }.map { (family, $0) }
+        }
+    }
+
     private var otherPairs: [(DevinModelFamily, DevinModelVariant)] {
         families.flatMap { family in
-            family.variants.filter { !$0.isFree }.map { (family, $0) }
+            family.variants.filter { !$0.isFree && !$0.isLowCost }.map { (family, $0) }
         }
     }
 
@@ -387,6 +393,18 @@ struct DevinAccountModelView: View {
                     }
                 }
 
+                if !lowCostPairs.isEmpty {
+                    Text("Low cost")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.orange)
+                    ForEach(lowCostPairs, id: \.1.id) { pair in
+                        DevinModelRow(
+                            family: pair.0, variant: pair.1,
+                            selected: selectedModelUID == pair.1.modelUID
+                        ) { selectedModelUID = pair.1.modelUID }
+                    }
+                }
+
                 DisclosureGroup(isExpanded: $showAllModels) {
                     ForEach(otherPairs, id: \.1.id) { pair in
                         DevinModelRow(
@@ -528,7 +546,11 @@ struct DevinAccountModelView: View {
                 ?? ""
         }
         if selectedModelUID.isEmpty {
-            selectedModelUID = UserDefaults.standard.string(forKey: "devin.model") ?? ""
+            // What the CLI will actually run next wins over the last pick
+            // EliaTopBar saved — the config file is the source of truth.
+            selectedModelUID = DevinConfig.currentModel()
+                ?? UserDefaults.standard.string(forKey: "devin.model")
+                ?? ""
         }
         if selectedVariant == nil, let firstFree = freePairs.first {
             selectedModelUID = firstFree.1.modelUID

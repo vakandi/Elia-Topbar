@@ -2612,21 +2612,17 @@ if let popover = subworkerLogPopover {
                 UserDefaults.standard.set(variant.modelUID, forKey: "devin.model")
                 UserDefaults.standard.set(account.email, forKey: "devin.account")
 
-                // The Rust engine has no devin-cli provider yet: when the
-                // roster advertises one the choice routes through the normal
-                // model pipeline, otherwise it stays a saved preference and
-                // the toast says so honestly.
-                let routed = self.subworkerManager.availableModels
-                    .contains { $0.provider == "devin-cli" }
-                if routed {
-                    self.subworkerManager.setModel(
-                        "devin-cli/\(variant.modelUID)", variant: "", for: agentName
-                    )
+                // Devin is managed directly: the model goes into the CLI's
+                // own config (~/.config/devin/config.json → agent.model), so
+                // the next `devin` session uses it. BunControl/opencode is
+                // not involved — it has no devin-cli provider anyway.
+                do {
+                    try DevinConfig.applyModel(variant.modelUID)
                     self.showTopbarToast(emoji: "🧠",
-                        message: "\(agentName) → \(variant.label)", spinning: false, autoHideAfter: 5)
-                } else {
-                    self.showTopbarToast(emoji: "🧠",
-                        message: "Devin model saved — engine routing not wired yet",
+                        message: "Devin CLI → \(variant.label)", spinning: false, autoHideAfter: 5)
+                } catch {
+                    self.showTopbarToast(emoji: "⚠️",
+                        message: "Saved, but config write failed: \(error.localizedDescription)",
                         spinning: false, autoHideAfter: 6)
                 }
                 self.devinWindow?.close()

@@ -142,6 +142,48 @@ public enum DevinProcess {
     }
 }
 
+/// ~/.config/devin/config.json — the CLI's own settings file. `agent.model`
+/// is the persistent default model; EliaTopBar writes it directly so a chosen
+/// model takes effect on the next `devin` session without touching BunControl.
+public enum DevinConfig {
+    public static var configFile: URL {
+        // getenv (not ProcessInfo.environment) so tests and callers that
+        // setenv after launch are honored.
+        if let raw = getenv("XDG_CONFIG_HOME").map({ String(cString: $0) }), !raw.isEmpty {
+            return URL(fileURLWithPath: raw, isDirectory: true)
+                .appendingPathComponent("devin/config.json")
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/devin/config.json")
+    }
+
+    /// The model the CLI will actually use next, or nil when unset.
+    public static func currentModel() -> String? {
+        guard let data = try? Data(contentsOf: configFile),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let agent = json["agent"] as? [String: Any] else { return nil }
+        return agent["model"] as? String
+    }
+
+    /// Persist `agent.model`, preserving every other key in the file.
+    /// Missing file or missing `agent` section is created, not an error.
+    public static func applyModel(_ modelUID: String) throws {
+        var json: [String: Any] = [:]
+        if let data = try? Data(contentsOf: configFile),
+           let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            json = parsed
+        }
+        var agent = json["agent"] as? [String: Any] ?? [:]
+        agent["model"] = modelUID
+        json["agent"] = agent
+        let data = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
+        let url = configFile
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: url, options: .atomic)
+    }
+}
+
 public enum DevinError: LocalizedError {
     case binaryMissing
     case helperMissing

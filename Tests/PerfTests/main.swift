@@ -530,6 +530,44 @@ do {
     check("timeout terminates a sleeper", elapsed < 4, "took \(elapsed)s")
 }
 
+// DevinConfig writes agent.model into an isolated XDG_CONFIG_HOME,
+// preserving existing keys — the direct-CLI apply path.
+do {
+    let tmp = FileManager.default.temporaryDirectory
+        .appendingPathComponent("eliatest-\(UUID().uuidString)", isDirectory: true)
+    let prev = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"]
+    setenv("XDG_CONFIG_HOME", tmp.path, 1)
+    defer {
+        if let prev { setenv("XDG_CONFIG_HOME", prev, 1) } else { unsetenv("XDG_CONFIG_HOME") }
+        try? FileManager.default.removeItem(at: tmp)
+    }
+
+    let file = DevinConfig.configFile
+    try FileManager.default.createDirectory(
+        at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try "{\"agent\":{\"verbosity\":\"high\"},\"other\":1}".write(
+        to: file, atomically: true, encoding: .utf8)
+
+    check("config starts empty model", DevinConfig.currentModel() == nil,
+          "got \(DevinConfig.currentModel() ?? "nil")")
+    try DevinConfig.applyModel("swe-1-6-slow")
+    check("applyModel persists agent.model",
+          DevinConfig.currentModel() == "swe-1-6-slow",
+          "got \(DevinConfig.currentModel() ?? "nil")")
+
+    let raw = try JSONSerialization.jsonObject(
+        with: Data(contentsOf: file)) as? [String: Any]
+    let agent = raw?["agent"] as? [String: Any]
+    check("applyModel preserves sibling keys",
+          agent?["verbosity"] as? String == "high" && raw?["other"] as? Int == 1,
+          "agent=\(String(describing: agent))")
+
+    try DevinConfig.applyModel("swe-2-flash-medium")
+    check("applyModel overwrites model",
+          DevinConfig.currentModel() == "swe-2-flash-medium",
+          "got \(DevinConfig.currentModel() ?? "nil")")
+}
+
 // reset_state.json fallback decode: ISO datetimes become epochs
 do {
     let json = """
