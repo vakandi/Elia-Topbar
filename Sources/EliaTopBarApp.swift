@@ -1706,8 +1706,15 @@ if !subworkerManager.wsConnected {
 
         let currentModel = subworkerManager.currentModel(for: sw.name)
         let currentVariant = subworkerManager.currentVariant(for: sw.name)
-        var modelLabel = SubworkerModels.displayName(for: currentModel)
-        if !currentVariant.isEmpty { modelLabel += " (\(currentVariant))" }
+        // A Devin CLI selection owns the agent's effective model: the CLI's
+        // own config is the source of truth, the saved label is cosmetic.
+        var modelLabel: String
+        if let devinLabel = devinDisplayModel() {
+            modelLabel = devinLabel
+        } else {
+            modelLabel = SubworkerModels.displayName(for: currentModel)
+            if !currentVariant.isEmpty { modelLabel += " (\(currentVariant))" }
+        }
         let modelHeader = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         modelHeader.attributedTitle = emojiAwareTitle("🧠 Model: \(modelLabel)", color: .secondaryLabelColor)
         modelHeader.isEnabled = false
@@ -2597,6 +2604,20 @@ if let popover = subworkerLogPopover {
         localModelWindow = window
     }
 
+    /// "Devin — <label>" when the Devin CLI has a model configured, nil when
+    /// the agent should display its opencode roster model. The CLI config is
+    /// authoritative; the saved UserDefaults pair is only a label cache.
+    private func devinDisplayModel() -> String? {
+        let uid = DevinConfig.currentModel()
+            ?? UserDefaults.standard.string(forKey: "devin.model")
+        guard let uid, !uid.isEmpty else { return nil }
+        let savedUID = UserDefaults.standard.string(forKey: "devin.model")
+        let label = (savedUID == uid)
+            ? UserDefaults.standard.string(forKey: "devin.modelLabel")
+            : nil
+        return "Devin — \(label ?? uid)"
+    }
+
     /// Devin CLI model picker. Sits next to the local-model entry: shows the
     /// logged-in `devin` account and its last-known quota, and Apply writes
     /// the chosen model straight into ~/.config/devin/config.json. Account
@@ -2615,6 +2636,7 @@ if let popover = subworkerLogPopover {
             onApply: { [weak self] account, variant in
                 guard let self else { return }
                 UserDefaults.standard.set(variant.modelUID, forKey: "devin.model")
+                UserDefaults.standard.set(variant.label, forKey: "devin.modelLabel")
                 UserDefaults.standard.set(account.email, forKey: "devin.account")
 
                 // Devin is managed directly: the model goes into the CLI's
