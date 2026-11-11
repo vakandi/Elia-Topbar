@@ -291,7 +291,8 @@ private final class DevinACPClient {
                             "protocolVersion": 1,
                             "clientCapabilities": [String: Any](),
                         ])
-                        try self.notify("initialized", params: [String: Any]())
+                        // ACP has no `initialized` notification (that is LSP);
+                        // sending one just earns a -32601 warning on the server.
                         let session = try await self.request("session/new", params: [
                             "cwd": self.process.currentDirectoryURL?.path ?? NSHomeDirectory(),
                             "mcpServers": [[String: Any]](),
@@ -342,10 +343,6 @@ private final class DevinACPClient {
             pendingLock.unlock()
             send(["jsonrpc": "2.0", "id": id, "method": method, "params": params])
         }
-    }
-
-    private func notify(_ method: String, params: [String: Any]) {
-        send(["jsonrpc": "2.0", "method": method, "params": params])
     }
 
     private func respond(id: Any, result: [String: Any]) {
